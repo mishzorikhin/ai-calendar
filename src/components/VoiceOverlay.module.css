@@ -1,0 +1,59 @@
+.overlay {
+  position: absolute;
+  inset: 0 0 var(--bar-h) 0;
+  z-index: 25;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 10px 10px;
+  background: linear-gradient(
+    180deg,
+    rgba(243, 242, 245, 0) 0%,
+    rgba(243, 242, 245, 0.75) 45%,
+    rgba(243, 242, 245, 0.92) 100%
+  );
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 0 0 var(--r-sheet) var(--r-sheet);
+}
+
+.panel {
+  width: 100%;
+  padding: 22px 22px 26px;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.label i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.text {
+  margin-top: 12px;
+  min-height: 96px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.text span {
+  display: inline-block;
+  white-space: pre;
+}
+
+.placeholder {
+  color: var(--ink-3);
+  white-space: normal !important;
+}

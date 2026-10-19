@@ -1,0 +1,17 @@
+.sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--bar-h);
+  background: var(--bg);
+  border-radius: 0 0 var(--r-sheet) var(--r-sheet);
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(120, 70, 100, 0.08);
+}
+
+.inner {
+  position: absolute;
+  inset: 0;
+  padding: calc(var(--safe-top) + 6px) 12px 18px;
+}

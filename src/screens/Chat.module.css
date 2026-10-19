@@ -1,0 +1,224 @@
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(120% 50% at 50% 0%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #efeef2 0%, #e8e7ed 60%, #e2e2ea 100%);
+}
+
+.live {
+  position: absolute;
+  top: var(--live-top);
+  left: 50%;
+  z-index: 70;
+  width: 176px;
+  height: 36px;
+  margin-left: -88px;
+  padding: 0 14px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 20px;
+  background: #000;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.live b {
+  color: #fff;
+  margin-right: 2px;
+}
+
+.live i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #7ad48f;
+}
+
+.preview {
+  position: relative;
+  align-self: center;
+  width: 70%;
+  max-width: 300px;
+  height: 150px;
+  margin-top: calc(var(--live-top) + 46px);
+  padding: 12px 14px 0;
+  border-radius: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  overflow: hidden;
+  background: linear-gradient(180deg, #d8edc5 0px, #eef6e6 60px, #fbfcf9 130px);
+  box-shadow: var(--shadow-md);
+  flex-shrink: 0;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+}
+
+.previewHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.previewHead i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.previewRow {
+  display: flex;
+  gap: 8px;
+  font-size: 8.5px;
+  color: var(--ink-2);
+}
+
+.previewCard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.previewCard small {
+  font-size: 8px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.title {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 16px;
+}
+
+.bubble {
+  display: inline-block;
+  padding: 12px 16px;
+  border-radius: 22px 22px 22px 8px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+  letter-spacing: -0.015em;
+  color: rgba(20, 20, 30, 0.82);
+}
+
+.composer {
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.chipsViewport {
+  position: relative;
+  height: 42px;
+  margin: 0 -10px 8px;
+  overflow: hidden;
+}
+
+.chips {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+
+.input {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 50px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 6px 0 18px;
+  border-radius: 25px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  cursor: text;
+}
+
+.input textarea {
+  flex: 1;
+  min-width: 0;
+  margin: 13px 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: -0.015em;
+  color: inherit;
+  scrollbar-width: none;
+}
+
+.input textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.attach {
+  margin-bottom: 6px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--ink-3);
+}
+
+.dictation {
+  position: absolute;
+  left: 18px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.sendReady {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(15, 15, 18, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(15, 15, 18, 0);
+  }
+}

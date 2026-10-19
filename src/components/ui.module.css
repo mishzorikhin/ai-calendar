@@ -1,0 +1,212 @@
+.pressable {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.circle {
+  border-radius: 50%;
+  color: var(--ink);
+}
+
+.tone_white {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.tone_gray {
+  background: var(--surface-2);
+}
+
+.tone_glass {
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(30, 30, 50, 0.72);
+}
+
+.tone_pink {
+  background: radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.35) 70%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 4px 16px rgba(220, 120, 130, 0.22);
+  color: rgba(70, 40, 50, 0.8);
+}
+
+.tone_dark {
+  background: #111114;
+  color: #fff;
+}
+
+.pill {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+
+.pillSmall {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+
+.pill_white {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+}
+
+.pill_glass {
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  color: rgba(40, 40, 60, 0.66);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.pill_dark {
+  background: #0f0f12;
+  color: #fff;
+}
+
+.pill_ghost {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.smartImage {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.smartImage > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bokeh {
+  position: absolute;
+  inset: -20%;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.55) 0 7%, transparent 8%),
+    radial-gradient(circle at 74% 16%, rgba(255, 245, 225, 0.45) 0 5%, transparent 6%),
+    radial-gradient(circle at 62% 64%, rgba(255, 255, 255, 0.25) 0 11%, transparent 12%),
+    radial-gradient(circle at 28% 78%, rgba(255, 236, 210, 0.35) 0 6%, transparent 7%);
+  filter: blur(6px);
+  opacity: 0.9;
+}
+
+.avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: rgba(30, 30, 60, 0.75);
+}
+
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarRing {
+  box-shadow: 0 0 0 2.5px var(--surface);
+}
+
+.logo {
+  background: #0f0f12;
+}
+
+.meDot {
+  background: var(--surface-2);
+}
+
+.meDot i {
+  display: block;
+  width: 38%;
+  height: 38%;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 3px rgba(58, 120, 242, 0.16);
+}
+
+.stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.stack > * + * {
+  margin-left: var(--overlap);
+}
+
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(40, 30, 60, 0.38) 0%,
+    rgba(40, 30, 60, 0.38) 40%,
+    rgba(40, 30, 60, 0.95) 50%,
+    rgba(40, 30, 60, 0.38) 60%,
+    rgba(40, 30, 60, 0.38) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.wave i {
+  width: 3px;
+  height: 100%;
+  border-radius: 3px;
+  transform-origin: center;
+}

@@ -1,0 +1,5 @@
+.layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 40%;
+}

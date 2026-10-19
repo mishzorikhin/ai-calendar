@@ -1,0 +1,164 @@
+:root {
+  /* Палитра */
+  --bg: #f3f2f5;
+  --surface: #ffffff;
+  --surface-2: #f4f4f6;
+  --surface-3: #ececf0;
+  --ink: #0d0d10;
+  --ink-2: #8a8a92;
+  --ink-3: #b8b8bf;
+  --ink-inverse: #ffffff;
+  --line: rgba(15, 15, 30, 0.06);
+  --weekend: #e5484d;
+  --red: #ff3b4f;
+  --blue: #3a78f2;
+  --green: #4cc46d;
+  --orange: #f08b3d;
+  --yellow: #f5c445;
+  --gold: #f5b83d;
+  --lavender: #e3e5f8;
+
+  /* Нижняя панель — розово-сиреневый градиент из референса */
+  --bar-gradient: linear-gradient(100deg, #f6c4bd 0%, #f1d0d6 34%, #e3d6ec 62%, #cdd2f3 100%);
+
+  /* Радиусы */
+  --r-sheet: 40px;
+  --r-xl: 32px;
+  --r-lg: 26px;
+  --r-md: 20px;
+  --r-sm: 14px;
+
+  /* Тени */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 45, 0.05), 0 2px 8px rgba(20, 20, 45, 0.04);
+  --shadow-md: 0 2px 6px rgba(20, 20, 45, 0.05), 0 12px 32px rgba(20, 20, 45, 0.08);
+  --shadow-lg: 0 4px 12px rgba(20, 20, 45, 0.06), 0 24px 60px rgba(20, 20, 45, 0.14);
+
+  /* Безопасные зоны (на реальном телефоне — из env(), в рамке на десктопе — фиксированные) */
+  --safe-top: max(env(safe-area-inset-top, 0px), 14px);
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  --bar-h: calc(76px + var(--safe-bottom));
+
+  --font: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  outline: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.scroll-y::-webkit-scrollbar,
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Типографика */
+.display {
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.title {
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.caption {
+  font-size: 13px;
+  color: var(--ink-2);
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
