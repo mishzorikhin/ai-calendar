@@ -1,4 +1,5 @@
 import type { ChatMessage, DatedEvent, Task, User } from '../domain/types'
+import { isValidRange, messageError, subtitleError, titleError } from '../domain/limits'
 import { fromISODate, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
@@ -12,6 +13,12 @@ type Snapshot = {
   messages: ChatMessage[]
   tasks: Task[]
   nextId: number
+}
+
+/** Первая ошибка проверки или null; отвечает так же, как сервер (400). */
+const invalid = (...errors: (string | null)[]) => {
+  const message = errors.find((e) => e !== null)
+  return message ? Promise.reject(new ApiError(400, message)) : null
 }
 
 const GREETING: ChatMessage = { id: 0, role: 'ai', text: 'Чем могу помочь?' }
@@ -72,12 +79,15 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getEvents: (date) => reply(eventsFor(date, events())),
     createEvent(input) {
       const title = input.title.trim()
-      if (!title) return Promise.reject(new ApiError(400, 'Название обязательно'))
-      if (input.end <= input.start) return Promise.reject(new ApiError(400, 'Время задано неверно'))
+      const subtitle = input.subtitle?.trim()
+      const bad =
+        invalid(titleError(title), subtitleError(subtitle)) ??
+        (isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+      if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
         title,
-        subtitle: input.subtitle,
+        subtitle,
         start: input.start,
         end: input.end,
         badge: input.badge ?? 'routine',
@@ -92,16 +102,21 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const i = data.events.findIndex((e) => e.id === id)
       if (i < 0) return Promise.reject(new ApiError(404, 'Событие не найдено'))
       const prev = data.events[i]!
+      const title = patch.title?.trim()
+      const subtitle = patch.subtitle?.trim()
       const next = {
         ...prev,
-        title: patch.title?.trim() || prev.title,
-        subtitle: patch.subtitle ?? prev.subtitle,
+        title: title ?? prev.title,
+        subtitle: subtitle ?? prev.subtitle,
         start: patch.start ?? prev.start,
         end: patch.end ?? prev.end,
         badge: patch.badge ?? prev.badge,
         date: patch.date ? toISODate(patch.date) : prev.date,
       }
-      if (next.end <= next.start) return Promise.reject(new ApiError(400, 'Время задано неверно'))
+      const bad =
+        invalid(title === undefined ? null : titleError(title), subtitleError(subtitle)) ??
+        (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
+      if (bad) return bad
       data.events[i] = next
       save()
       return reply({ ...next, date: fromISODate(next.date) })
@@ -117,11 +132,13 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getTasks: () => reply([...data.tasks]),
     createTask(input) {
       const title = input.title.trim()
-      if (!title) return Promise.reject(new ApiError(400, 'Название обязательно'))
+      const subtitle = input.subtitle?.trim()
+      const bad = invalid(titleError(title), subtitleError(subtitle))
+      if (bad) return bad
       const task: Task = {
         id: nextId('task'),
         title,
-        subtitle: input.subtitle,
+        subtitle,
         kind: input.kind ?? 'task',
         category: input.category,
         done: false,
@@ -135,10 +152,14 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const i = data.tasks.findIndex((t) => t.id === id)
       if (i < 0) return Promise.reject(new ApiError(404, 'Задача не найдена'))
       const prev = data.tasks[i]!
+      const title = patch.title?.trim()
+      const subtitle = patch.subtitle?.trim()
+      const bad = invalid(title === undefined ? null : titleError(title), subtitleError(subtitle))
+      if (bad) return bad
       const task: Task = {
         ...prev,
-        title: patch.title?.trim() || prev.title,
-        subtitle: patch.subtitle ?? prev.subtitle,
+        title: title ?? prev.title,
+        subtitle: subtitle ?? prev.subtitle,
         kind: patch.kind ?? prev.kind,
         done: patch.done ?? prev.done,
         due: patch.due ?? prev.due,
@@ -158,6 +179,8 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     },
     getMessages: () => reply([...data.messages]),
     addMessage(role, text) {
+      const bad = invalid(messageError(text.trim()))
+      if (bad) return bad
       const message: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role, text: text.trim() }
       data = { ...data, messages: [...data.messages, message] }
       save()
@@ -165,6 +188,8 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     },
     // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
     async sendChat(text, onEvent) {
+      const bad = invalid(messageError(text.trim()))
+      if (bad) return bad
       const answer = 'Ассистент отвечает только с сервером — запустите `make api` с переменной LLM_API_KEY.'
       const user: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role: 'user', text: text.trim() }
       const ai: ChatMessage = { id: user.id + 1, role: 'ai', text: answer }

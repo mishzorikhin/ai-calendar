@@ -123,6 +123,8 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("X-Frame-Options", "DENY")
+		// Всё своё; img-src https: — фото заведений, style-src 'unsafe-inline' — стили framer-motion.
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

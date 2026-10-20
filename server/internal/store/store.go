@@ -136,7 +136,9 @@ type fileStore struct {
 	mu   sync.RWMutex
 	path string
 	d    data
-	now  func() time.Time
+	// lastGood — последнее успешно записанное состояние: к нему откатываемся, если запись не удалась.
+	lastGood []byte
+	now      func() time.Time
 }
 
 // Open читает файл данных из dir (создаёт при первом запуске). Пустой dir — хранение в памяти.
@@ -163,7 +165,12 @@ func Open(dir string) (Store, error) {
 			return nil, fmt.Errorf("разбор %s: %w", s.path, err)
 		}
 	}
-	// У файлов, созданных до появления новых сущностей, полей нет — инициализируем.
+	s.normalize()
+	return s, s.save()
+}
+
+// normalize инициализирует поля, которых нет у файлов, созданных до появления новых сущностей.
+func (s *fileStore) normalize() {
 	if s.d.Tasks == nil {
 		s.d.Tasks = []model.Task{}
 	}
@@ -176,10 +183,10 @@ func Open(dir string) (Store, error) {
 	if s.d.NextUserID == 0 {
 		s.d.NextUserID = 1
 	}
-	return s, s.save()
 }
 
-// save вызывается под блокировкой на запись.
+// save вызывается под блокировкой на запись. Если файл записать не удалось, состояние в памяти
+// откатывается к последнему сохранённому, чтобы оно не расходилось с диском.
 func (s *fileStore) save() error {
 	if s.path == "" {
 		return nil
@@ -189,10 +196,29 @@ func (s *fileStore) save() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("запись данных: %w", err)
+	err = os.WriteFile(tmp, raw, 0o600)
+	if err == nil {
+		err = os.Rename(tmp, s.path)
+	} else {
+		err = fmt.Errorf("запись данных: %w", err)
 	}
-	return os.Rename(tmp, s.path)
+	if err != nil {
+		s.rollback()
+		return err
+	}
+	s.lastGood = raw
+	return nil
+}
+
+func (s *fileStore) rollback() {
+	if s.lastGood == nil {
+		return
+	}
+	var prev data
+	if json.Unmarshal(s.lastGood, &prev) == nil {
+		s.d = prev
+		s.normalize()
+	}
 }
 
 func (s *fileStore) nextID(prefix string) string {

@@ -62,4 +62,24 @@ describe('local api', () => {
     expect(messages.at(-2)).toMatchObject({ role: 'user', text: 'привет' })
     expect(messages.at(-1)?.role).toBe('ai')
   })
+
+  it('проверяет длины и диапазон времени так же, как сервер', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const event = { date: day, start: 600, end: 660 }
+    await expect(api.createEvent({ ...event, title: 'я'.repeat(121) })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createEvent({ ...event, title: 'x', subtitle: 'я'.repeat(201) })).rejects.toMatchObject({
+      status: 400,
+    })
+    await expect(api.createEvent({ ...event, title: 'x', end: 1500 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createEvent({ ...event, title: 'x', start: -5 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createTask({ title: 'x', subtitle: 'я'.repeat(201) })).rejects.toMatchObject({ status: 400 })
+
+    const created = await api.createEvent({ ...event, title: 'x' })
+    await expect(api.updateEvent(created.id, { title: '  ' })).rejects.toMatchObject({ status: 400 })
+    await expect(api.updateEvent(created.id, { end: 2000 })).rejects.toMatchObject({ status: 400 })
+
+    await expect(api.addMessage('user', '   ')).rejects.toMatchObject({ status: 400 })
+    await expect(api.addMessage('user', 'я'.repeat(2001))).rejects.toMatchObject({ status: 400 })
+    await expect(api.sendChat('я'.repeat(2001), () => {})).rejects.toMatchObject({ status: 400 })
+  })
 })

@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
@@ -168,5 +170,47 @@ func TestTaskMembersStore(t *testing.T) {
 	got := s.Tasks(actx)
 	if len(got) != 1 || len(got[0].Members) != 0 {
 		t.Fatalf("у владельца после выхода: %+v", got)
+	}
+}
+
+// Если запись на диск не удалась, изменение не остаётся в памяти.
+func TestRollbackOnSaveError(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := userCtx(t, s)
+	kept, err := s.CreateEvent(ctx, model.Event{Date: "2026-10-20", Title: "Остаётся", Start: 540, End: 600})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Каталог на месте временного файла делает запись невозможной.
+	if err := os.Mkdir(filepath.Join(dir, "data.json.tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateEvent(ctx, model.Event{Date: "2026-10-20", Title: "Звонок", Start: 600, End: 660}); err == nil {
+		t.Fatal("ожидали ошибку записи")
+	}
+	if _, err := s.AddMessage(ctx, model.RoleUser, "Привет"); err == nil {
+		t.Fatal("ожидали ошибку записи")
+	}
+	if got := s.EventsOn(ctx, "2026-10-20"); len(got) != 1 || got[0].ID != kept.ID {
+		t.Fatalf("после неудачной записи в памяти должно остаться только прежнее событие: %+v", got)
+	}
+	if got := s.Messages(ctx); len(got) != 1 {
+		t.Fatalf("сообщение осталось в памяти: %+v", got)
+	}
+
+	// Хранилище не сломалось: когда запись снова возможна, всё сохраняется.
+	if err := os.Remove(filepath.Join(dir, "data.json.tmp")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateEvent(ctx, model.Event{Date: "2026-10-20", Title: "Звонок", Start: 600, End: 660}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.EventsOn(ctx, "2026-10-20"); len(got) != 2 {
+		t.Fatalf("события: %+v", got)
 	}
 }

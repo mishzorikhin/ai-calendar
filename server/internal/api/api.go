@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	maxTitle   = 120
-	maxMessage = 2000
-	dayMinutes = 24 * 60
+	maxTitle    = 120
+	maxSubtitle = 200
+	maxMessage  = 2000
+	dayMinutes  = 24 * 60
 )
 
 // Options — зависимости сервера.
@@ -126,6 +127,13 @@ type eventInput struct {
 	Badge    model.Badge `json:"badge"`
 }
 
+func validateSubtitle(v string) error {
+	if utf8.RuneCountInString(v) > maxSubtitle {
+		return badRequest("Подзаголовок не длиннее %d символов", maxSubtitle)
+	}
+	return nil
+}
+
 func validateRange(start, end int) error {
 	if start < 0 || end > dayMinutes || end <= start {
 		return badRequest("Время задано неверно: начало %d, конец %d (минуты от полуночи)", start, end)
@@ -144,6 +152,10 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" || utf8.RuneCountInString(in.Title) > maxTitle {
 		return badRequest("Название обязательно и не длиннее %d символов", maxTitle)
+	}
+	in.Subtitle = strings.TrimSpace(in.Subtitle)
+	if err := validateSubtitle(in.Subtitle); err != nil {
+		return err
 	}
 	if err := validateRange(in.Start, in.End); err != nil {
 		return err
@@ -183,6 +195,12 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		*in.Title = strings.TrimSpace(*in.Title)
 		if *in.Title == "" || utf8.RuneCountInString(*in.Title) > maxTitle {
 			return badRequest("Название обязательно и не длиннее %d символов", maxTitle)
+		}
+	}
+	if in.Subtitle != nil {
+		*in.Subtitle = strings.TrimSpace(*in.Subtitle)
+		if err := validateSubtitle(*in.Subtitle); err != nil {
+			return err
 		}
 	}
 	if in.Date != nil {
@@ -291,6 +309,10 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 	if in.Title == "" || utf8.RuneCountInString(in.Title) > maxTitle {
 		return badRequest("Название обязательно и не длиннее %d символов", maxTitle)
 	}
+	in.Subtitle = strings.TrimSpace(in.Subtitle)
+	if err := validateSubtitle(in.Subtitle); err != nil {
+		return err
+	}
 	if in.Kind == "" {
 		in.Kind = model.TaskKindTask
 	}
@@ -362,6 +384,12 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		*in.Title = strings.TrimSpace(*in.Title)
 		if *in.Title == "" || utf8.RuneCountInString(*in.Title) > maxTitle {
 			return badRequest("Название обязательно и не длиннее %d символов", maxTitle)
+		}
+	}
+	if in.Subtitle != nil {
+		*in.Subtitle = strings.TrimSpace(*in.Subtitle)
+		if err := validateSubtitle(*in.Subtitle); err != nil {
+			return err
 		}
 	}
 	if in.Kind != nil && !in.Kind.Valid() {

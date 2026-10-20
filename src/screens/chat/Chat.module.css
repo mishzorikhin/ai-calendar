@@ -220,15 +220,6 @@
   mask-image: linear-gradient(180deg, transparent 0, #000 24px);
 }
 
-.bubbleUser {
-  align-self: flex-end;
-  max-width: 85%;
-  border-radius: 22px 22px 8px 22px !important;
-  background: #111114 !important;
-  color: #fff !important;
-  box-shadow: none !important;
-}
-
 .bubble {
   max-width: 85%;
   line-height: 1.38;
@@ -240,6 +231,15 @@
   font-size: 16px;
   letter-spacing: -0.015em;
   color: rgba(20, 20, 30, 0.82);
+}
+
+/* После .bubble: одинаковая специфичность, побеждает порядок. */
+.bubbleUser {
+  align-self: flex-end;
+  border-radius: 22px 22px 8px 22px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: none;
 }
 
 /* Ответ, который ещё пишется: чипы инструментов над текстом. */
@@ -401,7 +401,7 @@
 .bubbleFailed {
   max-width: 100%;
   opacity: 0.55;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35) !important;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
 }
 
 .failedMeta {

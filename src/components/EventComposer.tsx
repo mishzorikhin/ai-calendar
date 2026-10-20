@@ -78,7 +78,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const times = useRef<HTMLDivElement>(null)
 
-  const { events } = useDayEvents(date)
+  const { events } = useDayEvents(date, { keepPrevious: false })
   const now = new Date()
   // Другие события дня — для подсчёта свободного времени (себя при правке не считаем).
   const others = events.filter((e) => e.id !== editing?.id)

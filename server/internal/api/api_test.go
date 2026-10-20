@@ -140,13 +140,14 @@ func TestEventsFlow(t *testing.T) {
 func TestEventValidation(t *testing.T) {
 	h, tok := newAuthedServer(t)
 	cases := map[string]string{
-		"дата":        `{"date":"20.10.2026","title":"x","start":60,"end":120}`,
-		"пустое имя":  `{"date":"2026-10-20","title":"  ","start":60,"end":120}`,
-		"время":       `{"date":"2026-10-20","title":"x","start":120,"end":60}`,
-		"тип":         `{"date":"2026-10-20","title":"x","start":60,"end":120,"badge":"party"}`,
-		"лишнее поле": `{"date":"2026-10-20","title":"x","start":60,"end":120,"color":"red"}`,
-		"битый JSON":  `{"date":`,
-		"два объекта": `{"date":"2026-10-20","title":"x","start":60,"end":120}{}`,
+		"дата":         `{"date":"20.10.2026","title":"x","start":60,"end":120}`,
+		"пустое имя":   `{"date":"2026-10-20","title":"  ","start":60,"end":120}`,
+		"время":        `{"date":"2026-10-20","title":"x","start":120,"end":60}`,
+		"тип":          `{"date":"2026-10-20","title":"x","start":60,"end":120,"badge":"party"}`,
+		"подзаголовок": `{"date":"2026-10-20","title":"x","subtitle":"` + strings.Repeat("я", maxSubtitle+1) + `","start":60,"end":120}`,
+		"лишнее поле":  `{"date":"2026-10-20","title":"x","start":60,"end":120,"color":"red"}`,
+		"битый JSON":   `{"date":`,
+		"два объекта":  `{"date":"2026-10-20","title":"x","start":60,"end":120}{}`,
 	}
 	for name, body := range cases {
 		if rec := doAs(t, h, tok, "POST", "/api/events", body); rec.Code != http.StatusBadRequest {
@@ -200,11 +201,12 @@ func TestTasksFlow(t *testing.T) {
 func TestTaskValidation(t *testing.T) {
 	h, tok := newAuthedServer(t)
 	cases := map[string]string{
-		"пустое имя":  `{"title":"  "}`,
-		"kind":        `{"title":"x","kind":"epic"}`,
-		"category":    `{"title":"x","category":"очень-очень-очень длинный тег для задачи"}`,
-		"due":         `{"title":"x","due":"скоро"}`,
-		"лишнее поле": `{"title":"x","color":"red"}`,
+		"пустое имя":   `{"title":"  "}`,
+		"kind":         `{"title":"x","kind":"epic"}`,
+		"category":     `{"title":"x","category":"очень-очень-очень длинный тег для задачи"}`,
+		"due":          `{"title":"x","due":"скоро"}`,
+		"подзаголовок": `{"title":"x","subtitle":"` + strings.Repeat("я", maxSubtitle+1) + `"}`,
+		"лишнее поле":  `{"title":"x","color":"red"}`,
 	}
 	for name, body := range cases {
 		if rec := doAs(t, h, tok, "POST", "/api/tasks", body); rec.Code != http.StatusBadRequest {
@@ -266,6 +268,9 @@ func TestSPA(t *testing.T) {
 	}
 	if rec := do(t, h, "GET", "/api/unknown", ""); rec.Code != 404 || !strings.Contains(rec.Body.String(), "error") {
 		t.Fatalf("неизвестный метод API: %d %s", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("нет Content-Security-Policy")
 	}
 	if rec := do(t, h, "POST", "/", ""); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST на статику: %d", rec.Code)
