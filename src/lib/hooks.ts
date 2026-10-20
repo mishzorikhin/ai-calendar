@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type MouseEvent } from 'react'
 
 /** Высота экранной клавиатуры (iOS накрывает ею страницу, а не сжимает её). */
 export function useKeyboardInset(): number {
@@ -51,4 +51,27 @@ export function useNow(step = 60_000): Date {
 /** Минуты от полуночи. */
 export function minutesOf(d: Date): number {
   return d.getHours() * 60 + d.getMinutes()
+}
+
+/**
+ * Гасит «клик» в конце перетаскивания мышью: свайп недели или месяца
+ * не должен заодно выбирать день, на котором отпустили кнопку.
+ * Пропсы вешаются на тот же motion-элемент, у которого `drag`.
+ */
+export function useDragClickGuard() {
+  const dragged = useRef(false)
+  return {
+    onPointerDownCapture: () => {
+      dragged.current = false
+    },
+    onDragStart: () => {
+      dragged.current = true
+    },
+    onClickCapture: (e: MouseEvent) => {
+      if (!dragged.current) return
+      dragged.current = false
+      e.preventDefault()
+      e.stopPropagation()
+    },
+  }
 }

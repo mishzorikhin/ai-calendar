@@ -1,11 +1,9 @@
-import { motion, useDragControls, type PanInfo } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { softSpring } from '../lib/motion'
+import { useSheetDrag } from './useSheetDrag'
 import styles from './BottomSheet.module.css'
-
-const CLOSE_OFFSET = 110
-const CLOSE_VELOCITY = 600
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -19,7 +17,7 @@ function setAppInert(inert: boolean) {
 }
 
 /**
- * Модальная шторка снизу: затемнённый фон, свайп вниз для закрытия, Escape,
+ * Модальная шторка снизу: затемнённый фон, свайп вниз за любое место (см. useSheetDrag), Escape,
  * фокус внутри шторки и возврат фокуса после закрытия. Рендерится в #modal-root.
  * Оборачивать в <AnimatePresence>, чтобы работала анимация закрытия.
  */
@@ -42,8 +40,8 @@ export function BottomSheet({
   /** Светлая «ручка» — для шторок с фото сверху. */
   handleTone?: 'dark' | 'light'
 }) {
-  const drag = useDragControls()
   const panel = useRef<HTMLDivElement>(null)
+  const { y, dim } = useSheetDrag(panel, onClose)
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -77,34 +75,24 @@ export function BottomSheet({
     }
   }
 
-  const onDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.offset.y > CLOSE_OFFSET || info.velocity.y > CLOSE_VELOCITY) onClose()
-  }
-
   const content = (
     <motion.div className={styles.root} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
+      <motion.div className={styles.backdrop} style={{ opacity: dim }} onClick={onClose} aria-hidden="true" />
       <motion.div
         ref={panel}
         className={styles.sheet}
-        style={{ maxHeight }}
+        style={{ maxHeight, y }}
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%', transition: { duration: 0.28 } }}
         transition={softSpring}
-        drag="y"
-        dragControls={drag}
-        dragListener={false}
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={{ top: 0.05, bottom: 0.8 }}
-        onDragEnd={onDragEnd}
         role="dialog"
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
         onKeyDown={onKeyDown}
       >
-        <div className={styles.handleZone} onPointerDown={(e) => drag.start(e)} aria-hidden="true">
+        <div className={styles.handleZone} aria-hidden="true">
           <i className={handleTone === 'light' ? styles.handleLight : undefined} />
         </div>
         <div className={`${styles.body} ${padded ? styles.padded : ''} scroll-y`}>{children}</div>
