@@ -154,3 +154,10 @@ server/
 ```
 
 Фото ресторанов и аватары грузятся с Unsplash. Если они недоступны, вместо них остаются нарисованные градиентные заглушки, и вёрстка не ломается.
+
+## Для кодовых агентов
+
+Правила для Claude Code, Codex, Cursor, Copilot и других агентов — в [AGENTS.md](AGENTS.md)
+(бэкенд — [server/AGENTS.md](server/AGENTS.md)), чек-лист ревью — в [REVIEW.md](REVIEW.md).
+`CLAUDE.md`, `.github/copilot-instructions.md` и `.cursor/rules/` ссылаются на них.
+В облачных сессиях Claude Code зависимости ставит хук `scripts/agent-setup.sh`.

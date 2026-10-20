@@ -7,3 +7,8 @@ server/web/dist/*
 .git
 .github
 *.log
+.claude
+.cursor
+scripts
+*.md
+!server/web/dist/README.md
