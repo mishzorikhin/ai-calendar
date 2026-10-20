@@ -1,44 +1,41 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigation } from '../../app/navigation'
-import { ArrowRightIcon, BackIcon, MicIcon, PaperclipIcon } from '../../components/Icons'
-import { CircleButton, Pill, Pressable, Waveform } from '../../components/ui'
-import { useInterval, useKeyboardInset } from '../../lib/hooks'
+import { ArrowRightIcon, BackIcon, CloseIcon, MicIcon, StopIcon } from '../../components/Icons'
+import { CircleButton, Pill, Waveform } from '../../components/ui'
+import { useKeyboardInset } from '../../lib/hooks'
 import { softSpring, spring } from '../../lib/motion'
-import { CHAT_CATEGORIES, DEMO_PROMPT, QUICK_PROMPTS, type ChatCategoryId } from '../../mocks/assistant'
+import { useDictation } from '../../lib/speech'
+import { CHAT_CATEGORIES, QUICK_PROMPTS, type ChatCategoryId } from '../../mocks/assistant'
 import styles from './Chat.module.css'
 
 const MAX_INPUT_H = 112
-const DICTATION_STEP_MS = 45
-const DICTATION_CHARS = 2
 
-/** Поле ввода чата: подсказки по категориям, растущее поле, имитация диктовки. */
+/** Поле ввода чата: подсказки по категориям, растущее поле, диктовка через Web Speech API. */
 export function ChatComposer({
   initialText,
   focusOnMount,
+  busy,
   onSend,
 }: {
   initialText: string
   focusOnMount: boolean
+  /** Ассистент отвечает — повторная отправка заблокирована. */
+  busy?: boolean
   onSend: (text: string) => void
 }) {
   const { back } = useNavigation()
   const [text, setText] = useState(initialText)
   const [category, setCategory] = useState<ChatCategoryId | null>(null)
-  // Диктовка: какой текст «надиктовывается» и сколько символов уже появилось.
-  const [dictation, setDictation] = useState<{ value: string; shown: number } | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const kb = useKeyboardInset()
 
-  useInterval(
-    () => {
-      if (!dictation) return
-      const shown = Math.min(dictation.shown + DICTATION_CHARS, dictation.value.length)
-      setText(dictation.value.slice(0, shown))
-      setDictation(shown >= dictation.value.length ? null : { ...dictation, shown })
-    },
-    dictation ? DICTATION_STEP_MS : null,
-  )
+  // Диктовка: распознанный текст дописывается к тому, что уже было в поле.
+  const base = useRef('')
+  const { listening, start, stop, supported } = useDictation((final, interim) => {
+    const extra = [final.trim(), interim.trim()].filter(Boolean).join(' ')
+    setText(base.current + (extra ? `${base.current ? ' ' : ''}${extra}` : ''))
+  })
 
   // Пришли «поправить запрос» — сразу ставим курсор в поле.
   useEffect(() => {
@@ -55,14 +52,29 @@ export function ChatComposer({
 
   /** Подсказка сразу попадает в поле — её можно отредактировать перед отправкой. */
   const insert = (value: string) => {
-    setDictation(null)
+    stop()
     setText(value)
     input.current?.focus()
   }
 
+  const toggleDictation = () => {
+    if (listening) {
+      stop()
+      input.current?.focus()
+      return
+    }
+    base.current = text.trim()
+    start()
+  }
+
   const send = () => {
     const value = text.trim()
-    if (value) onSend(value)
+    if (value && !busy) {
+      stop()
+      setText('')
+      base.current = ''
+      onSend(value)
+    }
   }
 
   const active = CHAT_CATEGORIES.find((c) => c.id === category)
@@ -94,9 +106,16 @@ export function ChatComposer({
               ))
             ) : active ? (
               <>
-                <CircleButton tone="glass" size={40} onClick={() => setCategory(null)} aria-label="Назад к категориям">
-                  <BackIcon size={16} />
-                </CircleButton>
+                <Pill
+                  small
+                  tone="dark"
+                  onClick={() => setCategory(null)}
+                  aria-label={`Убрать категорию ${active.label}`}
+                  className={styles.categoryPill}
+                >
+                  {active.label}
+                  <CloseIcon size={12} strokeWidth={2.6} />
+                </Pill>
                 {active.prompts.map((p) => (
                   <Pill key={p} small tone="glass" onClick={() => insert(p)}>
                     {p}
@@ -124,7 +143,7 @@ export function ChatComposer({
             rows={1}
             value={text}
             onChange={(e) => {
-              setDictation(null)
+              if (listening) base.current = ''
               setText(e.target.value)
             }}
             onKeyDown={(e) => {
@@ -133,22 +152,18 @@ export function ChatComposer({
                 send()
               }
             }}
-            placeholder={dictation ? '' : 'Спросите что угодно…'}
+            placeholder={listening ? 'Слушаю…' : 'Спросите что угодно…'}
             enterKeyHint="send"
             aria-label="Сообщение"
           />
-          {dictation && text.length < 6 ? (
+          {listening && text.length < 6 && (
             <span className={styles.dictation}>
               <Waveform bars={14} height={18} color="rgba(60,60,90,0.5)" />
             </span>
-          ) : (
-            <Pressable className={styles.attach} aria-label="Прикрепить файл">
-              <PaperclipIcon size={19} />
-            </Pressable>
           )}
         </label>
         <AnimatePresence mode="popLayout" initial={false}>
-          {text ? (
+          {text && !listening ? (
             <motion.span
               key="send"
               initial={{ scale: 0.4, opacity: 0 }}
@@ -160,13 +175,14 @@ export function ChatComposer({
                 tone="dark"
                 size={48}
                 onClick={send}
+                disabled={busy}
                 aria-label="Отправить"
-                className={dictation ? undefined : styles.sendReady}
+                className={busy ? undefined : styles.sendReady}
               >
                 <ArrowRightIcon size={20} strokeWidth={2.2} />
               </CircleButton>
             </motion.span>
-          ) : (
+          ) : supported ? (
             <motion.span
               key="mic"
               initial={{ scale: 0.4, opacity: 0 }}
@@ -175,18 +191,16 @@ export function ChatComposer({
               transition={spring}
             >
               <CircleButton
-                tone="white"
+                tone={listening ? 'dark' : 'white'}
                 size={48}
-                onClick={() => {
-                  setText('')
-                  setDictation({ value: DEMO_PROMPT, shown: 0 })
-                }}
-                aria-label="Диктовать"
+                onClick={toggleDictation}
+                aria-label={listening ? 'Остановить диктовку' : 'Диктовать'}
+                aria-pressed={listening}
               >
-                <MicIcon size={20} />
+                {listening ? <StopIcon size={18} /> : <MicIcon size={20} />}
               </CircleButton>
             </motion.span>
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
     </motion.div>

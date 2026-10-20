@@ -1,39 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from './api'
+import { ApiError, type ChatEvent } from './api'
 import { createHttpApi } from './http'
+import { getSession, setSession } from './session'
 
 function mockFetch(status: number, body: unknown) {
-  const fn = vi.fn(async () => new Response(JSON.stringify(body), { status }))
+  const fn = vi.fn(async () => new Response(status === 204 ? undefined : JSON.stringify(body), { status }))
   vi.stubGlobal('fetch', fn)
   return fn
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  setSession(null)
+})
 
 describe('http api', () => {
-  it('переводит даты и бронь в типы фронтенда', async () => {
-    mockFetch(201, {
-      id: 'bkg-1',
-      place: { id: 'scramble', name: 'Scramble place' },
-      date: '2026-10-21',
-      start: 540,
-      end: 630,
-      guests: 2,
-      invite: true,
-      code: 'A-4821',
-      status: 'confirmed',
-    })
-    const b = await createHttpApi().createBooking({
-      placeId: 'scramble',
+  it('переводит дату события в тип фронтенда', async () => {
+    mockFetch(201, { id: 'evt-1', date: '2026-10-21', title: 'Звонок', start: 540, end: 630, badge: 'work' })
+    const e = await createHttpApi().createEvent({
+      title: 'Звонок',
       date: new Date(2026, 9, 21),
       start: 540,
       end: 630,
-      guests: 2,
-      invite: true,
     })
-    expect(b.date).toEqual(new Date(2026, 9, 21))
-    expect(b.slot).toEqual({ start: 540, end: 630, conflicts: [] })
-    expect(b.restaurant.name).toBe('Scramble place')
+    expect(e.date).toEqual(new Date(2026, 9, 21))
+    expect(e.title).toBe('Звонок')
   })
 
   it('отправляет дату в формате ГГГГ-ММ-ДД', async () => {
@@ -42,15 +33,86 @@ describe('http api', () => {
     expect(fetch).toHaveBeenCalledWith('http://api/api/events?date=2026-01-05', expect.anything())
   })
 
+  it('чат читает SSE-стрим по фреймам', async () => {
+    const sse =
+      'data: {"type":"delta","text":"При"}\n\n' +
+      'data: {"type":"tool","name":"create_event","status":"run"}\n\n' +
+      'data: {"type":"delta","text":"вет"}\n\n' +
+      'data: {"type":"done"}\n\n'
+    const fetch = vi.fn(async () => new Response(sse, { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const events: ChatEvent[] = []
+    await createHttpApi().sendChat('привет', (e) => events.push(e))
+    expect(events.map((e) => e.type)).toEqual(['delta', 'tool', 'delta', 'done'])
+    expect(events.flatMap((e) => (e.type === 'delta' ? [e.text] : [])).join('')).toBe('Привет')
+    expect(fetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('ошибка чата приходит как ApiError', async () => {
+    mockFetch(400, { error: 'Текст обязателен' })
+    await expect(createHttpApi().sendChat('x', () => {})).rejects.toEqual(new ApiError(400, 'Текст обязателен'))
+  })
+
   it('показывает текст ошибки сервера', async () => {
-    mockFetch(409, { error: 'Ambient bar закрыто в это время' })
-    await expect(createHttpApi().cancelBooking('x')).rejects.toEqual(
-      new ApiError(409, 'Ambient bar закрыто в это время'),
+    mockFetch(409, { error: 'Время задано неверно' })
+    await expect(createHttpApi().createEvent({ title: 'x', date: new Date(), start: 60, end: 0 })).rejects.toEqual(
+      new ApiError(409, 'Время задано неверно'),
     )
   })
 
   it('числовые ключи месяца', async () => {
     mockFetch(200, { '8': ['work', 'food'] })
     expect(await createHttpApi().getMonthDots(2026, 9)).toEqual({ 8: ['work', 'food'] })
+  })
+})
+
+describe('сессия', () => {
+  const user = { id: 1, username: 'alice', name: 'Алиса' }
+
+  it('регистрация сохраняет сессию, токен едет в Authorization', async () => {
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify({ user, token: 'tok-1' }), { status: 201 }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    const s = await createHttpApi().register({ username: 'alice', password: 'secret1' })
+    expect(s.token).toBe('tok-1')
+    expect(getSession()?.user.username).toBe('alice')
+
+    fetch.mockImplementation(async () => new Response('[]', { status: 200 }))
+    await createHttpApi().getTasks()
+    const init = fetch.mock.calls.at(-1)?.[1] as RequestInit
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok-1')
+  })
+
+  it('вход возвращает сессию, выход её снимает', async () => {
+    mockFetch(200, { user, token: 'tok-2' })
+    await createHttpApi().login({ username: 'alice', password: 'secret1' })
+    expect(getSession()?.token).toBe('tok-2')
+    mockFetch(204, null)
+    await createHttpApi().logout()
+    expect(getSession()).toBeNull()
+  })
+
+  it('401 разлогинивает: данные больше не показываем', async () => {
+    mockFetch(200, { user, token: 'tok-3' })
+    await createHttpApi().login({ username: 'alice', password: 'secret1' })
+    mockFetch(401, { error: 'Сессия истекла' })
+    await expect(createHttpApi().getTasks()).rejects.toThrow(ApiError)
+    expect(getSession()).toBeNull()
+  })
+
+  it('поиск людей и участники задачи бьют в новые маршруты', async () => {
+    const fetchUsers = mockFetch(200, [{ id: 2, username: 'bob', name: 'Боб' }])
+    const users = await createHttpApi().searchUsers('bo')
+    expect(users[0]?.username).toBe('bob')
+    expect(fetchUsers).toHaveBeenCalledWith('/api/users?q=bo', expect.anything())
+
+    const fetchMember = mockFetch(200, { id: 'task-1', title: 'x', kind: 'task', done: false })
+    await createHttpApi().addTaskMember('task-1', 'bob')
+    expect(fetchMember).toHaveBeenCalledWith(
+      '/api/tasks/task-1/members',
+      expect.objectContaining({ method: 'POST', body: '{"username":"bob"}' }),
+    )
   })
 })

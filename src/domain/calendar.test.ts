@@ -27,9 +27,9 @@ describe('slotAt', () => {
     expect(slot.conflicts).toEqual([])
   })
 
-  it('видит пересечения, но не считает сон занятостью', () => {
+  it('видит пересечения, сон — тоже занятость', () => {
     expect(slotAt(DAY, h(10), 60).conflicts).toEqual(['call'])
-    expect(slotAt(DAY, h(7), 30).conflicts).toEqual([])
+    expect(slotAt(DAY, h(7), 30).conflicts).toEqual(['sleep'])
   })
 })
 

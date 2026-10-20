@@ -2,6 +2,7 @@ import { readFlag, writeFlag } from '../lib/storage'
 import type { CalendarApi } from './api'
 import { createHttpApi, probeServer } from './http'
 import { createLocalApi } from './local'
+import { withOfflineQueue } from './offline'
 
 const SERVER_KEY = 'ai-calendar:server'
 
@@ -14,11 +15,12 @@ const SERVER_KEY = 'ai-calendar:server'
 export async function connectApi(): Promise<CalendarApi> {
   const mode = import.meta.env.VITE_API_MODE
   const base = import.meta.env.VITE_API_URL ?? ''
+  // Серверный API оборачиваем офлайн-очередью: без сети мутации ждут в IndexedDB и повторяются.
   if (mode === 'local') return createLocalApi()
-  if (mode === 'server') return createHttpApi(base)
+  if (mode === 'server') return withOfflineQueue(createHttpApi(base), base)
   if (await probeServer(base)) {
     writeFlag(SERVER_KEY)
-    return createHttpApi(base)
+    return withOfflineQueue(createHttpApi(base), base)
   }
-  return readFlag(SERVER_KEY) ? createHttpApi(base) : createLocalApi()
+  return readFlag(SERVER_KEY) ? withOfflineQueue(createHttpApi(base), base) : createLocalApi()
 }

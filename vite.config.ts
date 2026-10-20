@@ -67,35 +67,15 @@ export default defineConfig(({ mode }) => {
             injectRegister: false,
             includeAssets: ['icon.svg', 'apple-touch-icon.png'],
             manifest,
-            workbox: {
+            // Свой service worker (src/sw.ts): тот же precache/роутинг, плюс replay
+            // офлайн-очереди мутаций по Background Sync.
+            strategies: 'injectManifest',
+            srcDir: 'src',
+            filename: 'sw.ts',
+            injectManifest: {
               globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
               // Греческие и вьетнамские начертания шрифта в интерфейсе не нужны — не кладём их в офлайн-кэш.
               globIgnores: ['**/inter-{greek,greek-ext,vietnamese}-*'],
-              navigateFallback: 'index.html',
-              navigateFallbackDenylist: [/^\/api\//],
-              cleanupOutdatedCaches: true,
-              runtimeCaching: [
-                {
-                  // Данные API: свежие из сети, офлайн — последний ответ из кэша.
-                  urlPattern: ({ url, request }) =>
-                    url.pathname.startsWith('/api/') && url.pathname !== '/api/health' && request.method === 'GET',
-                  handler: 'NetworkFirst',
-                  options: {
-                    cacheName: 'api',
-                    networkTimeoutSeconds: 4,
-                    expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
-                  },
-                },
-                {
-                  urlPattern: ({ url }) => url.origin === 'https://images.unsplash.com',
-                  handler: 'CacheFirst',
-                  options: {
-                    cacheName: 'images',
-                    cacheableResponse: { statuses: [0, 200] },
-                    expiration: { maxEntries: 80, maxAgeSeconds: 30 * 24 * 3600 },
-                  },
-                },
-              ],
             },
           }),
     ],

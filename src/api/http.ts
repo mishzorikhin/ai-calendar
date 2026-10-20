@@ -1,54 +1,39 @@
-import type { Badge, Booking, BookingStatus, CalendarEvent, ChatMessage, DatedEvent, Restaurant } from '../domain/types'
+import type { AppNotification, Badge, CalendarEvent, ChatMessage, DatedEvent, Task, User } from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
-import { ApiError, type CalendarApi } from './api'
+import { ApiError, type CalendarApi, type ChatEvent, type Session } from './api'
+import { setAuthTokenGetter } from './outbox'
+import { getSession, setSession } from './session'
+
+// Офлайн-очередь повторяет запросы тем же токеном, что и обычные вызовы.
+setAuthTokenGetter(() => getSession()?.token)
 
 // Форматы ответов сервера (server/internal/model).
 type EventDTO = CalendarEvent & { date: string }
-type BookingDTO = {
-  id: string
-  place: Restaurant
-  date: string
-  start: number
-  end: number
-  guests: number
-  invite: boolean
-  code: string
-  status: BookingStatus
-}
-
-const toBooking = (b: BookingDTO): Booking => ({
-  id: b.id,
-  restaurant: b.place,
-  slot: { start: b.start, end: b.end, conflicts: [] },
-  date: fromISODate(b.date),
-  guests: b.guests,
-  invite: b.invite,
-  code: b.code,
-  status: b.status,
-})
 
 const toEvent = ({ date, ...e }: EventDTO): DatedEvent => ({ ...e, date: fromISODate(date) })
+
+// Заголовки запроса: Bearer-сессия + JSON-тело, когда оно есть.
+function headers(init?: RequestInit): HeadersInit | undefined {
+  const token = getSession()?.token
+  const out: Record<string, string> = {}
+  if (init?.body) out['Content-Type'] = 'application/json'
+  if (token) out['Authorization'] = `Bearer ${token}`
+  return Object.keys(out).length > 0 ? out : undefined
+}
 
 export function createHttpApi(baseUrl = ''): CalendarApi {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let res: Response
     try {
-      res = await fetch(baseUrl + path, {
-        ...init,
-        headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
-      })
+      res = await fetch(baseUrl + path, { ...init, headers: headers(init) })
     } catch {
       throw new ApiError(0, 'Нет соединения с сервером')
     }
+    // Сессия протухла или удалена на сервере — возвращаемся на экран входа.
+    if (res.status === 401 && getSession()) setSession(null)
     if (res.status === 204) return undefined as T
     const body: unknown = await res.json().catch(() => null)
-    if (!res.ok) {
-      const message =
-        body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
-          ? body.error
-          : `Ошибка сервера (${res.status})`
-      throw new ApiError(res.status, message)
-    }
+    if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status))
     return body as T
   }
 
@@ -63,24 +48,97 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     async createEvent(input) {
       return toEvent(await post<EventDTO>('/api/events', { ...input, date: toISODate(input.date) }))
     },
+    async updateEvent(id, patch) {
+      const body = { ...patch, date: patch.date ? toISODate(patch.date) : undefined }
+      return toEvent(await request<EventDTO>(`/api/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }))
+    },
+    deleteEvent: (id) => request<void>(`/api/events/${id}`, { method: 'DELETE' }),
     async getMonthDots(year, month) {
       const raw = await request<Record<string, Badge[]>>(`/api/month?year=${year}&month=${month + 1}`)
       return Object.fromEntries(Object.entries(raw).map(([day, badges]) => [Number(day), badges]))
     },
-    getPlaces: () => request<Restaurant[]>('/api/places'),
-    getReviews: (placeId) => request(`/api/places/${encodeURIComponent(placeId)}/reviews`),
-    async getBookings() {
-      return (await request<BookingDTO[]>('/api/bookings')).map(toBooking)
-    },
-    async createBooking(input) {
-      return toBooking(await post<BookingDTO>('/api/bookings', { ...input, date: toISODate(input.date) }))
-    },
-    async cancelBooking(id) {
-      return toBooking(await request<BookingDTO>(`/api/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' }))
-    },
+    getTasks: () => request<Task[]>('/api/tasks'),
+    createTask: (input) => post<Task>('/api/tasks', input),
+    updateTask: (id, patch) => request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
     getMessages: () => request<ChatMessage[]>('/api/messages'),
     addMessage: (role, text) => post<ChatMessage>('/api/messages', { role, text }),
+    async sendChat(text, onEvent) {
+      let res: Response
+      try {
+        res = await fetch(`${baseUrl}/api/chat`, {
+          method: 'POST',
+          headers: headers({ body: '{}' }),
+          body: JSON.stringify({ text }),
+        })
+      } catch {
+        throw new ApiError(0, 'Нет соединения с сервером')
+      }
+      if (!res.ok || !res.body) {
+        const body: unknown = await res.json().catch(() => null)
+        throw new ApiError(res.status, errorMessage(body, res.status))
+      }
+      // SSE: фреймы вида «data: {json}» разделены пустой строкой.
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let cut = buf.indexOf('\n\n')
+        while (cut >= 0) {
+          for (const line of buf.slice(0, cut).split('\n')) {
+            if (!line.startsWith('data:')) continue
+            try {
+              onEvent(JSON.parse(line.slice(5)) as ChatEvent)
+            } catch {
+              /* битый фрейм пропускаем */
+            }
+          }
+          buf = buf.slice(cut + 2)
+          cut = buf.indexOf('\n\n')
+        }
+      }
+    },
+
+    me: () => request<User>('/api/me'),
+    async updateMe(name) {
+      const user = await request<User>('/api/me', { method: 'PATCH', body: JSON.stringify({ name }) })
+      const s = getSession()
+      if (s) setSession({ ...s, user })
+      return user
+    },
+    async login(input) {
+      const s = await post<Session>('/api/auth/login', input)
+      setSession(s)
+      return s
+    },
+    async register(input) {
+      const s = await post<Session>('/api/auth/register', input)
+      setSession(s)
+      return s
+    },
+    async logout() {
+      try {
+        await post<void>('/api/auth/logout', {})
+      } finally {
+        setSession(null)
+      }
+    },
+    searchUsers: (query) => request<User[]>(`/api/users?q=${encodeURIComponent(query)}`),
+    getNotifications: () => request<AppNotification[]>('/api/notifications'),
+    markNotificationsRead: () => post<void>('/api/notifications/read', {}),
+    addTaskMember: (taskId, username) => post<Task>(`/api/tasks/${taskId}/members`, { username }),
+    removeTaskMember: (taskId, username) =>
+      request<Task>(`/api/tasks/${taskId}/members/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   }
+}
+
+function errorMessage(body: unknown, status: number): string {
+  return body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+    ? body.error
+    : `Ошибка сервера (${status})`
 }
 
 /** Сервер доступен, если /api/health отвечает быстро и правильно. */

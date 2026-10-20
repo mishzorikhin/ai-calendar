@@ -21,6 +21,20 @@
   justify-content: center;
 }
 
+.side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sideLabel {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: rgba(55, 40, 65, 0.6);
+}
+
 .centerInner {
   position: absolute;
   inset: 0;

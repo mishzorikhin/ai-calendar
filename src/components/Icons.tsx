@@ -214,25 +214,23 @@ export const EditIcon = (p: IconProps) => (
   </Svg>
 )
 
-/** Логотип ресторана: красная вилка на чёрном. */
-export const ForkLogo = ({ size = 22 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-    <path
-      d="M7 4v5.5a2.5 2.5 0 0 0 2 2.45V20M9 4v5M11 4v5.5a2.5 2.5 0 0 1-2 2.45M15.5 20V4c1.8.6 3 2.6 3 5.2 0 2.3-1.2 3.6-3 3.8"
-      fill="none"
-      stroke="#ff3d4f"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+export const TrashIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 6.5h15M9.5 6V4.5h5V6.5M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-13M10 10.5v6M14 10.5v6" />
+  </Svg>
+)
+
+export const StopIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="6.5" y="6.5" width="11" height="11" rx="3" fill="currentColor" stroke="none" />
+  </Svg>
 )
 
 export const BADGE_ICON = {
-  sleep: SparkIcon,
+  sleep: MoonIcon,
   routine: SparkIcon,
-  work: StarIcon,
+  work: BriefcaseIcon,
   food: StarIcon,
   sport: DumbbellIcon,
-  read: SparkIcon,
+  read: BookmarkIcon,
 } as const

@@ -8,7 +8,6 @@ export type CalendarEvent = {
   start: number
   end: number
   badge: Badge
-  sleepGraph?: boolean
   highlight?: boolean
 }
 
@@ -33,52 +32,6 @@ export type Slot = {
   conflicts: string[]
 }
 
-export type Restaurant = {
-  id: string
-  name: string
-  cuisine: string
-  rating: number
-  /** Минут пешком. */
-  walkMinutes: number
-  distance: string
-  address: string
-  price: string
-  /** Часы работы в минутах от полуночи; закрытие после полуночи — больше 24 × 60. */
-  opensAt: number
-  closesAt: number
-  description: string
-  tint: string
-  /** Фон-заглушка, пока фото грузится или если оно недоступно. */
-  art: string
-  photo: string
-  tags: string[]
-  /** Положение метки на радаре, в долях от радиуса (x, y от центра). */
-  radar: readonly [number, number]
-}
-
-/** Что ассистент понял из запроса. Каждый параметр можно поправить до начала поиска. */
-export type RequestParams = {
-  dayOffset: number
-  guests: number
-  radiusKm: number
-  invite: boolean
-}
-
-export type BookingStatus = 'confirmed' | 'cancelled'
-
-export type Booking = {
-  id: string
-  restaurant: Restaurant
-  slot: Slot
-  date: Date
-  guests: number
-  invite: boolean
-  code: string
-  status: BookingStatus
-}
-
-export type Review = { name: string; initials: string; color: string; rating: number; text: string }
-
 /** Новое событие пользователя (до сохранения). */
 export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   date: Date
@@ -86,30 +39,76 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   badge?: Badge
 }
 
-/** Запрос на бронь, которую ассистент подтвердил по телефону. */
-export type NewBooking = {
-  placeId: string
-  date: Date
-  start: number
-  end: number
-  guests: number
-  invite: boolean
+/** Частичное обновление события. subtitle: '' очищает место/заметку. */
+export type EventPatch = {
+  title?: string
+  subtitle?: string
+  date?: Date
+  start?: number
+  end?: number
+  badge?: Badge
 }
 
 /** Значки событий по числам месяца. */
 export type MonthDots = Readonly<Record<number, readonly Badge[]>>
 
-export type TranscriptLine = { at: number; who: 'ai' | 'place'; text: string }
-
 export type ChatMessage = { id: number; role: 'user' | 'ai'; text: string }
 
-export type Person = {
+/** Тег задачи — свободный текст; PRESET_TAGS в PrepCard дают подсказки с иконками. */
+export type TaskCategory = string
+export type TaskKind = 'task' | 'goal'
+
+/** Пользователь аккаунта: логин для @упоминаний, name — отображаемое имя. */
+export type User = {
+  id: number
+  username: string
   name: string
-  /** Винительный падеж: «пригласить Глеба». */
-  nameAccusative: string
-  /** Дательный падеж: «Глебу отправлено приглашение». */
-  nameDative: string
-  initials: string
-  photo: string
-  color: string
+}
+
+/** Уведомление аккаунта («вам поделились задачей»), новые первыми. */
+export type AppNotification = {
+  id: number
+  text: string
+  taskId?: string
+  from?: User
+  read: boolean
+  createdAt: string
+}
+
+/** Задача или цель из блока «Задачи и цели» на главном экране. */
+export type Task = {
+  id: string
+  title: string
+  subtitle?: string
+  kind: TaskKind
+  category?: TaskCategory
+  done: boolean
+  /** Дедлайн цели, YYYY-MM-DD. */
+  due?: string
+  /** Совместная работа: владелец и участники (только в server-режиме). */
+  owner?: User
+  members?: User[]
+  /** Роль текущего пользователя: владелец удаляет задачу, участник — выходит из неё. */
+  role?: 'owner' | 'member'
+}
+
+/** Новая задача (до сохранения). members — логины участников, с которыми поделиться. */
+export type NewTask = {
+  title: string
+  subtitle?: string
+  kind?: TaskKind
+  category?: TaskCategory
+  due?: string
+  members?: string[]
+}
+
+/** Частичное обновление задачи. category: '' очищает категорию; members — добавить участников. */
+export type TaskPatch = {
+  title?: string
+  subtitle?: string
+  kind?: TaskKind
+  category?: TaskCategory | ''
+  done?: boolean
+  due?: string
+  members?: string[]
 }

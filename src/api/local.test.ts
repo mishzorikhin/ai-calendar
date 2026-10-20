@@ -27,31 +27,19 @@ class MemoryStorage implements Storage {
 const day = new Date(2026, 9, 21)
 
 describe('local api', () => {
-  it('бронь появляется в дне и месяце, отмена убирает её', async () => {
+  it('событие пользователя появляется в дне и месяце', async () => {
     const api = createLocalApi(new MemoryStorage())
-    const booking = await api.createBooking({
-      placeId: 'scramble',
-      date: day,
-      start: 540,
-      end: 630,
-      guests: 2,
-      invite: true,
-    })
-    expect(booking.code).toBe('A-4821')
+    await api.createEvent({ title: 'Звонок маме', date: day, start: 600, end: 660, badge: 'work' })
 
     const events = await api.getEvents(day)
-    expect(events.some((e) => e.id === `booking-${booking.id}`)).toBe(true)
-    expect((await api.getMonthDots(2026, 9))[21]).toContain('food')
-
-    await api.cancelBooking(booking.id)
-    expect((await api.getEvents(day)).some((e) => e.id === `booking-${booking.id}`)).toBe(false)
+    expect(events.some((e) => e.title === 'Звонок маме')).toBe(true)
+    expect((await api.getMonthDots(2026, 9))[21]).toContain('work')
   })
 
-  it('не бронирует закрытое место', async () => {
+  it('отклоняет пустое название и неверное время', async () => {
     const api = createLocalApi(new MemoryStorage())
-    await expect(
-      api.createBooking({ placeId: 'ambient', date: day, start: 540, end: 630, guests: 2, invite: false }),
-    ).rejects.toBeInstanceOf(ApiError)
+    await expect(api.createEvent({ title: '  ', date: day, start: 600, end: 660 })).rejects.toBeInstanceOf(ApiError)
+    await expect(api.createEvent({ title: 'x', date: day, start: 660, end: 600 })).rejects.toBeInstanceOf(ApiError)
   })
 
   it('сохраняет данные между запусками', async () => {
@@ -65,33 +53,33 @@ describe('local api', () => {
     expect((await second.getMessages()).at(-1)?.text).toBe('Привет')
   })
 
-  it('проверяет вход так же, как сервер', async () => {
+  it('чат без сервера отвечает заглушкой и сохраняет реплики', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const events: string[] = []
+    await api.sendChat('привет', (e) => events.push(e.type))
+    expect(events.at(-1)).toBe('done')
+    const messages = await api.getMessages()
+    expect(messages.at(-2)).toMatchObject({ role: 'user', text: 'привет' })
+    expect(messages.at(-1)?.role).toBe('ai')
+  })
+
+  it('проверяет длины и диапазон времени так же, как сервер', async () => {
     const api = createLocalApi(new MemoryStorage())
     const event = { date: day, start: 600, end: 660 }
-    await expect(api.createEvent({ ...event, title: '  ' })).rejects.toMatchObject({ status: 400 })
     await expect(api.createEvent({ ...event, title: 'я'.repeat(121) })).rejects.toMatchObject({ status: 400 })
     await expect(api.createEvent({ ...event, title: 'x', subtitle: 'я'.repeat(201) })).rejects.toMatchObject({
       status: 400,
     })
     await expect(api.createEvent({ ...event, title: 'x', end: 1500 })).rejects.toMatchObject({ status: 400 })
     await expect(api.createEvent({ ...event, title: 'x', start: -5 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createTask({ title: 'x', subtitle: 'я'.repeat(201) })).rejects.toMatchObject({ status: 400 })
 
-    const booking = { placeId: 'scramble', date: day, start: 540, end: 630, guests: 2, invite: false }
-    await expect(api.createBooking({ ...booking, guests: 9 })).rejects.toMatchObject({ status: 400 })
-    await expect(api.createBooking({ ...booking, guests: 0 })).rejects.toMatchObject({ status: 400 })
-    await expect(api.createBooking({ ...booking, end: 500 })).rejects.toMatchObject({ status: 400 })
+    const created = await api.createEvent({ ...event, title: 'x' })
+    await expect(api.updateEvent(created.id, { title: '  ' })).rejects.toMatchObject({ status: 400 })
+    await expect(api.updateEvent(created.id, { end: 2000 })).rejects.toMatchObject({ status: 400 })
 
     await expect(api.addMessage('user', '   ')).rejects.toMatchObject({ status: 400 })
     await expect(api.addMessage('user', 'я'.repeat(2001))).rejects.toMatchObject({ status: 400 })
-  })
-
-  it('не даёт забронировать пересекающееся время; после отмены можно', async () => {
-    const api = createLocalApi(new MemoryStorage())
-    const input = { placeId: 'scramble', date: day, start: 540, end: 630, guests: 2, invite: false }
-    const first = await api.createBooking(input)
-    await expect(api.createBooking({ ...input, start: 600, end: 700 })).rejects.toMatchObject({ status: 409 })
-    await api.createBooking({ ...input, start: 630, end: 700 })
-    await api.cancelBooking(first.id)
-    await api.createBooking(input)
+    await expect(api.sendChat('я'.repeat(2001), () => {})).rejects.toMatchObject({ status: 400 })
   })
 })

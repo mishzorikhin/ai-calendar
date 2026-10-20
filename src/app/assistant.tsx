@@ -1,12 +1,11 @@
 import { createContext, use, useMemo, useState, type ReactNode } from 'react'
-import { DEMO_PROMPT } from '../mocks/assistant'
 
 /** idle — микрофон выключен, recording — идёт запись, review — текст распознан и ждёт проверки. */
 export type VoiceState = 'idle' | 'recording' | 'review'
 
 /** Состояние ассистента в интерфейсе. История чата — в api/queries (useMessages). */
 type Assistant = {
-  /** Запрос, с которым работает экран ассистента. */
+  /** Текст, который чат отправит сразу при открытии (голосовой ввод, «поручить ассистенту»). */
   prompt: string
   setPrompt: (p: string) => void
   /** Текст, который откроется в поле чата (например, чтобы поправить запрос). */
@@ -19,7 +18,7 @@ type Assistant = {
 const AssistantContext = createContext<Assistant | null>(null)
 
 export function AssistantProvider({ children }: { children: ReactNode }) {
-  const [prompt, setPrompt] = useState(DEMO_PROMPT)
+  const [prompt, setPrompt] = useState('')
   const [draft, setDraft] = useState('')
   const [voice, setVoice] = useState<VoiceState>('idle')
   const value = useMemo<Assistant>(

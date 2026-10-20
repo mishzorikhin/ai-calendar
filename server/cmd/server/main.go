@@ -3,7 +3,12 @@
 // Переменные окружения:
 //
 //	PORT          порт HTTP (по умолчанию 8080)
-//	DATA_DIR      каталог с data.json (по умолчанию ./data; пусто — хранить в памяти)
+//	DATABASE_URL  подключение к PostgreSQL; если задано, данные в БД
+//	DATA_DIR      каталог с data.json (по умолчанию ./data; пусто — хранить в памяти;
+//	              с DATABASE_URL — источник однократного импорта в базу)
+//	LLM_API_KEY   ключ OpenAI-совместимого API для разбора запросов ассистента
+//	LLM_BASE_URL  адрес API (по умолчанию https://api.neuraldeep.ru/v1)
+//	LLM_MODEL     модель (по умолчанию qwen3.6-unlim-noreason)
 //	STATIC_DIR    раздавать фронтенд с диска вместо встроенного (для разработки)
 //	CORS_ORIGINS  источники через запятую, которым разрешён доступ к API
 package main
@@ -23,6 +28,7 @@ import (
 	"time"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/api"
+	"github.com/mishzorikhin/ai-calendar/server/internal/llm"
 	"github.com/mishzorikhin/ai-calendar/server/internal/store"
 	"github.com/mishzorikhin/ai-calendar/server/web"
 )
@@ -47,7 +53,7 @@ func main() {
 }
 
 func run(port string) error {
-	st, err := store.Open(env("DATA_DIR", "./data"))
+	st, err := openStore()
 	if err != nil {
 		return err
 	}
@@ -61,6 +67,7 @@ func run(port string) error {
 		Addr: ":" + port,
 		Handler: api.New(api.Options{
 			Store:       st,
+			LLM:         newLLM(),
 			Web:         webFS,
 			CORSOrigins: splitList(os.Getenv("CORS_ORIGINS")),
 			Version:     version,
@@ -93,6 +100,39 @@ func run(port string) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// newLLM собирает клиента языковой модели; без LLM_API_KEY ассистент работает без неё.
+func newLLM() *llm.Client {
+	key := os.Getenv("LLM_API_KEY")
+	if key == "" {
+		return nil
+	}
+	return llm.New(llm.Config{
+		BaseURL: env("LLM_BASE_URL", "https://api.neuraldeep.ru/v1"),
+		APIKey:  key,
+		Model:   env("LLM_MODEL", "qwen3.6-unlim-noreason"),
+	}, 20*time.Second)
+}
+
+// openStore выбирает хранилище: PostgreSQL по DATABASE_URL, иначе JSON-файл из DATA_DIR.
+func openStore() (store.Store, error) {
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		st, err := store.OpenPostgres(ctx, dsn, env("DATA_DIR", "./data"))
+		if err != nil {
+			return nil, err
+		}
+		slog.Info("хранилище: PostgreSQL")
+		return st, nil
+	}
+	st, err := store.Open(env("DATA_DIR", "./data"))
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("хранилище: JSON-файл")
+	return st, nil
 }
 
 func checkHealth(port string) int {

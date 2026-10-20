@@ -4,12 +4,41 @@ services:
       context: .
       args:
         VERSION: ${VERSION:-dev}
+        # Базовые образы можно переопределить зеркалом (см. README).
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        GO_IMAGE: ${GO_IMAGE:-golang:1.24-alpine}
     image: ai-calendar:latest
     ports:
-      - '8080:8080'
+      # Хост-порт переопределяется APP_PORT (на сервере 8080 может быть занят).
+      - '${APP_PORT:-8080}:8080'
+    environment:
+      DATABASE_URL: postgres://calendar:${DB_PASSWORD:-calendar}@db:5432/calendar?sslmode=disable
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.neuraldeep.ru/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3.6-unlim-noreason}
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
+      # Старый data.json остаётся примонтирован: он импортируется в базу однократно.
       - data:/data
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: calendar
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-calendar}
+      POSTGRES_DB: calendar
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U calendar -d calendar']
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:
   data:
+  db-data:

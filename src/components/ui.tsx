@@ -1,8 +1,6 @@
 import { motion, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { spring } from '../lib/motion'
-import type { Person } from '../domain/types'
-import { ForkLogo } from './Icons'
 import styles from './ui.module.css'
 
 type PressableProps = HTMLMotionProps<'button'> & { scale?: number }
@@ -44,42 +42,6 @@ export function Pill({ tone = 'white', small, className, ...rest }: PillProps) {
   )
 }
 
-type SmartImageProps = {
-  src: string
-  art: string
-  className?: string
-  style?: CSSProperties
-  children?: ReactNode
-}
-
-/** Изображение с художественной заглушкой: если фото не загрузится, остаётся градиент. */
-export function SmartImage(props: SmartImageProps) {
-  // Ключ по src: при смене фото состояние загрузки начинается заново.
-  return <SmartImageInner key={props.src} {...props} />
-}
-
-function SmartImageInner({ src, art, className, style, children }: SmartImageProps) {
-  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
-  return (
-    <div className={`${styles.smartImage} ${className ?? ''}`} style={{ background: art, ...style }}>
-      <div className={styles.bokeh} aria-hidden="true" />
-      {state !== 'error' && (
-        <motion.img
-          src={src}
-          alt=""
-          draggable={false}
-          initial={false}
-          animate={{ opacity: state === 'ok' ? 1 : 0 }}
-          transition={{ duration: 0.5 }}
-          onLoad={() => setState('ok')}
-          onError={() => setState('error')}
-        />
-      )}
-      {children}
-    </div>
-  )
-}
-
 type AvatarProps = {
   src?: string
   initials: string
@@ -105,28 +67,6 @@ function AvatarInner({ src, initials, color = 'var(--lavender)', size = 32, ring
     >
       <span>{initials}</span>
       {src && !failed && <img src={src} alt="" draggable={false} onError={() => setFailed(true)} />}
-    </span>
-  )
-}
-
-/** Аватар человека из данных (друг, вы). */
-export function PersonAvatar({ person, size, ring }: { person: Person; size?: number; ring?: boolean }) {
-  return (
-    <Avatar
-      src={person.photo}
-      initials={person.initials}
-      color={person.color}
-      size={size}
-      ring={ring}
-      label={person.name}
-    />
-  )
-}
-
-export function RestaurantLogo({ size = 32 }: { size?: number }) {
-  return (
-    <span className={`${styles.avatar} ${styles.avatarRing} ${styles.logo}`} style={{ width: size, height: size }}>
-      <ForkLogo size={size * 0.62} />
     </span>
   )
 }

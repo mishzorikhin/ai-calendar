@@ -1,6 +1,5 @@
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
 import { useMonthDots } from '../../api/queries'
-import { StarIcon } from '../../components/Icons'
 import { MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, monthGrid } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
 import { spring } from '../../lib/motion'
@@ -60,7 +59,7 @@ export function MonthGrid({
               if (!d) return <span key={`empty-${i}`} />
               const isToday = isSameDay(d, today)
               const isPicked = picked !== null && isSameDay(d, picked)
-              const badges = isToday ? (['sleep'] as const) : (dots?.[d.getDate()] ?? [])
+              const badges = dots?.[d.getDate()] ?? []
               return (
                 <motion.button
                   key={d.getDate()}
@@ -81,12 +80,11 @@ export function MonthGrid({
                   )}
                   <span className={`${styles.num} tnum`}>{d.getDate()}</span>
                   {badges.length > 0 && (
-                    <span className={styles.dots}>
-                      {badges.map((b, j) => (
-                        <i key={`${b}-${j}`} style={{ background: BADGE_COLOR[b] }}>
-                          <StarIcon size={8} />
-                        </i>
+                    <span className={styles.dots} aria-hidden="true">
+                      {badges.slice(0, 2).map((b, j) => (
+                        <i key={`${b}-${j}`} style={{ background: BADGE_COLOR[b] }} />
                       ))}
+                      <span className={`${styles.dotCount} tnum`}>{badges.length}</span>
                     </span>
                   )}
                 </motion.button>

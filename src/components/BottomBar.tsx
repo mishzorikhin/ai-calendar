@@ -5,6 +5,7 @@ import { useBarContext } from '../app/bar'
 import { useComposer } from '../app/composer'
 import { useNavigation } from '../app/navigation'
 import { softSpring, spring } from '../lib/motion'
+import { speechSupported } from '../lib/speech'
 import { readFlag, writeFlag } from '../lib/storage'
 import { InfinityIcon, PlusIcon } from './Icons'
 import { CircleButton, Pressable, Waveform } from './ui'
@@ -38,19 +39,23 @@ export function BottomBar() {
       aria-label="Панель действий"
       aria-hidden={state.hidden}
       inert={state.hidden}
+      onPointerDown={hint ? dismissHint : undefined}
     >
-      <CircleButton
-        tone="pink"
-        size={48}
-        aria-label="Ассистент"
-        onClick={() => {
-          dismissHint()
-          go('chat')
-        }}
-        className={state.aiActive || voiceActive ? styles.aiActive : undefined}
-      >
-        <InfinityIcon size={22} />
-      </CircleButton>
+      <span className={styles.side}>
+        <CircleButton
+          tone="pink"
+          size={48}
+          aria-label="Ассистент"
+          onClick={() => {
+            dismissHint()
+            go('chat')
+          }}
+          className={state.aiActive || voiceActive ? styles.aiActive : undefined}
+        >
+          <InfinityIcon size={22} />
+        </CircleButton>
+        <span className={styles.sideLabel}>Ассистент</span>
+      </span>
 
       <div className={styles.center}>
         <div ref={setSlot} className={styles.slot} hidden={voiceActive} />
@@ -67,7 +72,7 @@ export function BottomBar() {
               {voice === 'review' ? (
                 <span className={styles.text}>Проверьте текст запроса</span>
               ) : (
-                <Pressable className={styles.voice} onClick={() => setVoice('idle')} aria-label="Остановить запись">
+                <Pressable className={styles.voice} onClick={() => setVoice('review')} aria-label="Закончить диктовку">
                   <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
                 </Pressable>
               )}
@@ -76,9 +81,12 @@ export function BottomBar() {
         </AnimatePresence>
       </div>
 
-      <CircleButton tone="glass" size={48} aria-label="Новое событие" onClick={() => composer.open()}>
-        <PlusIcon size={22} />
-      </CircleButton>
+      <span className={styles.side}>
+        <CircleButton tone="glass" size={48} aria-label="Новое событие" onClick={() => composer.open()}>
+          <PlusIcon size={22} />
+        </CircleButton>
+        <span className={styles.sideLabel}>Событие</span>
+      </span>
 
       <AnimatePresence>
         {hint && route === 'home' && !state.hidden && !voiceActive && (
@@ -91,7 +99,7 @@ export function BottomBar() {
             transition={{ ...spring, delay: 0.8 }}
           >
             <b>Это ваш ассистент</b>
-            Скажите или напишите, что нужно запланировать: он найдёт время, место и забронирует.
+            Скажите или напишите, что нужно запланировать — он найдёт свободное время и добавит событие.
             <Pressable className={styles.hintBtn} onClick={dismissHint}>
               Понятно
             </Pressable>
@@ -102,9 +110,10 @@ export function BottomBar() {
   )
 }
 
-/** «Нажмите и говорите» — запускает голосовой ввод. */
+/** «Нажмите и говорите» — запускает голосовой ввод; скрыто там, где браузер не умеет распознавать речь. */
 export function TapToSay() {
   const { setVoice } = useAssistant()
+  if (!speechSupported) return null
   return (
     <Pressable className={styles.say} onClick={() => setVoice('recording')} scale={0.97}>
       Нажмите и говорите

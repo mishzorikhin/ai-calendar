@@ -22,6 +22,7 @@ export function PartCard({
   dateKey,
   nowMins,
   onCreate,
+  onEvent,
 }: {
   part: DayPart
   index: number
@@ -33,6 +34,8 @@ export function PartCard({
   nowMins: number | null
   /** Создать событие на это время. */
   onCreate: (start: number) => void
+  /** Открыть событие для правки. */
+  onEvent: (event: CalendarEvent) => void
 }) {
   const Icon = PART_ICON[part.id]
   const hours = (part.to - part.from) / 60
@@ -118,7 +121,7 @@ export function PartCard({
                   </span>
                 ))}
                 {events.map((e, i) => (
-                  <EventCard key={e.id} event={e} from={part.from} to={part.to} index={i} />
+                  <EventCard key={e.id} event={e} from={part.from} to={part.to} index={i} onOpen={onEvent} />
                 ))}
                 {nowInside && nowMins !== null && (
                   <span className={styles.now} style={{ top: ((nowMins - part.from) / 60) * HOUR_H }}>

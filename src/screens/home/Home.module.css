@@ -151,6 +151,22 @@
   margin: 22px 12px 10px;
   font-size: 13px;
   color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.labelAdd {
+  /* Видимый круг 28px (фон обрезан по content-box), зона нажатия — полные 44px. */
+  width: 44px;
+  height: 44px;
+  padding: 8px;
+  margin: -8px;
+  border-radius: 50%;
+  background: var(--surface);
+  background-clip: content-box;
+  box-shadow: var(--shadow-sm);
+  color: var(--ink-2);
 }
 
 .bookedWrap {
@@ -380,12 +396,39 @@
   margin-top: 10px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 18px 12px 18px 20px;
+  padding: 18px 12px 18px 16px;
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+.prep .cardText {
+  flex: 1;
+  min-width: 0;
+}
+
+.prepDone .cardTitle {
+  text-decoration: line-through;
+  color: var(--ink-3);
+}
+
+.prepCheck {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  color: #fff;
+  background: transparent;
+  transition:
+    background 0.25s,
+    box-shadow 0.25s;
+}
+
+.prepCheck[aria-pressed='true'] {
+  background: var(--ink);
+  box-shadow: none;
 }
 
 .segment {
@@ -439,4 +482,408 @@
 .starOff {
   display: inline-flex;
   color: #d4d4da;
+}
+
+.free {
+  width: 100%;
+  margin-top: 30px;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.failCard {
+  margin-top: 30px;
+  padding: 20px 18px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.failTitle {
+  font-size: 22px;
+}
+
+.failRetry {
+  margin-top: 8px;
+}
+
+.flex {
+  display: inline-flex;
+}
+
+.doneToggle {
+  width: 100%;
+  height: 40px;
+  margin-top: 6px;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.doneWrap {
+  overflow: hidden;
+}
+
+.tagChip {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 19px;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+  background: var(--surface-2);
+}
+
+.tagChipSet {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.tagLabel {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagSheet {
+  display: flex;
+  flex-direction: column;
+}
+
+.tagSheetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.tagSheetHead h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.tagRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.tagPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tagInput {
+  width: 100%;
+  height: 48px;
+  margin-top: 14px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  font-size: 16px;
+}
+
+.tagActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+.cardTextBtn {
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.sheetLabel {
+  margin: 16px 4px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sheetActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sheetSave {
+  width: 100%;
+  height: 54px;
+}
+
+.sheetError {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #b42318;
+}
+
+.delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 14.5px;
+  color: #b42318;
+}
+
+.deleteSure {
+  border-radius: 22px;
+  background: rgba(180, 35, 24, 0.12);
+}
+
+/* --- Аккаунт и совместные задачи ----------------------------------------- */
+
+.topRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.accountBtn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.accountDot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 2.5px var(--bg);
+}
+
+.accountHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 0 4px;
+}
+
+.accountNames {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.accountName {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.nameBtn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.nameEdit {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.nameInput {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.accountFoot {
+  display: flex;
+  justify-content: center;
+  margin-top: 22px;
+  padding-bottom: 4px;
+}
+
+.notifEmpty {
+  margin: 4px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.notifList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.notif {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.notifNew {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px rgba(58, 120, 242, 0.35);
+}
+
+.notifIcon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.notifBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.notifText {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.notifMeta {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.notifDot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+/* Люди общей задачи на карточке. */
+.people {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.peopleMore {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* Участники в шторке задачи. */
+.memberRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.memberChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 5px;
+  border-radius: 17px;
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.memberOwner {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.memberX {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--ink-3);
+}
+
+.memberX:active {
+  color: var(--ink);
+}
+
+.memberInputWrap {
+  position: relative;
+}
+
+.memberDrop {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.memberOption {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  text-align: left;
+}
+
+.memberOption:active {
+  background: var(--surface-2);
+}
+
+.memberOptionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14.5px;
+}
+
+.memberPick {
+  color: var(--ink-3);
+}
+
+.memberHint {
+  margin: 8px 4px 0;
+  font-size: 12px;
+  color: var(--ink-3);
 }
