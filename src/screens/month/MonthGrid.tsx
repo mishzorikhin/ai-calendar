@@ -2,6 +2,7 @@ import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
 import { useMonthDots } from '../../api/queries'
 import { MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, monthGrid } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
+import { useDragClickGuard } from '../../lib/hooks'
 import { spring } from '../../lib/motion'
 import styles from './Month.module.css'
 
@@ -25,6 +26,7 @@ export function MonthGrid({
   onSwipe: (delta: number) => void
 }) {
   const { data: dots } = useMonthDots(view.year, view.month)
+  const clickGuard = useDragClickGuard()
 
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.x < -SWIPE_OFFSET || info.velocity.x < -SWIPE_VELOCITY) onSwipe(1)
@@ -53,6 +55,7 @@ export function MonthGrid({
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.18}
+            {...clickGuard}
             onDragEnd={onDragEnd}
           >
             {monthGrid(view.year, view.month).map((d, i) => {

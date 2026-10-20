@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ArrowRightIcon, BackIcon } from '../../components/Icons'
 import { Pressable } from '../../components/ui'
 import { MONTHS_GENITIVE, WEEKDAYS, WEEKDAYS_SHORT, addDays, isSameDay, isWeekend, startOfWeek } from '../../lib/dates'
+import { useDragClickGuard } from '../../lib/hooks'
 import { spring } from '../../lib/motion'
 import styles from './Day.module.css'
 
@@ -12,6 +13,7 @@ const SWIPE_OFFSET = 50
 export function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date) => void }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(selected))
   const [dir, setDir] = useState(0)
+  const clickGuard = useDragClickGuard()
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const today = new Date()
 
@@ -42,6 +44,7 @@ export function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.2}
+            {...clickGuard}
             onDragEnd={onDragEnd}
           >
             {days.map((d, i) => {
