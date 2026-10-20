@@ -6,14 +6,17 @@
 
 ## Что это за проект
 
-Мобильный AI-календарь (PWA). Пользователь одной фразой просит ассистента что-то запланировать
-(«завтрак с Глебом в уютном месте рядом»), ассистент находит свободное окно, подбирает место,
-звонит в ресторан и сохраняет бронь в календарь.
+Мобильный AI-календарь (PWA). Пользователь пишет или диктует ассистенту («поставь встречу с Глебом
+на завтра после обеда»), а тот через инструменты смотрит расписание, ищет свободные окна и
+создаёт, меняет и удаляет события и задачи.
 
-- **Фронтенд** — React 19 + TypeScript (strict) + Vite 8 + framer-motion + CSS Modules + TanStack Query, PWA через vite-plugin-pwa.
-- **Бэкенд** — Go 1.24, только стандартная библиотека (`server/`), хранение в JSON-файле.
-- **Поставка** — один Docker-образ: Go-бинарник со встроенным UI (`go:embed`).
-- **Ассистент пока заскриптован** (разбор запроса и звонок — демо), а события, брони и чат — настоящие данные на сервере.
+- **Фронтенд** — React 19 + TypeScript (strict) + Vite 8 + framer-motion + CSS Modules + TanStack Query, PWA (свой service worker `src/sw.ts`, Workbox через `injectManifest`).
+- **Бэкенд** — Go 1.24 (`server/`): стандартная библиотека + `pgx/v5` для PostgreSQL. Хранилище — JSON-файл или PostgreSQL (если задан `DATABASE_URL`).
+- **Аккаунты** — регистрация и вход по логину и паролю, Bearer-токен. События и чат личные; **задачи и цели** можно делить с другими (`@логин` в тексте или список участников), участники получают уведомления.
+- **Ассистент** — настоящий LLM с function calling (OpenAI-совместимый API, SSE-стрим), `server/internal/llm` + `POST /api/chat`. Без `LLM_API_KEY` отвечает заглушкой.
+- **Офлайн** — мутации событий и задач при обрыве сети ждут в очереди (`api/outbox.ts`, IndexedDB) и доигрываются сами.
+- **Два режима данных:** серверный и локальный (моки + `localStorage`, без аккаунта — для GitHub Pages и работы над UI).
+- **Поставка** — один Docker-образ: Go-бинарник со встроенным UI (`go:embed`); `docker-compose` поднимает ещё и PostgreSQL 17.
 - **Главное в продукте — дизайн и анимации.** Визуальное качество важнее количества функций.
 
 ## Язык
@@ -36,55 +39,71 @@
 | Всё сразу                                | `make check`                                                     |
 | Сборка PWA                               | `npm run build` → `dist/`                                        |
 | Однофайловая сборка (превью без сервера) | `npm run build:single` → `dist-single/index.html`                |
-| Docker                                   | `docker compose up --build` → http://localhost:8080              |
+| Docker (приложение + PostgreSQL)         | `docker compose up --build` → http://localhost:8080              |
+| Тест PostgreSQL-хранилища                | `TEST_DATABASE_URL=postgres://… go test ./internal/store`        |
 
-Без запущенного Go-сервера UI сам переходит в **локальный режим** (моки + `localStorage`), поэтому
-для работы над интерфейсом сервер не обязателен. Явно: `VITE_API_MODE=local|server`.
+Без запущенного Go-сервера UI сам переходит в **локальный режим** (моки + `localStorage`, без входа),
+поэтому для работы над интерфейсом сервер не обязателен. Явно: `VITE_API_MODE=local|server`,
+адрес бэкенда на другом домене — `VITE_API_URL`. Если приложение уже работало с сервером, а сеть
+пропала, оно остаётся в серверном режиме (кэш + офлайн-очередь), а не откатывается к моками.
+Без `LLM_API_KEY` чат отвечает заглушкой; в `make api` ключ можно передать через окружение.
 
 ## Структура
 
 ```
 src/
-  api/        источник данных: api.ts (интерфейс), http.ts (Go-сервер), local.ts (браузер),
-              connect.ts (выбор режима), queries.ts (хуки TanStack Query и ключи кэша)
+  api/        источник данных: api.ts (интерфейс CalendarApi), http.ts (Go-сервер), local.ts (браузер),
+              connect.ts (выбор режима), offline.ts + outbox.ts (офлайн-очередь мутаций, IndexedDB),
+              session.ts (токен и пользователь в localStorage), provider.tsx, queries.ts (хуки TanStack Query и ключи кэша)
   app/        состояние интерфейса — узкие контексты: navigation, calendar (выбранный день),
-              assistant (запрос, черновик, голос), composer (шторка события), bar (нижняя панель)
-  domain/     чистая логика без React: types.ts, calendar.ts (слоты), restaurants.ts, request.ts
-  mocks/      демо-данные для локального режима и сценарий звонка
-  lib/        dates, plural (Intl.PluralRules), hooks (useTimeout/useInterval/useNow), motion-пресеты
-  components/ общие UI: ui.tsx (Pressable, Pill, CircleButton, Avatar…), BottomSheet, BottomBar, Icons
-  pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts)
-  screens/    home, month, day, chat, agent — у каждого экрана своя папка
+              assistant (запрос, голос), composer (шторка события), bar (нижняя панель), session-gate (вход)
+  domain/     чистая логика без React: types.ts, calendar.ts (слоты), limits.ts (лимиты и валидация)
+  mocks/      демо-данные локального режима (calendar.ts) и подсказки чата (assistant.ts)
+  lib/        dates, plural (Intl.PluralRules), hooks (useTimeout/useInterval/useNow), motion-пресеты,
+              speech (Web Speech API), storage, badges, sheetDrag
+  components/ общие UI: ui.tsx (Pressable, Pill, CircleButton, Avatar…), BottomSheet, BottomBar,
+              EventComposer, VoiceOverlay, Icons
+  pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync
+  screens/    auth, home (задачи и цели, аккаунт), month, day, chat — у каждого экрана своя папка
   styles/     global.css — дизайн-токены
+  sw.ts       service worker (precache, runtime-кэш API, Background Sync очереди)
 server/       Go-бэкенд, см. server/AGENTS.md
 public/       иконки PWA (PNG генерируются из icon.svg)
+.ux-audit/    скриншоты и FINDINGS.md прошлого UX-аудита (справочно, не обновляется автоматически)
 ```
 
 Правило зависимостей: `screens → components/app/api → domain/lib`. `domain/` и `lib/` не импортируют
-React-компоненты; `mocks/` используются только в `api/local.ts` и как демо-контент (FRIEND, DEMO_PROMPT).
+React-компоненты; `mocks/` используются только в `api/local.ts` и как контент подсказок чата.
 
 ## Архитектурные правила
 
 1. **Данные — только через `api/queries.ts`.** Не вызывайте `fetch` из компонентов и не импортируйте
    `mocks/calendar` в экраны. Новый эндпоинт = метод в `CalendarApi` (`api/api.ts`) +
    реализация в **обоих** `http.ts` и `local.ts` + хук в `queries.ts` + ключ в `keys` + инвалидация.
+   Если это мутация событий или задач — решите, как она ведёт себя офлайн (`offline.ts`/`outbox.ts`:
+   операция в очереди, временный id `offline-*`, склейка правок, `dedupe` для create), и добавьте тест.
 2. **Контракт API в двух местах:** Go `server/internal/model` ↔ TS `src/domain/types.ts`
    (+ DTO-преобразования в `api/http.ts`). Меняете поле — меняйте обе стороны и тесты обеих сторон.
-3. **`local.ts` повторяет правила сервера** (валидация, номер брони, 409 для закрытого места), чтобы
-   UI вёл себя одинаково в обоих режимах.
-4. **Нижняя панель:** экран рендерит `<BarSlot id="…" hidden? aiActive?>…</BarSlot>` (портал).
+   Лимиты длин — `domain/limits.ts` ↔ `server/internal/api/api.go`. Месяц в TS и в `CalendarApi` —
+   с 0 (как `Date`), в `/api/month` — с 1.
+3. **`local.ts` повторяет правила сервера** (валидация, лимиты), чтобы UI вёл себя одинаково в обоих
+   режимах. Исключение: аккаунтов в локальном режиме нет, шаринг задач и уведомления там заглушены.
+4. **Сессия:** токен и пользователь лежат в `api/session.ts` (localStorage, общая для вкладок);
+   `401` от сервера сбрасывает сессию и возвращает на экран входа (`app/session-gate`). Токен дублируется
+   в метаданные outbox — его читает service worker. Не храните токен в других местах и не логируйте его.
+5. **Нижняя панель:** экран рендерит `<BarSlot id="…" hidden? aiActive?>…</BarSlot>` (портал).
    Не кладите JSX в глобальное состояние. `BarSlot` — на верхнем уровне экрана, не внутри
    вложенных `AnimatePresence`.
-5. **Модальные окна — только через `components/BottomSheet`** (Escape, фокус-ловушка, `inert` фона,
-   свайп вниз). Не копируйте разметку шторки.
-6. **Сценарий ассистента** — редьюсер `screens/agent/useAgentFlow.ts` с дискриминированным union
-   шагов. Новое поведение — новое действие в редьюсере + тест в `useAgentFlow.test.ts`.
-   Данные шага живут внутри шага (например, время брони фиксируется в `flow.time` при звонке).
-7. **Доменная логика — чистые функции в `domain/`** с тестами рядом (`*.test.ts`).
-8. **Даты:** в состоянии — `Date` начала суток (`startOfDay`), в API — строка `ГГГГ-ММ-ДД`
+6. **Модальные окна — только через `components/BottomSheet`** (Escape, фокус-ловушка, `inert` фона,
+   свайп вниз за любое место). Не копируйте разметку шторки.
+7. **Чат** — `screens/chat`: ответ приходит потоком `ChatEvent` (`delta`/`tool`/`done`/`error`) через
+   `CalendarApi.sendChat`; реплики сохраняет сервер. Поток в офлайн-очередь **не** кладётся — у него свой
+   UI ошибки и повтора. После вызова инструмента инвалидируйте кэш событий/задач.
+8. **Доменная логика — чистые функции в `domain/`** с тестами рядом (`*.test.ts`).
+9. **Даты:** в состоянии — `Date` начала суток (`startOfDay`), в API — строка `ГГГГ-ММ-ДД`
    (`toISODate`/`fromISODate`). Время внутри дня — минуты от полуночи (`number`).
-9. **Склонения и подписи дней** — `lib/plural.ts` и `relativeDayLabel` из `lib/dates.ts`; не пишите
-   свои `n % 10`. Имена в падежах — поля `Person` (`nameAccusative`, `nameDative`).
+10. **Склонения и подписи дней** — `lib/plural.ts` и `relativeDayLabel` из `lib/dates.ts`; не пишите
+    свои `n % 10`.
 
 ## React и TypeScript
 
@@ -148,15 +167,19 @@ React-компоненты; `mocks/` используются только в `a
 3. `npm run build` проходит без предупреждений о размере чанков.
 4. **Визуальная проверка UI-изменений:** запустите `npm run dev` и откройте экран в браузере на
    390×844 (и 375×667, если менялась вёрстка). Пройдите сценарий руками или через Playwright.
-   Консоль браузера без ошибок. Для Docker/сервера — `docker compose up --build` и сценарий на :8080.
-5. Новая логика покрыта тестом (`domain/`, `api/`, редьюсер ассистента, Go-хендлеры).
+   Консоль браузера без ошибок. Для серверного режима — `make api` + `npm run dev` (нужна регистрация),
+   для Docker — `docker compose up --build` и сценарий на :8080.
+5. Новая логика покрыта тестом (`domain/`, `lib/`, `api/` — `http`/`local`/`offline`/`outbox`, Go-хендлеры,
+   хранилище, `llm`).
 6. README обновлён, если поменялись команды, API или поведение для пользователя.
 
 ## Git
 
 - Коммиты — на русском: заголовок до ~72 символов в повелительном/назывном стиле
   («Бронь сохраняется на сервере…»), затем пустая строка и тело списком по областям.
-- Не коммитьте `dist/`, `dist-single/`, `server/data/`, содержимое `server/web/dist/` (кроме README).
+- Не коммитьте `dist/`, `dist-single/`, `server/data/`, `.env`, содержимое `server/web/dist/` (кроме README).
+- CI (`.github/workflows/ci.yml`) гоняет те же проверки, что Definition of Done, плюс сборку Docker;
+  `deploy.yml` публикует статическую версию на GitHub Pages при пуше в `main`.
 - Перед коммитом — `npm run check`. Не переписывайте историю опубликованных веток.
 
 ## Известные подводные камни
@@ -169,5 +192,7 @@ React-компоненты; `mocks/` используются только в `a
   это ожидаемо.
 - Vite dev-сервер проксирует `/api` на `:8080`; без сервера в консоли будут 502 на `/api/health` —
   это нормально, приложение уйдёт в локальный режим.
-- После брони свободные окна пересчитываются — время брони берите из `flow.time`/ответа сервера,
-  а не из текущего `slot`.
+- Service worker и офлайн-очередь работают только на собранной версии (`npm run build` + `preview`
+  или Docker), в `npm run dev` проверять их бессмысленно.
+- Деплой на домашний сервер (rsync + `docker compose up -d --build`, порт из `APP_PORT`) описан в README;
+  `.env` на сервере не трогайте — там `LLM_API_KEY`. Не выполняйте деплой без явной просьбы.
