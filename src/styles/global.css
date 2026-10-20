@@ -36,7 +36,7 @@
   --shadow-md: 0 2px 6px rgba(20, 20, 45, 0.05), 0 12px 32px rgba(20, 20, 45, 0.08);
   --shadow-lg: 0 4px 12px rgba(20, 20, 45, 0.06), 0 24px 60px rgba(20, 20, 45, 0.14);
 
-  /* Безопасные зоны (на реальном телефоне — из env(), в рамке на десктопе — фиксированные) */
+  /* Безопасные зоны (на реальном телефоне — из env()) */
   --safe-top: max(env(safe-area-inset-top, 0px), 14px);
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
   --bar-h: calc(76px + var(--safe-bottom));
@@ -47,7 +47,6 @@
   --z-bar: 30;
   --z-overlay: 25;
   --z-sheet: 50;
-  --z-device: 60;
 
   color-scheme: light;
 }

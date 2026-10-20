@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useSyncExternalStore } from 'react'
+import { plural } from '../lib/plural'
 import { spring } from '../lib/motion'
+import { useOutboxSync } from './useOutboxSync'
 import styles from './pwa.module.css'
 
 function subscribe(onChange: () => void) {
@@ -20,12 +22,23 @@ export function useOnline(): boolean {
   )
 }
 
-/** Плашка «нет сети»: данные показываются из кэша, изменения отправятся после подключения. */
+/**
+ * Плашка состояния сети и синхронизации: офлайн — сколько изменений ждёт отправки,
+ * онлайн с непустой очередью — «синхронизация» до конца повтора.
+ * Также владеет эффектом повтора очереди (useOutboxSync).
+ */
 export function OfflineBadge() {
+  const pending = useOutboxSync()
   const online = useOnline()
+  const visible = !online || pending > 0
+  const text = !online
+    ? pending > 0
+      ? `Нет сети · ${pending} ${plural(pending, ['изменение ждёт', 'изменения ждут', 'изменений ждут'])}`
+      : 'Нет сети · сохранённые данные'
+    : 'Синхронизация изменений…'
   return (
     <AnimatePresence>
-      {!online && (
+      {visible && (
         <motion.div
           className={styles.offline}
           role="status"
@@ -34,7 +47,7 @@ export function OfflineBadge() {
           exit={{ opacity: 0, y: -12 }}
           transition={spring}
         >
-          <i aria-hidden="true" /> Нет сети · сохранённые данные
+          <i aria-hidden="true" /> {text}
         </motion.div>
       )}
     </AnimatePresence>

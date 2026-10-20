@@ -7,3 +7,4 @@ dist-single
 server/data
 server/web/dist/*
 !server/web/dist/README.md
+.env

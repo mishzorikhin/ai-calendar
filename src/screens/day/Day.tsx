@@ -101,6 +101,7 @@ export function Day() {
                   dateKey={key}
                   nowMins={isToday ? minutesOf(now) : null}
                   onCreate={(start) => composer.open({ date: selectedDate, start })}
+                  onEvent={(e) => composer.open({ event: { ...e, date: selectedDate } })}
                 />
               ))}
             </motion.div>
@@ -114,7 +115,7 @@ export function Day() {
               exit={{ opacity: 0, scale: 0.96 }}
               transition={spring}
             >
-              <Agenda events={events} />
+              <Agenda events={events} onEvent={(e) => composer.open({ event: { ...e, date: selectedDate } })} />
             </motion.div>
           )}
         </AnimatePresence>

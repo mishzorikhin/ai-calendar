@@ -1,27 +1,27 @@
-import { isOpenAt } from '../domain/restaurants'
-import type { Booking, ChatMessage, DatedEvent } from '../domain/types'
+import type { ChatMessage, DatedEvent, Task, User } from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
-import { RESTAURANTS } from '../mocks/restaurants'
-import { REVIEWS } from '../mocks/reviews'
 import { ApiError, type CalendarApi } from './api'
 
 const STORAGE_KEY = 'ai-calendar:data:v1'
-const FIRST_CODE = 4821
 
-type Stored<T extends { date: Date }> = Omit<T, 'date'> & { date: string }
+type Stored<T extends { date: Date }> = Omit<T, 'date'> & { date: string; createdAt?: string }
 
 type Snapshot = {
   events: Stored<DatedEvent>[]
-  bookings: Stored<Booking>[]
   messages: ChatMessage[]
+  tasks: Task[]
   nextId: number
 }
 
 const GREETING: ChatMessage = { id: 0, role: 'ai', text: 'Чем могу помочь?' }
 
+// Локальный режим — один «пользователь» без пароля; общие задачи недоступны.
+const LOCAL_USER: User = { id: 0, username: 'local', name: 'Локальный режим' }
+const NO_ACCOUNTS = new ApiError(400, 'Аккаунты и общие задачи работают только с сервером')
+
 function emptySnapshot(): Snapshot {
-  return { events: [], bookings: [], messages: [GREETING], nextId: 1 }
+  return { events: [], messages: [GREETING], tasks: [], nextId: 3 }
 }
 
 function load(storage: Storage | null): Snapshot {
@@ -43,7 +43,7 @@ function safeStorage(): Storage | null {
 
 /**
  * Работа без сервера: моки + данные пользователя в localStorage этого браузера.
- * Повторяет правила сервера (проверки, номер брони, отмена), чтобы UI вёл себя одинаково.
+ * Повторяет правила сервера (проверки, id), чтобы UI вёл себя одинаково.
  */
 export function createLocalApi(storage: Storage | null = safeStorage()): CalendarApi {
   let data = load(storage)
@@ -55,15 +55,21 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       /* хранилище недоступно — данные живут до перезагрузки */
     }
   }
-  const events = (): DatedEvent[] => data.events.map((e) => ({ ...e, date: fromISODate(e.date) }))
-  const bookings = (): Booking[] => data.bookings.map((b) => ({ ...b, date: fromISODate(b.date) }))
+  const HIGHLIGHT_MS = 24 * 60 * 60 * 1000
+  const events = (): DatedEvent[] =>
+    data.events.map(({ createdAt, highlight, ...e }) => ({
+      ...e,
+      // «Новое» живёт сутки, как на сервере.
+      highlight: highlight !== false && createdAt !== undefined && Date.now() - Date.parse(createdAt) < HIGHLIGHT_MS,
+      date: fromISODate(e.date),
+    }))
   const nextId = (prefix: string) => `${prefix}-${data.nextId++}`
   // Имитируем сеть: ответ асинхронный, как у сервера.
   const reply = <T>(value: T) => Promise.resolve(value)
 
   return {
     mode: 'local',
-    getEvents: (date) => reply(eventsFor(date, bookings(), events())),
+    getEvents: (date) => reply(eventsFor(date, events())),
     createEvent(input) {
       const title = input.title.trim()
       if (!title) return Promise.reject(new ApiError(400, 'Название обязательно'))
@@ -78,38 +84,77 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         highlight: true,
         date: input.date,
       }
-      data.events.push({ ...event, date: toISODate(event.date) })
+      data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
       return reply(event)
     },
-    getMonthDots: (year, month) => reply(monthDotsFor(year, month, bookings(), events())),
-    getPlaces: () => reply([...RESTAURANTS]),
-    getReviews: () => reply([...REVIEWS]),
-    getBookings: () => reply(bookings().reverse()),
-    createBooking(input) {
-      const place = RESTAURANTS.find((r) => r.id === input.placeId)
-      if (!place) return Promise.reject(new ApiError(404, 'Место не найдено'))
-      if (!isOpenAt(place, input.start)) return Promise.reject(new ApiError(409, `${place.name} закрыто в это время`))
-      const booking: Booking = {
-        id: nextId('bkg'),
-        restaurant: place,
-        slot: { start: input.start, end: input.end, conflicts: [] },
-        date: input.date,
-        guests: input.guests,
-        invite: input.invite,
-        code: `A-${FIRST_CODE + data.bookings.length}`,
-        status: 'confirmed',
+    updateEvent(id, patch) {
+      const i = data.events.findIndex((e) => e.id === id)
+      if (i < 0) return Promise.reject(new ApiError(404, 'Событие не найдено'))
+      const prev = data.events[i]!
+      const next = {
+        ...prev,
+        title: patch.title?.trim() || prev.title,
+        subtitle: patch.subtitle ?? prev.subtitle,
+        start: patch.start ?? prev.start,
+        end: patch.end ?? prev.end,
+        badge: patch.badge ?? prev.badge,
+        date: patch.date ? toISODate(patch.date) : prev.date,
       }
-      data.bookings.push({ ...booking, date: toISODate(booking.date) })
+      if (next.end <= next.start) return Promise.reject(new ApiError(400, 'Время задано неверно'))
+      data.events[i] = next
       save()
-      return reply(booking)
+      return reply({ ...next, date: fromISODate(next.date) })
     },
-    cancelBooking(id) {
-      const stored = data.bookings.find((b) => b.id === id)
-      if (!stored) return Promise.reject(new ApiError(404, 'Бронь не найдена'))
-      stored.status = 'cancelled'
+    deleteEvent(id) {
+      const before = data.events.length
+      data.events = data.events.filter((e) => e.id !== id)
+      if (data.events.length === before) return Promise.reject(new ApiError(404, 'Событие не найдено'))
       save()
-      return reply({ ...stored, date: fromISODate(stored.date) })
+      return reply(undefined)
+    },
+    getMonthDots: (year, month) => reply(monthDotsFor(year, month, events())),
+    getTasks: () => reply([...data.tasks]),
+    createTask(input) {
+      const title = input.title.trim()
+      if (!title) return Promise.reject(new ApiError(400, 'Название обязательно'))
+      const task: Task = {
+        id: nextId('task'),
+        title,
+        subtitle: input.subtitle,
+        kind: input.kind ?? 'task',
+        category: input.category,
+        done: false,
+        due: input.due,
+      }
+      data.tasks.push(task)
+      save()
+      return reply(task)
+    },
+    updateTask(id, patch) {
+      const i = data.tasks.findIndex((t) => t.id === id)
+      if (i < 0) return Promise.reject(new ApiError(404, 'Задача не найдена'))
+      const prev = data.tasks[i]!
+      const task: Task = {
+        ...prev,
+        title: patch.title?.trim() || prev.title,
+        subtitle: patch.subtitle ?? prev.subtitle,
+        kind: patch.kind ?? prev.kind,
+        done: patch.done ?? prev.done,
+        due: patch.due ?? prev.due,
+      }
+      // '' очищает категорию; undefined — не трогает.
+      if (patch.category !== undefined) task.category = patch.category || undefined
+      data.tasks[i] = task
+      save()
+      return reply(task)
+    },
+    deleteTask(id) {
+      const before = data.tasks.length
+      data.tasks = data.tasks.filter((t) => t.id !== id)
+      if (data.tasks.length === before) return Promise.reject(new ApiError(404, 'Задача не найдена'))
+      save()
+      return reply(undefined)
     },
     getMessages: () => reply([...data.messages]),
     addMessage(role, text) {
@@ -118,5 +163,26 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(message)
     },
+    // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
+    async sendChat(text, onEvent) {
+      const answer = 'Ассистент отвечает только с сервером — запустите `make api` с переменной LLM_API_KEY.'
+      const user: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role: 'user', text: text.trim() }
+      const ai: ChatMessage = { id: user.id + 1, role: 'ai', text: answer }
+      data = { ...data, messages: [...data.messages, user, ai] }
+      save()
+      onEvent({ type: 'delta', text: answer })
+      onEvent({ type: 'done' })
+    },
+
+    me: () => reply({ ...LOCAL_USER }),
+    updateMe: (name) => reply({ ...LOCAL_USER, name }),
+    login: () => Promise.reject(NO_ACCOUNTS),
+    register: () => Promise.reject(NO_ACCOUNTS),
+    logout: () => reply(undefined),
+    searchUsers: () => reply([]),
+    getNotifications: () => reply([]),
+    markNotificationsRead: () => reply(undefined),
+    addTaskMember: () => Promise.reject(NO_ACCOUNTS),
+    removeTaskMember: () => Promise.reject(NO_ACCOUNTS),
   }
 }

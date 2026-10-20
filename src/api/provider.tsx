@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createContext, use, useState, type ReactNode } from 'react'
-import type { CalendarApi } from './api'
+import { retryQuery, type CalendarApi } from './api'
 
 const ApiContext = createContext<CalendarApi | null>(null)
 
@@ -11,7 +11,7 @@ export function ApiProvider({ api, children }: { api: CalendarApi; children: Rea
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: api.mode === 'server' ? 1 : false,
+            retry: api.mode === 'server' ? retryQuery : false,
             // Офлайн запросы ждут сеть, а данные берутся из кэша service worker / памяти.
             networkMode: 'offlineFirst',
           },

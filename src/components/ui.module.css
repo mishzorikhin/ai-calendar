@@ -1,4 +1,6 @@
-.pressable {
+/* Специфичность ноль: классы компонентов (.weather, .task и т.д.) всегда перекрывают
+   эти раскладочные значения, независимо от порядка загрузки CSS-модулей. */
+:where(.pressable) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -81,35 +83,6 @@
   color: var(--ink);
 }
 
-.smartImage {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.smartImage > img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.bokeh {
-  position: absolute;
-  inset: -20%;
-  z-index: 0;
-  background:
-    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.55) 0 7%, transparent 8%),
-    radial-gradient(circle at 74% 16%, rgba(255, 245, 225, 0.45) 0 5%, transparent 6%),
-    radial-gradient(circle at 62% 64%, rgba(255, 255, 255, 0.25) 0 11%, transparent 12%),
-    radial-gradient(circle at 28% 78%, rgba(255, 236, 210, 0.35) 0 6%, transparent 7%);
-  filter: blur(6px);
-  opacity: 0.9;
-}
-
 .avatar {
   position: relative;
   display: inline-flex;
@@ -132,10 +105,6 @@
 
 .avatarRing {
   box-shadow: 0 0 0 2.5px var(--surface);
-}
-
-.logo {
-  background: #0f0f12;
 }
 
 .meDot {

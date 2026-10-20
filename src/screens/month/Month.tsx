@@ -12,7 +12,7 @@ import { useTimeout } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
 import { MonthGrid, type MonthView } from './MonthGrid'
 import { MonthPicker } from './MonthPicker'
-import { WeatherCard } from './WeatherCard'
+import { TodayCard } from './TodayCard'
 import styles from './Month.module.css'
 
 /** Задержка перед переходом в день — чтобы успела отыграть подсветка выбранной даты. */
@@ -111,10 +111,12 @@ export function Month() {
         {pickerOpen && (
           <MonthPicker
             month={view.month}
+            year={view.year}
             onPick={(i) => {
               setView((v) => ({ year: v.year, month: i, dir: i > v.month ? 1 : -1 }))
               setPickerOpen(false)
             }}
+            onYear={(delta) => setView((v) => ({ ...v, year: v.year + delta, dir: delta }))}
           />
         )}
       </AnimatePresence>
@@ -124,7 +126,7 @@ export function Month() {
       </motion.div>
 
       <motion.div variants={itemVariants}>
-        <WeatherCard today={today} onOpen={() => openDay(today)} />
+        <TodayCard today={today} onOpen={() => openDay(today)} />
       </motion.div>
     </Sheet>
   )

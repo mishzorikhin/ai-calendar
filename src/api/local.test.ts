@@ -27,31 +27,19 @@ class MemoryStorage implements Storage {
 const day = new Date(2026, 9, 21)
 
 describe('local api', () => {
-  it('бронь появляется в дне и месяце, отмена убирает её', async () => {
+  it('событие пользователя появляется в дне и месяце', async () => {
     const api = createLocalApi(new MemoryStorage())
-    const booking = await api.createBooking({
-      placeId: 'scramble',
-      date: day,
-      start: 540,
-      end: 630,
-      guests: 2,
-      invite: true,
-    })
-    expect(booking.code).toBe('A-4821')
+    await api.createEvent({ title: 'Звонок маме', date: day, start: 600, end: 660, badge: 'work' })
 
     const events = await api.getEvents(day)
-    expect(events.some((e) => e.id === `booking-${booking.id}`)).toBe(true)
-    expect((await api.getMonthDots(2026, 9))[21]).toContain('food')
-
-    await api.cancelBooking(booking.id)
-    expect((await api.getEvents(day)).some((e) => e.id === `booking-${booking.id}`)).toBe(false)
+    expect(events.some((e) => e.title === 'Звонок маме')).toBe(true)
+    expect((await api.getMonthDots(2026, 9))[21]).toContain('work')
   })
 
-  it('не бронирует закрытое место', async () => {
+  it('отклоняет пустое название и неверное время', async () => {
     const api = createLocalApi(new MemoryStorage())
-    await expect(
-      api.createBooking({ placeId: 'ambient', date: day, start: 540, end: 630, guests: 2, invite: false }),
-    ).rejects.toBeInstanceOf(ApiError)
+    await expect(api.createEvent({ title: '  ', date: day, start: 600, end: 660 })).rejects.toBeInstanceOf(ApiError)
+    await expect(api.createEvent({ title: 'x', date: day, start: 660, end: 600 })).rejects.toBeInstanceOf(ApiError)
   })
 
   it('сохраняет данные между запусками', async () => {
@@ -63,5 +51,15 @@ describe('local api', () => {
     const second = createLocalApi(storage)
     expect((await second.getEvents(day)).some((e) => e.title === 'Звонок маме')).toBe(true)
     expect((await second.getMessages()).at(-1)?.text).toBe('Привет')
+  })
+
+  it('чат без сервера отвечает заглушкой и сохраняет реплики', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const events: string[] = []
+    await api.sendChat('привет', (e) => events.push(e.type))
+    expect(events.at(-1)).toBe('done')
+    const messages = await api.getMessages()
+    expect(messages.at(-2)).toMatchObject({ role: 'user', text: 'привет' })
+    expect(messages.at(-1)?.role).toBe('ai')
   })
 })

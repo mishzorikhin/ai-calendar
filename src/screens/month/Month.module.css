@@ -32,8 +32,20 @@
 
 .picker {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 14px 12px 4px;
+}
+
+.pickerMonths {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.pickerYear {
+  flex-shrink: 0;
 }
 
 .calendar {
@@ -145,26 +157,30 @@
   position: relative;
   z-index: 1;
   display: flex;
+  align-items: center;
+  gap: 3px;
   margin-top: 5px;
 }
 
 .dots i {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  color: #fff;
-  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .today .dots i {
-  box-shadow: 0 0 0 2px #0f0f12;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.35);
 }
 
-.dots i + i {
-  margin-left: -5px;
+.dotCount {
+  margin-left: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.today .dotCount {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .weather {
@@ -228,4 +244,29 @@
 }
 .flex {
   display: flex;
+}
+
+.todayNum {
+  /* Абсолютное позиционирование: анонимный блок <button> центрирует потоковых детей. */
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 20px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+.todayTitle {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,12 +1,23 @@
 import { motion } from 'framer-motion'
 import { useLayoutEffect, useRef } from 'react'
-import { Pill } from '../../components/ui'
+import { BackIcon, ArrowRightIcon } from '../../components/Icons'
+import { CircleButton, Pill } from '../../components/ui'
 import { MONTHS } from '../../lib/dates'
 import { ease } from '../../lib/motion'
 import styles from './Month.module.css'
 
-/** Горизонтальный ряд месяцев; при открытии центрируется на текущем. */
-export function MonthPicker({ month, onPick }: { month: number; onPick: (month: number) => void }) {
+/** Горизонтальный ряд месяцев с шагом по годам по краям; при открытии центрируется на текущем. */
+export function MonthPicker({
+  month,
+  year,
+  onPick,
+  onYear,
+}: {
+  month: number
+  year: number
+  onPick: (month: number) => void
+  onYear: (delta: number) => void
+}) {
   const row = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -23,18 +34,38 @@ export function MonthPicker({ month, onPick }: { month: number; onPick: (month: 
       exit={{ height: 0, opacity: 0 }}
       transition={{ duration: 0.32, ease }}
     >
-      <div ref={row} className={`${styles.picker} scroll-x`}>
-        {MONTHS.map((m, i) => (
-          <Pill
-            key={m}
-            small
-            tone={i === month ? 'dark' : 'white'}
-            aria-pressed={i === month}
-            onClick={() => onPick(i)}
-          >
-            {m}
-          </Pill>
-        ))}
+      <div className={styles.picker}>
+        <CircleButton
+          tone="white"
+          size={40}
+          onClick={() => onYear(-1)}
+          aria-label={`Предыдущий год (${year - 1})`}
+          className={styles.pickerYear}
+        >
+          <BackIcon size={16} />
+        </CircleButton>
+        <div ref={row} className={`${styles.pickerMonths} scroll-x`}>
+          {MONTHS.map((m, i) => (
+            <Pill
+              key={m}
+              small
+              tone={i === month ? 'dark' : 'white'}
+              aria-pressed={i === month}
+              onClick={() => onPick(i)}
+            >
+              {m}
+            </Pill>
+          ))}
+        </div>
+        <CircleButton
+          tone="white"
+          size={40}
+          onClick={() => onYear(1)}
+          aria-label={`Следующий год (${year + 1})`}
+          className={styles.pickerYear}
+        >
+          <ArrowRightIcon size={16} />
+        </CircleButton>
       </div>
     </motion.div>
   )

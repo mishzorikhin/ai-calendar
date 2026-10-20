@@ -14,13 +14,8 @@ export function partOf(mins: number): DayPartId {
 const DAY_START = 8 * 60
 const DAY_END = 21 * 60
 
-/** Варианты времени для ручного выбора: каждые полчаса с 8:00 до 20:00. */
-export const TIME_OPTIONS: readonly number[] = Array.from({ length: 25 }, (_, i) => DAY_START + i * 30)
-
-/** События, которые не мешают планам (сон не считается занятостью). */
-function blocks(e: CalendarEvent) {
-  return e.badge !== 'sleep'
-}
+/** Варианты времени для ручного выбора: каждые полчаса с 6:00 до 23:30 — весь «разумный» день. */
+export const TIME_OPTIONS: readonly number[] = Array.from({ length: 36 }, (_, i) => 6 * 60 + i * 30)
 
 /** Слот заданной длины с соседними делами и пересечениями. */
 export function slotAt(events: readonly CalendarEvent[], start: number, duration = 90): Slot {
@@ -32,14 +27,14 @@ export function slotAt(events: readonly CalendarEvent[], start: number, duration
     end,
     before: before && { title: before.title, at: before.start },
     after: after && { title: after.title, at: after.start },
-    conflicts: events.filter((e) => blocks(e) && e.start < end && e.end > start).map((e) => e.title),
+    conflicts: events.filter((e) => e.start < end && e.end > start).map((e) => e.title),
   }
 }
 
 /** Свободные окна от часа и дольше (каждое не длиннее полутора часов). */
 export function findFreeSlots(events: readonly CalendarEvent[], limit = 3): Slot[] {
   const busy = events
-    .filter((e) => blocks(e) && e.end > DAY_START && e.start < DAY_END)
+    .filter((e) => e.end > DAY_START && e.start < DAY_END)
     .map((e) => [e.start, e.end] as const)
     .sort((a, b) => a[0] - b[0])
   const slots: Slot[] = []
@@ -54,11 +49,12 @@ export function findFreeSlots(events: readonly CalendarEvent[], limit = 3): Slot
 
 /** Ближайшее время из TIME_OPTIONS. */
 export function nearestTimeOption(mins: number): number {
-  return TIME_OPTIONS.reduce((best, t) => (Math.abs(t - mins) < Math.abs(best - mins) ? t : best), DAY_START)
+  return TIME_OPTIONS.reduce((best, t) => (Math.abs(t - mins) < Math.abs(best - mins) ? t : best), TIME_OPTIONS[0] ?? 0)
 }
 
-/** Первое свободное время (шаг 30 минут) не раньше `from`. */
+/** Первое свободное время (шаг 30 минут) не раньше `from`; по умолчанию не раньше рабочего утра. */
 export function firstFreeTime(events: readonly CalendarEvent[], from: number, duration = 60): number {
   const free = (t: number) => slotAt(events, t, duration).conflicts.length === 0
-  return TIME_OPTIONS.find((t) => t >= from && free(t)) ?? TIME_OPTIONS.find(free) ?? DAY_START
+  const floor = Math.max(from, DAY_START)
+  return TIME_OPTIONS.find((t) => t >= floor && free(t)) ?? TIME_OPTIONS.find(free) ?? DAY_START
 }

@@ -1,35 +1,138 @@
-// Package store хранит данные пользователя: события, брони и историю чата.
-// Всё лежит в одном JSON-файле, запись атомарная (через временный файл и rename).
-// Для прототипа этого достаточно; интерфейс позволяет заменить хранилище на БД.
+// Package store хранит данные: события, задачи, историю чата, аккаунты,
+// сессии и уведомления. Две реализации одного интерфейса: JSON-файл
+// (Open, для локального запуска) и PostgreSQL (OpenPostgres); выбор — по DATABASE_URL.
+//
+// Пользователь прикреплён к контексту (WithUser) HTTP-слоем после проверки
+// сессии. Методы данных читают его через UserFrom: каждый видит свои события
+// и сообщения, а задачи — свои и те, куда его добавили участником.
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 )
 
-// ErrNotFound — запись не найдена.
+// ErrNotFound — запись не найдена (или недоступна этому пользователю).
 var ErrNotFound = errors.New("not found")
 
-const firstBookingCode = 4821
+// ErrUnauthorized — пользователь не опознан: нет сессии или она истекла.
+var ErrUnauthorized = errors.New("unauthorized")
 
-type data struct {
-	Events   []model.Event   `json:"events"`
-	Bookings []model.Booking `json:"bookings"`
-	Messages []model.Message `json:"messages"`
-	NextID   int             `json:"nextId"`
+// ErrForbidden — операция не разрешена этому пользователю.
+var ErrForbidden = errors.New("forbidden")
+
+// ErrConflict — имя пользователя занято.
+var ErrConflict = errors.New("conflict")
+
+const (
+	// SessionTTL — срок жизни сессии; скользит: когда остаётся меньше
+	// sessionRefresh, продлевается до полного TTL при каждом обращении.
+	SessionTTL     = 30 * 24 * time.Hour
+	sessionRefresh = 15 * 24 * time.Hour
+)
+
+type ctxUserKey struct{}
+
+// WithUser кладёт пользователя в контекст (вызывает HTTP-слой после проверки токена).
+func WithUser(ctx context.Context, u model.User) context.Context {
+	return context.WithValue(ctx, ctxUserKey{}, u)
 }
 
-// Store — потокобезопасное хранилище. Пустой path — только в памяти (для тестов).
-type Store struct {
+// UserFrom достаёт пользователя из контекста; без него — ErrUnauthorized.
+func UserFrom(ctx context.Context) (model.User, error) {
+	u, ok := ctx.Value(ctxUserKey{}).(model.User)
+	if !ok {
+		return model.User{}, ErrUnauthorized
+	}
+	return u, nil
+}
+
+// Store — хранилище данных.
+type Store interface {
+	// EventsOn — события пользователя на дату (YYYY-MM-DD).
+	EventsOn(ctx context.Context, date string) []model.Event
+	// EventsInMonth — события пользователя за месяц (префикс YYYY-MM).
+	EventsInMonth(ctx context.Context, prefix string) []model.Event
+	CreateEvent(ctx context.Context, e model.Event) (model.Event, error)
+	// Event — одно событие по id (только своё).
+	Event(ctx context.Context, id string) (model.Event, error)
+	UpdateEvent(ctx context.Context, id string, patch model.EventPatch) (model.Event, error)
+	DeleteEvent(ctx context.Context, id string) error
+	// Tasks — свои задачи и те, где пользователь участник, в порядке создания.
+	Tasks(ctx context.Context) []model.Task
+	// Task — одна задача: доступна владельцу и участникам.
+	Task(ctx context.Context, id string) (model.Task, error)
+	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
+	UpdateTask(ctx context.Context, id string, patch model.TaskPatch) (model.Task, error)
+	// DeleteTask: владелец удаляет задачу у всех, участник — выходит из неё.
+	DeleteTask(ctx context.Context, id string) error
+	// AddTaskMember добавляет участника; владелец или участник (ErrForbidden иначе).
+	AddTaskMember(ctx context.Context, taskID string, memberID int64) (model.Task, error)
+	// RemoveTaskMember: владелец удаляет любого, участник — только себя.
+	RemoveTaskMember(ctx context.Context, taskID string, memberID int64) (model.Task, error)
+	Messages(ctx context.Context) []model.Message
+	AddMessage(ctx context.Context, role model.Role, text string) (model.Message, error)
+
+	// CreateUser создаёт аккаунт; ErrConflict, если имя занято. Первый
+	// пользователь получает записи без владельца (данные до аккаунтов).
+	CreateUser(ctx context.Context, username, name, passHash string) (model.User, error)
+	// UserByUsername — пользователь с PassHash (для входа).
+	UserByUsername(ctx context.Context, username string) (model.User, error)
+	// SearchUsers — поиск по имени и логину для упоминаний; без PassHash и без самого себя.
+	SearchUsers(ctx context.Context, query string, limit int) []model.User
+	// UpdateUser меняет отображаемое имя текущего пользователя.
+	UpdateUser(ctx context.Context, name string) (model.User, error)
+	// CreateSession сохраняет токен (передаётся уже хэшированным).
+	CreateSession(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
+	// UserBySession — пользователь по хэшу токена; продлевает сессию, если та скоро истечёт.
+	UserBySession(ctx context.Context, tokenHash string) (model.User, error)
+	DeleteSession(ctx context.Context, tokenHash string) error
+
+	// Notifications — уведомления пользователя, новые первыми (до 100).
+	Notifications(ctx context.Context) []model.Notification
+	// AddNotification кладёт уведомление адресату (n.UserID — кому).
+	AddNotification(ctx context.Context, n model.Notification) error
+	// MarkNotificationsRead отмечает все уведомления пользователя прочитанными.
+	MarkNotificationsRead(ctx context.Context) error
+}
+
+// storedUser — пользователь в файле: PassHash хранится, но не отдаётся в API.
+type storedUser struct {
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Name      string    `json:"name"`
+	PassHash  string    `json:"passHash"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type storedSession struct {
+	UserID    int64     `json:"userId"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type data struct {
+	Events        []model.Event            `json:"events"`
+	Messages      []model.Message          `json:"messages"`
+	Tasks         []model.Task             `json:"tasks"`
+	Users         []storedUser             `json:"users"`
+	Sessions      map[string]storedSession `json:"sessions"`
+	Notifications []model.Notification     `json:"notifications"`
+	NextID        int                      `json:"nextId"`
+	NextUserID    int64                    `json:"nextUserId"`
+}
+
+// fileStore — JSON-файл с атомарной записью (временный файл и rename).
+type fileStore struct {
 	mu   sync.RWMutex
 	path string
 	d    data
@@ -37,11 +140,13 @@ type Store struct {
 }
 
 // Open читает файл данных из dir (создаёт при первом запуске). Пустой dir — хранение в памяти.
-func Open(dir string) (*Store, error) {
-	s := &Store{now: time.Now}
+func Open(dir string) (Store, error) {
+	s := &fileStore{now: time.Now}
 	s.d.NextID = 1
+	s.d.NextUserID = 1
+	s.d.Sessions = map[string]storedSession{}
 	if dir == "" {
-		s.seedGreeting()
+		s.d.Tasks = []model.Task{}
 		return s, nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -51,23 +156,31 @@ func Open(dir string) (*Store, error) {
 	raw, err := os.ReadFile(s.path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		s.seedGreeting()
-		return s, s.save()
 	case err != nil:
 		return nil, fmt.Errorf("чтение данных: %w", err)
+	default:
+		if err := json.Unmarshal(raw, &s.d); err != nil {
+			return nil, fmt.Errorf("разбор %s: %w", s.path, err)
+		}
 	}
-	if err := json.Unmarshal(raw, &s.d); err != nil {
-		return nil, fmt.Errorf("разбор %s: %w", s.path, err)
+	// У файлов, созданных до появления новых сущностей, полей нет — инициализируем.
+	if s.d.Tasks == nil {
+		s.d.Tasks = []model.Task{}
 	}
-	return s, nil
-}
-
-func (s *Store) seedGreeting() {
-	s.d.Messages = []model.Message{{ID: 0, Role: model.RoleAI, Text: "Чем могу помочь?", CreatedAt: s.now()}}
+	if s.d.Sessions == nil {
+		s.d.Sessions = map[string]storedSession{}
+	}
+	if s.d.NextID == 0 {
+		s.d.NextID = 1
+	}
+	if s.d.NextUserID == 0 {
+		s.d.NextUserID = 1
+	}
+	return s, s.save()
 }
 
 // save вызывается под блокировкой на запись.
-func (s *Store) save() error {
+func (s *fileStore) save() error {
 	if s.path == "" {
 		return nil
 	}
@@ -82,50 +195,142 @@ func (s *Store) save() error {
 	return os.Rename(tmp, s.path)
 }
 
-func (s *Store) nextID(prefix string) string {
+func (s *fileStore) nextID(prefix string) string {
 	id := fmt.Sprintf("%s-%d", prefix, s.d.NextID)
 	s.d.NextID++
 	return id
 }
 
-// EventsOn — события пользователя на дату (YYYY-MM-DD).
-func (s *Store) EventsOn(date string) []model.Event {
+// uid — id пользователя из контекста.
+func (s *fileStore) uid(ctx context.Context) (int64, error) {
+	u, err := UserFrom(ctx)
+	return u.ID, err
+}
+
+// userByID — карточка пользователя (без пароля) по id.
+func (s *fileStore) userByID(id int64) (model.User, bool) {
+	for _, u := range s.d.Users {
+		if u.ID == id {
+			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, CreatedAt: u.CreatedAt}, true
+		}
+	}
+	return model.User{}, false
+}
+
+// taskVisible — задача доступна владельцу и участникам.
+func taskVisible(t *model.Task, uid int64) bool {
+	if t.OwnerID == uid {
+		return true
+	}
+	return slices.ContainsFunc(t.Members, func(m model.User) bool { return m.ID == uid })
+}
+
+// decorateTask заполняет Owner, свежие карточки Members и роль запросившего.
+// Вызывается под блокировкой; меняет переданную копию задачи.
+func (s *fileStore) decorateTask(t *model.Task, uid int64) {
+	if owner, ok := s.userByID(t.OwnerID); ok {
+		owner := owner
+		t.Owner = &owner
+	}
+	members := t.Members[:0]
+	for _, m := range t.Members {
+		if u, ok := s.userByID(m.ID); ok {
+			members = append(members, u)
+		}
+	}
+	t.Members = members
+	if len(t.Members) == 0 {
+		t.Members = nil
+	}
+	t.Role = model.TaskRoleMember
+	if t.OwnerID == uid {
+		t.Role = model.TaskRoleOwner
+	}
+}
+
+func (s *fileStore) EventsOn(ctx context.Context, date string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []model.Event
 	for _, e := range s.d.Events {
-		if e.Date == date {
+		if e.Date == date && e.UserID == uid {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// EventsInMonth — события пользователя за месяц (префикс YYYY-MM).
-func (s *Store) EventsInMonth(prefix string) []model.Event {
+func (s *fileStore) EventsInMonth(ctx context.Context, prefix string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []model.Event
 	for _, e := range s.d.Events {
-		if len(e.Date) >= len(prefix) && e.Date[:len(prefix)] == prefix {
+		if e.UserID == uid && len(e.Date) >= len(prefix) && e.Date[:len(prefix)] == prefix {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-func (s *Store) CreateEvent(e model.Event) (model.Event, error) {
+func (s *fileStore) CreateEvent(ctx context.Context, e model.Event) (model.Event, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Event{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e.ID = s.nextID("evt")
+	e.UserID = uid
+	e.CreatedAt = s.now()
 	s.d.Events = append(s.d.Events, e)
 	return e, s.save()
 }
 
-func (s *Store) DeleteEvent(id string) error {
+func (s *fileStore) Event(ctx context.Context, id string) (model.Event, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Event{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	i := slices.IndexFunc(s.d.Events, func(e model.Event) bool { return e.ID == id && e.UserID == uid })
+	if i < 0 {
+		return model.Event{}, ErrNotFound
+	}
+	return s.d.Events[i], nil
+}
+
+func (s *fileStore) UpdateEvent(ctx context.Context, id string, patch model.EventPatch) (model.Event, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Event{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	i := slices.IndexFunc(s.d.Events, func(e model.Event) bool { return e.ID == id })
+	i := slices.IndexFunc(s.d.Events, func(e model.Event) bool { return e.ID == id && e.UserID == uid })
+	if i < 0 {
+		return model.Event{}, ErrNotFound
+	}
+	s.d.Events[i].Apply(patch)
+	return s.d.Events[i], s.save()
+}
+
+func (s *fileStore) DeleteEvent(ctx context.Context, id string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Events, func(e model.Event) bool { return e.ID == id && e.UserID == uid })
 	if i < 0 {
 		return ErrNotFound
 	}
@@ -133,53 +338,383 @@ func (s *Store) DeleteEvent(id string) error {
 	return s.save()
 }
 
-// Bookings — все брони, новые первыми.
-func (s *Store) Bookings() []model.Booking {
+func (s *fileStore) Tasks(ctx context.Context) []model.Task {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := slices.Clone(s.d.Bookings)
-	slices.Reverse(out)
+	var out []model.Task
+	for _, t := range s.d.Tasks {
+		if !taskVisible(&t, uid) {
+			continue
+		}
+		t := t
+		t.Members = slices.Clone(t.Members)
+		s.decorateTask(&t, uid)
+		out = append(out, t)
+	}
 	return out
 }
 
-// CreateBooking сохраняет подтверждённую бронь и присваивает ей номер.
-func (s *Store) CreateBooking(b model.Booking) (model.Booking, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	b.ID = s.nextID("bkg")
-	b.Code = fmt.Sprintf("A-%d", firstBookingCode+len(s.d.Bookings))
-	b.Status = model.BookingConfirmed
-	b.CreatedAt = s.now()
-	s.d.Bookings = append(s.d.Bookings, b)
-	return b, s.save()
-}
-
-// CancelBooking помечает бронь отменённой (история сохраняется).
-func (s *Store) CancelBooking(id string) (model.Booking, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	i := slices.IndexFunc(s.d.Bookings, func(b model.Booking) bool { return b.ID == id })
-	if i < 0 {
-		return model.Booking{}, ErrNotFound
+func (s *fileStore) Task(ctx context.Context, id string) (model.Task, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Task{}, err
 	}
-	s.d.Bookings[i].Status = model.BookingCancelled
-	return s.d.Bookings[i], s.save()
-}
-
-func (s *Store) Messages() []model.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.d.Messages)
+	i := slices.IndexFunc(s.d.Tasks, func(t model.Task) bool { return t.ID == id })
+	if i < 0 || !taskVisible(&s.d.Tasks[i], uid) {
+		return model.Task{}, ErrNotFound
+	}
+	t := s.d.Tasks[i]
+	t.Members = slices.Clone(t.Members)
+	s.decorateTask(&t, uid)
+	return t, nil
 }
 
-func (s *Store) AddMessage(role model.Role, text string) (model.Message, error) {
+func (s *fileStore) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Task{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t.ID = s.nextID("task")
+	t.OwnerID = uid
+	s.d.Tasks = append(s.d.Tasks, t)
+	out := t
+	out.Members = slices.Clone(t.Members)
+	s.decorateTask(&out, uid)
+	return out, s.save()
+}
+
+func (s *fileStore) UpdateTask(ctx context.Context, id string, patch model.TaskPatch) (model.Task, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Task{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Tasks, func(t model.Task) bool { return t.ID == id })
+	if i < 0 || !taskVisible(&s.d.Tasks[i], uid) {
+		return model.Task{}, ErrNotFound
+	}
+	s.d.Tasks[i].Apply(patch)
+	t := s.d.Tasks[i]
+	t.Members = slices.Clone(t.Members)
+	s.decorateTask(&t, uid)
+	return t, s.save()
+}
+
+func (s *fileStore) DeleteTask(ctx context.Context, id string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Tasks, func(t model.Task) bool { return t.ID == id })
+	if i < 0 {
+		return ErrNotFound
+	}
+	t := &s.d.Tasks[i]
+	if t.OwnerID == uid {
+		s.d.Tasks = slices.Delete(s.d.Tasks, i, i+1)
+		return s.save()
+	}
+	// Участник «удаляет» задачу у себя — выходит из неё.
+	j := slices.IndexFunc(t.Members, func(m model.User) bool { return m.ID == uid })
+	if j < 0 {
+		return ErrNotFound
+	}
+	t.Members = slices.Delete(t.Members, j, j+1)
+	return s.save()
+}
+
+func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID int64) (model.Task, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Task{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Tasks, func(t model.Task) bool { return t.ID == taskID })
+	if i < 0 || !taskVisible(&s.d.Tasks[i], uid) {
+		return model.Task{}, ErrNotFound
+	}
+	t := &s.d.Tasks[i]
+	if t.OwnerID == memberID {
+		return model.Task{}, badMember("нельзя добавить владельца")
+	}
+	if slices.ContainsFunc(t.Members, func(m model.User) bool { return m.ID == memberID }) {
+		out := *t
+		out.Members = slices.Clone(t.Members)
+		s.decorateTask(&out, uid)
+		return out, nil // уже участник — не дублируем
+	}
+	member, ok := s.userByID(memberID)
+	if !ok {
+		return model.Task{}, ErrNotFound
+	}
+	t.Members = append(t.Members, member)
+	out := *t
+	out.Members = slices.Clone(t.Members)
+	s.decorateTask(&out, uid)
+	return out, s.save()
+}
+
+func (s *fileStore) RemoveTaskMember(ctx context.Context, taskID string, memberID int64) (model.Task, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Task{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Tasks, func(t model.Task) bool { return t.ID == taskID })
+	if i < 0 || !taskVisible(&s.d.Tasks[i], uid) {
+		return model.Task{}, ErrNotFound
+	}
+	t := &s.d.Tasks[i]
+	// Владелец удаляет любого участника, участник — только себя.
+	if t.OwnerID != uid && memberID != uid {
+		return model.Task{}, ErrForbidden
+	}
+	if t.OwnerID == memberID {
+		return model.Task{}, badMember("владелец не может выйти из своей задачи")
+	}
+	j := slices.IndexFunc(t.Members, func(m model.User) bool { return m.ID == memberID })
+	if j < 0 {
+		return model.Task{}, ErrNotFound
+	}
+	t.Members = slices.Delete(t.Members, j, j+1)
+	out := *t
+	out.Members = slices.Clone(t.Members)
+	s.decorateTask(&out, uid)
+	return out, s.save()
+}
+
+func (s *fileStore) Messages(ctx context.Context) []model.Message {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Message
+	for _, m := range s.d.Messages {
+		if m.UserID == uid {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) AddMessage(ctx context.Context, role model.Role, text string) (model.Message, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Message{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := 0
-	if n := len(s.d.Messages); n > 0 {
-		id = s.d.Messages[n-1].ID + 1
+	for _, m := range s.d.Messages {
+		id = max(id, m.ID+1)
 	}
-	m := model.Message{ID: id, Role: role, Text: text, CreatedAt: s.now()}
+	m := model.Message{ID: id, UserID: uid, Role: role, Text: text, CreatedAt: s.now()}
 	s.d.Messages = append(s.d.Messages, m)
 	return m, s.save()
 }
+
+func (s *fileStore) CreateUser(ctx context.Context, username, name, passHash string) (model.User, error) {
+	_ = ctx
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lower := strings.ToLower(username)
+	for _, u := range s.d.Users {
+		if u.Username == lower {
+			return model.User{}, ErrConflict
+		}
+	}
+	su := storedUser{ID: s.d.NextUserID, Username: lower, Name: name, PassHash: passHash, CreatedAt: s.now()}
+	s.d.NextUserID++
+	s.d.Users = append(s.d.Users, su)
+	// Первый пользователь забирает данные без владельца (записанные до аккаунтов).
+	if len(s.d.Users) == 1 {
+		for i := range s.d.Events {
+			if s.d.Events[i].UserID == 0 {
+				s.d.Events[i].UserID = su.ID
+			}
+		}
+		for i := range s.d.Tasks {
+			if s.d.Tasks[i].OwnerID == 0 {
+				s.d.Tasks[i].OwnerID = su.ID
+			}
+		}
+		for i := range s.d.Messages {
+			if s.d.Messages[i].UserID == 0 {
+				s.d.Messages[i].UserID = su.ID
+			}
+		}
+	}
+	// Приветствие ассистента — первое сообщение в истории нового пользователя.
+	hasGreeting := slices.ContainsFunc(s.d.Messages, func(m model.Message) bool { return m.UserID == su.ID })
+	if !hasGreeting {
+		id := 0
+		for _, m := range s.d.Messages {
+			id = max(id, m.ID+1)
+		}
+		s.d.Messages = append(s.d.Messages, model.Message{ID: id, UserID: su.ID, Role: model.RoleAI, Text: "Чем могу помочь?", CreatedAt: s.now()})
+	}
+	return model.User{ID: su.ID, Username: su.Username, Name: su.Name, CreatedAt: su.CreatedAt}, s.save()
+}
+
+func (s *fileStore) UserByUsername(_ context.Context, username string) (model.User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	lower := strings.ToLower(username)
+	for _, u := range s.d.Users {
+		if u.Username == lower {
+			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, PassHash: u.PassHash, CreatedAt: u.CreatedAt}, nil
+		}
+	}
+	return model.User{}, ErrNotFound
+}
+
+func (s *fileStore) SearchUsers(ctx context.Context, query string, limit int) []model.User {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	q := strings.ToLower(strings.TrimSpace(query))
+	var out []model.User
+	for _, u := range s.d.Users {
+		if u.ID == uid {
+			continue
+		}
+		if q != "" && !strings.Contains(u.Username, q) && !strings.Contains(strings.ToLower(u.Name), q) {
+			continue
+		}
+		out = append(out, model.User{ID: u.ID, Username: u.Username, Name: u.Name})
+	}
+	slices.SortFunc(out, func(a, b model.User) int { return strings.Compare(a.Username, b.Username) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func (s *fileStore) UpdateUser(ctx context.Context, name string) (model.User, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.User{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.d.Users {
+		if s.d.Users[i].ID == uid {
+			s.d.Users[i].Name = name
+			u := s.d.Users[i]
+			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, CreatedAt: u.CreatedAt}, s.save()
+		}
+	}
+	return model.User{}, ErrNotFound
+}
+
+func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt}
+	return s.save()
+}
+
+func (s *fileStore) UserBySession(_ context.Context, tokenHash string) (model.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.d.Sessions[tokenHash]
+	if !ok {
+		return model.User{}, ErrUnauthorized
+	}
+	now := s.now()
+	if now.After(sess.ExpiresAt) {
+		delete(s.d.Sessions, tokenHash)
+		_ = s.save()
+		return model.User{}, ErrUnauthorized
+	}
+	// Скользящее продление: до конца меньше половины TTL — продлеваем заново.
+	if sess.ExpiresAt.Sub(now) < sessionRefresh {
+		sess.ExpiresAt = now.Add(SessionTTL)
+		s.d.Sessions[tokenHash] = sess
+		_ = s.save()
+	}
+	u, ok := s.userByID(sess.UserID)
+	if !ok {
+		return model.User{}, ErrUnauthorized
+	}
+	return u, nil
+}
+
+func (s *fileStore) DeleteSession(_ context.Context, tokenHash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.d.Sessions, tokenHash)
+	return s.save()
+}
+
+func (s *fileStore) Notifications(ctx context.Context) []model.Notification {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Notification
+	for _, n := range s.d.Notifications {
+		if n.UserID == uid {
+			out = append(out, n)
+		}
+	}
+	slices.SortFunc(out, func(a, b model.Notification) int { return b.ID - a.ID })
+	if len(out) > 100 {
+		out = out[:100]
+	}
+	return out
+}
+
+func (s *fileStore) AddNotification(_ context.Context, n model.Notification) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := 0
+	for _, m := range s.d.Notifications {
+		id = max(id, m.ID+1)
+	}
+	n.ID = id
+	n.CreatedAt = s.now()
+	s.d.Notifications = append(s.d.Notifications, n)
+	return s.save()
+}
+
+func (s *fileStore) MarkNotificationsRead(ctx context.Context) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.d.Notifications {
+		if s.d.Notifications[i].UserID == uid {
+			s.d.Notifications[i].Read = true
+		}
+	}
+	return s.save()
+}
+
+// MemberError — нарушение правила участников задачи; HTTP-слой отдаёт его как 400.
+type MemberError struct{ Msg string }
+
+func (e *MemberError) Error() string { return e.Msg }
+func badMember(msg string) error     { return &MemberError{Msg: msg} }

@@ -1,35 +1,71 @@
 import type {
-  Booking,
+  AppNotification,
   CalendarEvent,
   ChatMessage,
   DatedEvent,
+  EventPatch,
   MonthDots,
-  NewBooking,
   NewEvent,
-  Restaurant,
-  Review,
+  NewTask,
+  Task,
+  TaskPatch,
+  User,
 } from '../domain/types'
+
+/** Сессия аккаунта: токен идёт в заголовок Authorization, user — для UI. */
+export type Session = { token: string; user: User }
+
+/**
+ * Событие стрима чата: кусочек ответа, статус вызова инструмента, конец, ошибка.
+ * Сервер сам сохраняет обе реплики в историю.
+ */
+export type ChatEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'tool'; name: string; status: 'run' | 'done'; detail?: string; date?: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
 
 /**
  * Источник данных приложения. Две реализации:
- * - `server` — Go-бэкенд (server/), данные общие и хранятся на сервере;
+ * - `server` — Go-бэкенд (server/), данные за аккаунтом и хранятся на сервере;
  * - `local` — без сервера (GitHub Pages, превью): моки и localStorage этого браузера.
  */
 export interface CalendarApi {
   readonly mode: 'server' | 'local'
-  /** Все события дня: расписание, брони, события пользователя — по времени начала. */
+  /** Все события дня: расписание и события пользователя — по времени начала. */
   getEvents(date: Date): Promise<CalendarEvent[]>
   createEvent(input: NewEvent): Promise<DatedEvent>
+  updateEvent(id: string, patch: EventPatch): Promise<DatedEvent>
+  deleteEvent(id: string): Promise<void>
   /** Месяц с 0, как в Date. */
   getMonthDots(year: number, month: number): Promise<MonthDots>
-  getPlaces(): Promise<Restaurant[]>
-  getReviews(placeId: string): Promise<Review[]>
-  /** Брони, новые первыми. */
-  getBookings(): Promise<Booking[]>
-  createBooking(input: NewBooking): Promise<Booking>
-  cancelBooking(id: string): Promise<Booking>
+  /** Задачи и цели в порядке создания. */
+  getTasks(): Promise<Task[]>
+  createTask(input: NewTask): Promise<Task>
+  updateTask(id: string, patch: TaskPatch): Promise<Task>
+  deleteTask(id: string): Promise<void>
   getMessages(): Promise<ChatMessage[]>
   addMessage(role: ChatMessage['role'], text: string): Promise<ChatMessage>
+  /** Сообщение ассистенту: ответ приходит потоком событий в onEvent. */
+  sendChat(text: string, onEvent: (e: ChatEvent) => void): Promise<void>
+
+  /** Профиль текущего пользователя. */
+  me(): Promise<User>
+  /** Переименовать себя (отображаемое имя). */
+  updateMe(name: string): Promise<User>
+  /** Вход и регистрация: сервер сохраняет сессию (токен) и возвращает её. */
+  login(input: { username: string; password: string }): Promise<Session>
+  register(input: { username: string; name?: string; password: string }): Promise<Session>
+  logout(): Promise<void>
+  /** Поиск людей для @упоминаний: пустой запрос — все пользователи кроме себя. */
+  searchUsers(query: string): Promise<User[]>
+  getNotifications(): Promise<AppNotification[]>
+  /** Отметить все уведомления прочитанными. */
+  markNotificationsRead(): Promise<void>
+  /** Добавить участника общей задачи по логину. */
+  addTaskMember(taskId: string, username: string): Promise<Task>
+  /** Владелец удаляет участника, участник так выходит из задачи. */
+  removeTaskMember(taskId: string, username: string): Promise<Task>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */
@@ -41,4 +77,24 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
   }
+}
+
+/**
+ * Текст ошибки для пользователя: сырые ответы сервера («Метод API не найдено»)
+ * заменяем понятными формулировками, осмысленные сообщения оставляем.
+ */
+export function apiErrorText(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return 'Нет соединения с сервером'
+    if (err.status === 404) return 'Функция недоступна — сервер устарел'
+    if (err.status >= 500) return 'Ошибка сервера — попробуйте позже'
+    return err.message
+  }
+  return err instanceof Error ? err.message : 'Что-то пошло не так'
+}
+
+/** Клиентские 4xx не повторяем — они не «заживут сами», а спамят консоль и обманчиво выглядят. */
+export function retryQuery(failureCount: number, err: unknown): boolean {
+  if (err instanceof ApiError && err.status >= 400 && err.status < 500) return false
+  return failureCount < 2
 }

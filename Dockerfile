@@ -22,7 +22,7 @@ RUN npm run build
 # ── 2. Сервер ────────────────────────────────────────────────────
 FROM ${GO_IMAGE} AS server
 WORKDIR /src
-COPY server/go.mod ./
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server ./
 # Собранный UI встраивается в бинарник через go:embed (server/web/dist).
