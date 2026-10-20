@@ -1,3 +1,4 @@
+import { LIMITS, isValidRange } from '../domain/limits'
 import { isOpenAt } from '../domain/restaurants'
 import type { Booking, ChatMessage, DatedEvent } from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
@@ -66,12 +67,16 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getEvents: (date) => reply(eventsFor(date, bookings(), events())),
     createEvent(input) {
       const title = input.title.trim()
-      if (!title) return Promise.reject(new ApiError(400, 'Название обязательно'))
-      if (input.end <= input.start) return Promise.reject(new ApiError(400, 'Время задано неверно'))
+      const subtitle = input.subtitle?.trim()
+      if (!title || title.length > LIMITS.title)
+        return Promise.reject(new ApiError(400, `Название обязательно и не длиннее ${LIMITS.title} символов`))
+      if (subtitle && subtitle.length > LIMITS.subtitle)
+        return Promise.reject(new ApiError(400, `Подзаголовок не длиннее ${LIMITS.subtitle} символов`))
+      if (!isValidRange(input.start, input.end)) return Promise.reject(new ApiError(400, 'Время задано неверно'))
       const event: DatedEvent = {
         id: nextId('evt'),
         title,
-        subtitle: input.subtitle,
+        subtitle,
         start: input.start,
         end: input.end,
         badge: input.badge ?? 'routine',
@@ -89,7 +94,15 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     createBooking(input) {
       const place = RESTAURANTS.find((r) => r.id === input.placeId)
       if (!place) return Promise.reject(new ApiError(404, 'Место не найдено'))
+      if (!isValidRange(input.start, input.end)) return Promise.reject(new ApiError(400, 'Время задано неверно'))
+      if (!Number.isInteger(input.guests) || input.guests < LIMITS.minGuests || input.guests > LIMITS.maxGuests)
+        return Promise.reject(new ApiError(400, `Гостей должно быть от ${LIMITS.minGuests} до ${LIMITS.maxGuests}`))
       if (!isOpenAt(place, input.start)) return Promise.reject(new ApiError(409, `${place.name} закрыто в это время`))
+      const date = toISODate(input.date)
+      const overlaps = data.bookings.some(
+        (b) => b.status === 'confirmed' && b.date === date && input.start < b.slot.end && b.slot.start < input.end,
+      )
+      if (overlaps) return Promise.reject(new ApiError(409, 'Это время уже занято другой бронью'))
       const booking: Booking = {
         id: nextId('bkg'),
         restaurant: place,
@@ -113,7 +126,10 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     },
     getMessages: () => reply([...data.messages]),
     addMessage(role, text) {
-      const message: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role, text: text.trim() }
+      const trimmed = text.trim()
+      if (!trimmed || trimmed.length > LIMITS.message)
+        return Promise.reject(new ApiError(400, `Текст обязателен и не длиннее ${LIMITS.message} символов`))
+      const message: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role, text: trimmed }
       data = { ...data, messages: [...data.messages, message] }
       save()
       return reply(message)

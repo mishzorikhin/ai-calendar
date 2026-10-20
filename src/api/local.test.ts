@@ -64,4 +64,34 @@ describe('local api', () => {
     expect((await second.getEvents(day)).some((e) => e.title === 'Звонок маме')).toBe(true)
     expect((await second.getMessages()).at(-1)?.text).toBe('Привет')
   })
+
+  it('проверяет вход так же, как сервер', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const event = { date: day, start: 600, end: 660 }
+    await expect(api.createEvent({ ...event, title: '  ' })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createEvent({ ...event, title: 'я'.repeat(121) })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createEvent({ ...event, title: 'x', subtitle: 'я'.repeat(201) })).rejects.toMatchObject({
+      status: 400,
+    })
+    await expect(api.createEvent({ ...event, title: 'x', end: 1500 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createEvent({ ...event, title: 'x', start: -5 })).rejects.toMatchObject({ status: 400 })
+
+    const booking = { placeId: 'scramble', date: day, start: 540, end: 630, guests: 2, invite: false }
+    await expect(api.createBooking({ ...booking, guests: 9 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createBooking({ ...booking, guests: 0 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.createBooking({ ...booking, end: 500 })).rejects.toMatchObject({ status: 400 })
+
+    await expect(api.addMessage('user', '   ')).rejects.toMatchObject({ status: 400 })
+    await expect(api.addMessage('user', 'я'.repeat(2001))).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('не даёт забронировать пересекающееся время; после отмены можно', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const input = { placeId: 'scramble', date: day, start: 540, end: 630, guests: 2, invite: false }
+    const first = await api.createBooking(input)
+    await expect(api.createBooking({ ...input, start: 600, end: 700 })).rejects.toMatchObject({ status: 409 })
+    await api.createBooking({ ...input, start: 630, end: 700 })
+    await api.cancelBooking(first.id)
+    await api.createBooking(input)
+  })
 })

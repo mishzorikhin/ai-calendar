@@ -17,13 +17,17 @@ export const keys = {
 
 const NO_EVENTS: CalendarEvent[] = []
 
-/** События дня. Пока грузятся — предыдущий день (без мигания при листании) или пустой список. */
-export function useDayEvents(date: Date) {
+/**
+ * События дня. Пока грузятся — предыдущий день (без мигания при листании) или пустой список.
+ * Там, где по событиям считаются свободные окна и конфликты, передавайте `keepPrevious: false`:
+ * иначе время будет посчитано по чужому дню.
+ */
+export function useDayEvents(date: Date, { keepPrevious = true }: { keepPrevious?: boolean } = {}) {
   const api = useApi()
   const query = useQuery({
     queryKey: keys.events(date),
     queryFn: () => api.getEvents(date),
-    placeholderData: keepPreviousData,
+    placeholderData: keepPrevious ? keepPreviousData : undefined,
   })
   return { ...query, events: query.data ?? NO_EVENTS }
 }
@@ -110,7 +114,10 @@ export function useAddMessage() {
       ])
       return { previous }
     },
-    onError: (_err, _vars, ctx) => qc.setQueryData(keys.messages, ctx?.previous),
+    // Если кэша до отправки не было, откатывать нечего: onSettled всё равно перечитает историю с сервера.
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(keys.messages, ctx.previous)
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.messages }),
   })
 }

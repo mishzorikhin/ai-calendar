@@ -40,7 +40,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const [pickedStart, setStart] = useState<number | null>(() =>
     request.start !== null ? nearestTimeOption(request.start) : null,
   )
-  const { events } = useDayEvents(date)
+  const { events } = useDayEvents(date, { keepPrevious: false })
   const now = new Date()
   const start = pickedStart ?? firstFreeTime(events, isSameDay(date, now) ? minutesOf(now) : 0)
   const [duration, setDuration] = useState<number>(60)

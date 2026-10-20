@@ -94,13 +94,14 @@ func TestEventsFlow(t *testing.T) {
 func TestEventValidation(t *testing.T) {
 	h := newTestServer(t)
 	cases := map[string]string{
-		"дата":        `{"date":"20.10.2026","title":"x","start":60,"end":120}`,
-		"пустое имя":  `{"date":"2026-10-20","title":"  ","start":60,"end":120}`,
-		"время":       `{"date":"2026-10-20","title":"x","start":120,"end":60}`,
-		"тип":         `{"date":"2026-10-20","title":"x","start":60,"end":120,"badge":"party"}`,
-		"лишнее поле": `{"date":"2026-10-20","title":"x","start":60,"end":120,"color":"red"}`,
-		"битый JSON":  `{"date":`,
-		"два объекта": `{"date":"2026-10-20","title":"x","start":60,"end":120}{}`,
+		"дата":         `{"date":"20.10.2026","title":"x","start":60,"end":120}`,
+		"пустое имя":   `{"date":"2026-10-20","title":"  ","start":60,"end":120}`,
+		"время":        `{"date":"2026-10-20","title":"x","start":120,"end":60}`,
+		"тип":          `{"date":"2026-10-20","title":"x","start":60,"end":120,"badge":"party"}`,
+		"подзаголовок": `{"date":"2026-10-20","title":"x","subtitle":"` + strings.Repeat("я", maxSubtitle+1) + `","start":60,"end":120}`,
+		"лишнее поле":  `{"date":"2026-10-20","title":"x","start":60,"end":120,"color":"red"}`,
+		"битый JSON":   `{"date":`,
+		"два объекта":  `{"date":"2026-10-20","title":"x","start":60,"end":120}{}`,
 	}
 	for name, body := range cases {
 		if rec := do(t, h, "POST", "/api/events", body); rec.Code != http.StatusBadRequest {
@@ -142,6 +143,14 @@ func TestBookingFlow(t *testing.T) {
 	dots := decode[map[string][]model.Badge](t, do(t, h, "GET", "/api/month?year=2026&month=10", ""))
 	if len(dots["21"]) == 0 {
 		t.Fatalf("бронь не попала в точки месяца: %v", dots)
+	}
+
+	// Пересекающаяся бронь на то же время — 409, смежная — можно.
+	if rec := do(t, h, "POST", "/api/bookings", `{"placeId":"scramble","date":"2026-10-21","start":600,"end":700,"guests":2}`); rec.Code != http.StatusConflict {
+		t.Fatalf("пересечение броней: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "POST", "/api/bookings", `{"placeId":"scramble","date":"2026-10-21","start":630,"end":700,"guests":2}`); rec.Code != http.StatusCreated {
+		t.Fatalf("смежная бронь: %d %s", rec.Code, rec.Body)
 	}
 
 	cancelled := decode[model.Booking](t, do(t, h, "DELETE", "/api/bookings/"+b.ID, ""))
@@ -219,6 +228,9 @@ func TestSPA(t *testing.T) {
 	}
 	if rec := do(t, h, "GET", "/api/unknown", ""); rec.Code != 404 || !strings.Contains(rec.Body.String(), "error") {
 		t.Fatalf("неизвестный метод API: %d %s", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("нет Content-Security-Policy")
 	}
 	if rec := do(t, h, "POST", "/", ""); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST на статику: %d", rec.Code)

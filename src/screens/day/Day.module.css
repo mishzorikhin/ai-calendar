@@ -1,7 +1,8 @@
-.inner {
+/* Две класса — чтобы перебить отступ .inner из Sheet. */
+.inner.inner {
   display: flex;
   flex-direction: column;
-  padding-bottom: 10px !important;
+  padding-bottom: 10px;
 }
 
 .header {

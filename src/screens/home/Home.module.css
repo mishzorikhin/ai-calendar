@@ -86,8 +86,9 @@
   margin-bottom: 6px;
 }
 
-.more {
-  margin-left: 6px !important;
+/* Две класса — чтобы перебить наложение аватаров из .stack > * + *. */
+.goalsHead .more {
+  margin-left: 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-2);
@@ -314,11 +315,6 @@
   color: #fff;
 }
 
-.dinnerOpen {
-  height: auto !important;
-  min-height: 132px;
-}
-
 .dinner {
   position: relative;
   height: 204px;
@@ -327,6 +323,12 @@
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+/* После .dinner: одинаковая специфичность, побеждает порядок. */
+.dinnerOpen {
+  height: auto;
+  min-height: 132px;
 }
 
 .glass {

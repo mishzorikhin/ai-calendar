@@ -16,8 +16,12 @@ import (
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 )
 
-// ErrNotFound — запись не найдена.
-var ErrNotFound = errors.New("not found")
+var (
+	// ErrNotFound — запись не найдена.
+	ErrNotFound = errors.New("not found")
+	// ErrConflict — время уже занято другой бронью.
+	ErrConflict = errors.New("conflict")
+)
 
 const firstBookingCode = 4821
 
@@ -82,6 +86,23 @@ func (s *Store) save() error {
 	return os.Rename(tmp, s.path)
 }
 
+// commit применяет изменение и сохраняет файл; если запись не удалась, состояние откатывается,
+// чтобы память не расходилась с диском. Вызывается под блокировкой на запись.
+func (s *Store) commit(change func()) error {
+	prev := data{
+		Events:   slices.Clone(s.d.Events),
+		Bookings: slices.Clone(s.d.Bookings),
+		Messages: slices.Clone(s.d.Messages),
+		NextID:   s.d.NextID,
+	}
+	change()
+	if err := s.save(); err != nil {
+		s.d = prev
+		return err
+	}
+	return nil
+}
+
 func (s *Store) nextID(prefix string) string {
 	id := fmt.Sprintf("%s-%d", prefix, s.d.NextID)
 	s.d.NextID++
@@ -117,9 +138,13 @@ func (s *Store) EventsInMonth(prefix string) []model.Event {
 func (s *Store) CreateEvent(e model.Event) (model.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e.ID = s.nextID("evt")
-	s.d.Events = append(s.d.Events, e)
-	return e, s.save()
+	if err := s.commit(func() {
+		e.ID = s.nextID("evt")
+		s.d.Events = append(s.d.Events, e)
+	}); err != nil {
+		return model.Event{}, err
+	}
+	return e, nil
 }
 
 func (s *Store) DeleteEvent(id string) error {
@@ -129,8 +154,7 @@ func (s *Store) DeleteEvent(id string) error {
 	if i < 0 {
 		return ErrNotFound
 	}
-	s.d.Events = slices.Delete(s.d.Events, i, i+1)
-	return s.save()
+	return s.commit(func() { s.d.Events = slices.Delete(s.d.Events, i, i+1) })
 }
 
 // Bookings — все брони, новые первыми.
@@ -143,15 +167,25 @@ func (s *Store) Bookings() []model.Booking {
 }
 
 // CreateBooking сохраняет подтверждённую бронь и присваивает ей номер.
+// Если время пересекается с другой подтверждённой бронью, возвращает ErrConflict.
 func (s *Store) CreateBooking(b model.Booking) (model.Booking, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b.ID = s.nextID("bkg")
-	b.Code = fmt.Sprintf("A-%d", firstBookingCode+len(s.d.Bookings))
-	b.Status = model.BookingConfirmed
-	b.CreatedAt = s.now()
-	s.d.Bookings = append(s.d.Bookings, b)
-	return b, s.save()
+	for _, other := range s.d.Bookings {
+		if other.Status == model.BookingConfirmed && other.Date == b.Date && b.Start < other.End && other.Start < b.End {
+			return model.Booking{}, ErrConflict
+		}
+	}
+	if err := s.commit(func() {
+		b.ID = s.nextID("bkg")
+		b.Code = fmt.Sprintf("A-%d", firstBookingCode+len(s.d.Bookings))
+		b.Status = model.BookingConfirmed
+		b.CreatedAt = s.now()
+		s.d.Bookings = append(s.d.Bookings, b)
+	}); err != nil {
+		return model.Booking{}, err
+	}
+	return b, nil
 }
 
 // CancelBooking помечает бронь отменённой (история сохраняется).
@@ -162,8 +196,10 @@ func (s *Store) CancelBooking(id string) (model.Booking, error) {
 	if i < 0 {
 		return model.Booking{}, ErrNotFound
 	}
-	s.d.Bookings[i].Status = model.BookingCancelled
-	return s.d.Bookings[i], s.save()
+	if err := s.commit(func() { s.d.Bookings[i].Status = model.BookingCancelled }); err != nil {
+		return model.Booking{}, err
+	}
+	return s.d.Bookings[i], nil
 }
 
 func (s *Store) Messages() []model.Message {
@@ -180,6 +216,8 @@ func (s *Store) AddMessage(role model.Role, text string) (model.Message, error) 
 		id = s.d.Messages[n-1].ID + 1
 	}
 	m := model.Message{ID: id, Role: role, Text: text, CreatedAt: s.now()}
-	s.d.Messages = append(s.d.Messages, m)
-	return m, s.save()
+	if err := s.commit(func() { s.d.Messages = append(s.d.Messages, m) }); err != nil {
+		return model.Message{}, err
+	}
+	return m, nil
 }

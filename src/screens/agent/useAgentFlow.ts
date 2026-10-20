@@ -178,7 +178,7 @@ export function useAgentFlow() {
 
   const date = paramsDate(params)
   const when = `${dayLabel(params.dayOffset)}, ${WEEKDAYS[date.getDay()]?.toLowerCase()}`
-  const { events } = useDayEvents(date)
+  const { events } = useDayEvents(date, { keepPrevious: false })
   const { data: allPlaces = NO_PLACES } = usePlaces()
   const free = findFreeSlots(events)
   const slot =
@@ -195,24 +195,30 @@ export function useAgentFlow() {
     flow.step === 'finding' && flow.phase === 'radar' && places.length > 0 ? RADAR_MS : null,
   )
 
+  const saveBooking = (f: Extract<Flow, { step: 'booking' }>) =>
+    createBooking.mutate({
+      placeId: f.place.id,
+      date,
+      start: f.time.start,
+      end: f.time.end,
+      guests: params.guests,
+      invite: params.invite,
+    })
+
   // Звонок идёт по секундам; когда ресторан подтверждает, бронь сохраняется на сервере.
   useInterval(
     () => {
       if (flow.step !== 'booking' || flow.call !== 'calling') return
-      if (flow.seconds + 1 >= TRANSCRIPT_DONE_AT) {
-        createBooking.mutate({
-          placeId: flow.place.id,
-          date,
-          start: flow.time.start,
-          end: flow.time.end,
-          guests: params.guests,
-          invite: params.invite,
-        })
-      }
+      if (flow.seconds + 1 >= TRANSCRIPT_DONE_AT) saveBooking(flow)
       dispatch({ type: 'tick' })
     },
     calling ? 1000 : null,
   )
+
+  /** Ресторан подтвердил, а сохранить бронь не вышло — пробуем ещё раз с теми же данными. */
+  const retrySave = () => {
+    if (flow.step === 'booking' && flow.call === 'done') saveBooking(flow)
+  }
 
   /** Забронировать можно только открытое в это время место — и только после подтверждения. */
   const askConfirm = (r: Restaurant) => {
@@ -277,6 +283,7 @@ export function useAgentFlow() {
     },
     askConfirm,
     startCall,
+    retrySave,
     cancel,
     finish,
     editText,

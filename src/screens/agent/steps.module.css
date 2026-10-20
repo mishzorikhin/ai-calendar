@@ -533,6 +533,10 @@
   color: var(--ink);
 }
 
+.retry {
+  padding: 0 14px 12px;
+}
+
 .cancelLink {
   height: 36px;
   padding: 0;

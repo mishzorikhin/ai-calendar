@@ -27,6 +27,7 @@ export function BookingStep({
   onTranscript,
   listening,
   onHangup,
+  onRetry,
   onCancelBooking,
 }: {
   place: Restaurant
@@ -45,6 +46,7 @@ export function BookingStep({
   onTranscript: () => void
   listening: boolean
   onHangup: () => void
+  onRetry: () => void
   onCancelBooking: () => void
 }) {
   const heard = lines.filter((l) => l.at <= seconds)
@@ -151,7 +153,7 @@ export function BookingStep({
             </span>
             {listening && state === 'calling' && (
               <span className={styles.statusWave}>
-                <Waveform bars={6} height={18} color="#3a78f2" />
+                <Waveform bars={6} height={18} color="var(--blue)" />
               </span>
             )}
             <Pressable
@@ -173,6 +175,14 @@ export function BookingStep({
               </Pressable>
             )}
           </div>
+
+          {failed && (
+            <div className={styles.retry}>
+              <Pill small tone="dark" onClick={onRetry}>
+                Сохранить ещё раз
+              </Pill>
+            </div>
+          )}
 
           <AnimatePresence initial={false}>
             {state === 'done' && code && (

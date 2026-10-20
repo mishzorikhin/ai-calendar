@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
+import { useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Pill } from '../components/ui'
-import { useTimeout } from '../lib/hooks'
+import { useInterval, useTimeout } from '../lib/hooks'
 import { spring } from '../lib/motion'
 import styles from './pwa.module.css'
 
@@ -12,16 +13,19 @@ const UPDATE_CHECK_MS = 60 * 60 * 1000
  * Обновление применяется только по нажатию, чтобы не перезагрузить экран посреди действия.
  */
 export function UpdatePrompt() {
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     offlineReady: [offlineReady, setOfflineReady],
     updateServiceWorker,
   } = useRegisterSW({
-    onRegisteredSW(_url, registration) {
-      // Долгоживущее приложение на экране «Домой» раз в час проверяет обновления.
-      if (registration) setInterval(() => void registration.update(), UPDATE_CHECK_MS)
+    onRegisteredSW(_url, registered) {
+      setRegistration(registered ?? null)
     },
   })
+
+  // Долгоживущее приложение на экране «Домой» раз в час проверяет обновления.
+  useInterval(() => void registration?.update(), registration ? UPDATE_CHECK_MS : null)
 
   useTimeout(() => setOfflineReady(false), offlineReady ? 4000 : null)
 

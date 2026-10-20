@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	maxTitle   = 120
-	maxMessage = 2000
-	minGuests  = 1
-	maxGuests  = 8
-	dayMinutes = 24 * 60
+	maxTitle    = 120
+	maxSubtitle = 200
+	maxMessage  = 2000
+	minGuests   = 1
+	maxGuests   = 8
+	dayMinutes  = 24 * 60
 )
 
 // Options — зависимости сервера.
@@ -144,6 +145,10 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if in.Title == "" || utf8.RuneCountInString(in.Title) > maxTitle {
 		return badRequest("Название обязательно и не длиннее %d символов", maxTitle)
 	}
+	in.Subtitle = strings.TrimSpace(in.Subtitle)
+	if utf8.RuneCountInString(in.Subtitle) > maxSubtitle {
+		return badRequest("Подзаголовок не длиннее %d символов", maxSubtitle)
+	}
 	if err := validateRange(in.Start, in.End); err != nil {
 		return err
 	}
@@ -258,6 +263,9 @@ func (s *server) createBooking(w http.ResponseWriter, r *http.Request) error {
 	b, err := s.store.CreateBooking(model.Booking{
 		Place: place, Date: in.Date, Start: in.Start, End: in.End, Guests: in.Guests, Invite: in.Invite,
 	})
+	if errors.Is(err, store.ErrConflict) {
+		return &apiError{Status: http.StatusConflict, Message: "Это время уже занято другой бронью"}
+	}
 	if err != nil {
 		return err
 	}

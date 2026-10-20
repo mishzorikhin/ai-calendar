@@ -1,13 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { pad2 } from '../lib/dates'
+import { useNow } from '../lib/hooks'
 import styles from './Device.module.css'
 
 function useClock() {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 15_000)
-    return () => window.clearInterval(id)
-  }, [])
+  const now = useNow(15_000)
   return `${now.getHours()}:${pad2(now.getMinutes())}`
 }
 

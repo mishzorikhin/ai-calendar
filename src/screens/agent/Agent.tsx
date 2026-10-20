@@ -106,6 +106,7 @@ export function Agent() {
                     onTranscript={() => dispatch({ type: 'toggleTranscript' })}
                     listening={flow.listening}
                     onHangup={() => dispatch({ type: 'hangup' })}
+                    onRetry={agent.retrySave}
                     onCancelBooking={agent.cancel}
                   />
                 )}
