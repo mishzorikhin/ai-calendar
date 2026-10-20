@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useRef, type ReactNode } from 'react'
+import { useReviews } from '../../api/queries'
 import { BottomSheet } from '../../components/BottomSheet'
 import { ClockIcon, CloseIcon, PinIcon, StarIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pill, SmartImage } from '../../components/ui'
@@ -7,7 +8,6 @@ import type { Restaurant } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
 import { useTimeout } from '../../lib/hooks'
 import { spring } from '../../lib/motion'
-import { REVIEWS } from '../../mocks/reviews'
 import styles from './PlaceSheet.module.css'
 
 /** Шторка с подробностями о месте и отзывами. */
@@ -23,6 +23,7 @@ export function PlaceSheet({
   onBook?: () => void
 }) {
   const reviews = useRef<HTMLDivElement>(null)
+  const { data: list = [] } = useReviews(place.id)
 
   // Открыли по «Отзывы» — после анимации появления докручиваем до них.
   useTimeout(
@@ -83,7 +84,7 @@ export function PlaceSheet({
         <h3>Отзывы</h3>
         <span className="caption">Сначала полезные</span>
       </div>
-      {REVIEWS.map((r, i) => (
+      {list.map((r, i) => (
         <motion.div
           key={r.name}
           className={styles.review}

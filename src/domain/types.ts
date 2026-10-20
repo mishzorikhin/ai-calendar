@@ -64,14 +64,40 @@ export type RequestParams = {
   invite: boolean
 }
 
+export type BookingStatus = 'confirmed' | 'cancelled'
+
 export type Booking = {
+  id: string
   restaurant: Restaurant
   slot: Slot
   date: Date
   guests: number
   invite: boolean
   code: string
+  status: BookingStatus
 }
+
+export type Review = { name: string; initials: string; color: string; rating: number; text: string }
+
+/** Новое событие пользователя (до сохранения). */
+export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
+  date: Date
+  subtitle?: string
+  badge?: Badge
+}
+
+/** Запрос на бронь, которую ассистент подтвердил по телефону. */
+export type NewBooking = {
+  placeId: string
+  date: Date
+  start: number
+  end: number
+  guests: number
+  invite: boolean
+}
+
+/** Значки событий по числам месяца. */
+export type MonthDots = Readonly<Record<number, readonly Badge[]>>
 
 export type TranscriptLine = { at: number; who: 'ai' | 'place'; text: string }
 

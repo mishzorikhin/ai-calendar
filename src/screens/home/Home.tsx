@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useActiveBooking, useDayEvents } from '../../api/queries'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
@@ -10,17 +11,22 @@ import { MONTHS_GENITIVE, MONTHS_SHORT, WEEKDAYS, addDays, pad2, startOfDay } fr
 import { minutesOf, useNow } from '../../lib/hooks'
 import { itemVariants } from '../../lib/motion'
 import { pluralize } from '../../lib/plural'
-import { eventsFor } from '../../mocks/calendar'
+import type { CalendarEvent } from '../../domain/types'
 import { FRIEND, ME } from '../../mocks/people'
+import { InstallBanner } from '../../pwa/InstallBanner'
 import { BookedCard } from './BookedCard'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
 import { TasksGrid } from './TasksGrid'
 import styles from './Home.module.css'
 
+/** Планы дня — всё, кроме сна. */
+const isPlan = (e: CalendarEvent) => e.badge !== 'sleep'
+
 export function Home() {
   const { go } = useNavigation()
-  const { booking, customEvents, setSelectedDate } = useCalendar()
+  const { setSelectedDate } = useCalendar()
+  const booking = useActiveBooking()
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.
   const now = useNow()
   const today = startOfDay(now)
@@ -30,10 +36,12 @@ export function Home() {
     go('day')
   }
 
-  const todays = eventsFor(today, booking, customEvents).filter((e) => e.id !== 'sleep')
+  const tomorrow = addDays(today, 1)
+  const todays = useDayEvents(today).events.filter(isPlan)
+  const tomorrows = useDayEvents(tomorrow).events.filter(isPlan)
   const upcoming = todays.find((e) => e.end > minutesOf(now))
-  const nextDate = upcoming ? today : addDays(today, 1)
-  const next = upcoming ?? eventsFor(nextDate, booking, customEvents).find((e) => e.id !== 'sleep')
+  const nextDate = upcoming ? today : tomorrow
+  const next = upcoming ?? tomorrows[0]
 
   return (
     <Sheet>
@@ -73,6 +81,8 @@ export function Home() {
         </div>
         {next && <NextEvent event={next} date={nextDate} onOpen={() => openDay(nextDate)} />}
       </motion.section>
+
+      <InstallBanner />
 
       <BookedCard booking={booking} onOpen={openDay} />
 

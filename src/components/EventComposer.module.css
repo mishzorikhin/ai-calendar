@@ -79,3 +79,9 @@
   font-size: 14.5px;
   color: var(--ink-2);
 }
+
+.error {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #b42318;
+}

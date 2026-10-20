@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useAddMessage, useMessages } from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
 import { BarSlot } from '../../app/bar'
 import { useNavigation } from '../../app/navigation'
@@ -11,7 +12,9 @@ import styles from './Chat.module.css'
 
 export function Chat() {
   const { go } = useNavigation()
-  const { messages, addMessage, setPrompt, draft, setDraft } = useAssistant()
+  const { setPrompt, draft, setDraft } = useAssistant()
+  const messages = useMessages()
+  const addMessage = useAddMessage()
   const list = useRef<HTMLDivElement>(null)
 
   // Черновик (например, запрос, который нужно поправить) забираем в поле один раз.
@@ -26,7 +29,7 @@ export function Chat() {
   }, [messages.length])
 
   const send = (text: string) => {
-    addMessage('user', text)
+    addMessage.mutate({ role: 'user', text })
     setPrompt(text)
     go('agent')
   }

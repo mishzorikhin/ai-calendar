@@ -19,7 +19,7 @@ export const TIME_OPTIONS: readonly number[] = Array.from({ length: 25 }, (_, i)
 
 /** События, которые не мешают планам (сон не считается занятостью). */
 function blocks(e: CalendarEvent) {
-  return e.id !== 'sleep'
+  return e.badge !== 'sleep'
 }
 
 /** Слот заданной длины с соседними делами и пересечениями. */

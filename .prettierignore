@@ -1,3 +1,5 @@
 dist
 dist-single
 package-lock.json
+server/web/dist
+server/data

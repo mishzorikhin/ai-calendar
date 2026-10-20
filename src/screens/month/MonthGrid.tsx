@@ -1,9 +1,9 @@
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
+import { useMonthDots } from '../../api/queries'
 import { StarIcon } from '../../components/Icons'
 import { MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, monthGrid } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
 import { spring } from '../../lib/motion'
-import { monthDots } from '../../mocks/calendar'
 import styles from './Month.module.css'
 
 export type MonthView = { year: number; month: number; dir: number }
@@ -25,6 +25,8 @@ export function MonthGrid({
   onPick: (d: Date) => void
   onSwipe: (delta: number) => void
 }) {
+  const { data: dots } = useMonthDots(view.year, view.month)
+
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.x < -SWIPE_OFFSET || info.velocity.x < -SWIPE_VELOCITY) onSwipe(1)
     else if (info.offset.x > SWIPE_OFFSET || info.velocity.x > SWIPE_VELOCITY) onSwipe(-1)
@@ -58,7 +60,7 @@ export function MonthGrid({
               if (!d) return <span key={`empty-${i}`} />
               const isToday = isSameDay(d, today)
               const isPicked = picked !== null && isSameDay(d, picked)
-              const badges = isToday ? (['sleep'] as const) : monthDots(d)
+              const badges = isToday ? (['sleep'] as const) : (dots?.[d.getDate()] ?? [])
               return (
                 <motion.button
                   key={d.getDate()}

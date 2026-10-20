@@ -1,4 +1,4 @@
-import type { Badge, Booking, CalendarEvent, DatedEvent } from '../domain/types'
+import type { Badge, Booking, CalendarEvent, DatedEvent, MonthDots } from '../domain/types'
 import { dayKey } from '../lib/dates'
 
 const BASE_EVENTS: readonly CalendarEvent[] = [
@@ -34,24 +34,32 @@ const BASE_EVENTS: readonly CalendarEvent[] = [
   { id: 'read', title: 'Чтение', subtitle: '30 страниц', start: 22 * 60, end: 23 * 60, badge: 'read' },
 ]
 
+/** Событие календаря для подтверждённой брони. */
+export function bookingEvent(b: Booking): CalendarEvent {
+  return {
+    id: `booking-${b.id}`,
+    title: `Завтрак · ${b.restaurant.name}`,
+    subtitle: `${b.restaurant.address} · бронь ${b.code}`,
+    start: b.slot.start,
+    end: b.slot.end,
+    badge: 'food',
+    highlight: true,
+  }
+}
+
 /**
- * Моковый «источник» календаря: базовое расписание, бронь ассистента и события пользователя.
+ * Моковый «источник» календаря: базовое расписание, брони ассистента и события пользователя.
  * Дни немного различаются, чтобы смена дня в ленте недели была заметна.
+ * Так же события собирает сервер (server/internal/api).
  */
-export function eventsFor(date: Date, booking: Booking | null, custom: readonly DatedEvent[] = []): CalendarEvent[] {
+export function eventsFor(
+  date: Date,
+  bookings: readonly Booking[] = [],
+  custom: readonly DatedEvent[] = [],
+): CalendarEvent[] {
   const seed = date.getDate() % 3
   const list = BASE_EVENTS.filter((e) => !(seed === 1 && e.id === 'gym') && !(seed === 2 && e.id === 'lunch'))
-  if (booking && dayKey(booking.date) === dayKey(date)) {
-    list.push({
-      id: 'booked',
-      title: `Завтрак · ${booking.restaurant.name}`,
-      subtitle: `${booking.restaurant.address} · бронь ${booking.code}`,
-      start: booking.slot.start,
-      end: booking.slot.end,
-      badge: 'food',
-      highlight: true,
-    })
-  }
+  for (const b of bookings) if (b.status === 'confirmed' && dayKey(b.date) === dayKey(date)) list.push(bookingEvent(b))
   for (const e of custom) if (dayKey(e.date) === dayKey(date)) list.push(e)
   return list.sort((a, b) => a.start - b.start)
 }
@@ -70,7 +78,20 @@ const MONTH_DOTS: Readonly<Record<number, readonly Badge[]>> = {
   30: ['food'],
 }
 
-/** Цветные точки событий в месячной сетке. */
-export function monthDots(date: Date): readonly Badge[] {
-  return MONTH_DOTS[date.getDate()] ?? []
+/** Значки событий по дням месяца (месяц с 0, как в Date). */
+export function monthDotsFor(
+  year: number,
+  month: number,
+  bookings: readonly Booking[] = [],
+  custom: readonly DatedEvent[] = [],
+): MonthDots {
+  const days = new Date(year, month + 1, 0).getDate()
+  const dots: Record<number, Badge[]> = {}
+  for (const [day, badges] of Object.entries(MONTH_DOTS)) if (Number(day) <= days) dots[Number(day)] = [...badges]
+  const add = (d: Date, badge: Badge) => {
+    if (d.getFullYear() === year && d.getMonth() === month) (dots[d.getDate()] ??= []).push(badge)
+  }
+  for (const e of custom) add(e.date, e.badge)
+  for (const b of bookings) if (b.status === 'confirmed') add(b.date, 'food')
+  return dots
 }

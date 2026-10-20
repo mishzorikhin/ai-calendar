@@ -5,7 +5,7 @@ import type { AgentFlow } from './useAgentFlow'
 
 /** Содержимое нижней панели на каждом шаге ассистента. */
 export function AgentBar({ agent }: { agent: AgentFlow }) {
-  const { state, dispatch, place, placeOpen, askConfirm, finish, toHome } = agent
+  const { state, dispatch, place, placeOpen, askConfirm, startCall, finish, toHome, booking } = agent
   const { flow, overlay, params } = state
   const hidden = overlay !== null
 
@@ -36,7 +36,7 @@ export function AgentBar({ agent }: { agent: AgentFlow }) {
     return (
       <BarSlot id={`results-${placeOpen}`} hidden={hidden}>
         <BarChips>
-          {placeOpen ? (
+          {place && placeOpen ? (
             <Pill small tone="white" onClick={() => askConfirm(place)}>
               Забронировать
             </Pill>
@@ -77,6 +77,25 @@ export function AgentBar({ agent }: { agent: AgentFlow }) {
         </BarSlot>
       )
     case 'done':
+      if (!booking.saved)
+        return (
+          <BarSlot id={booking.saving ? 'saving' : 'save-failed'} hidden={hidden}>
+            {booking.saving ? (
+              <BarText>
+                <Shimmer>Сохраняю бронь</Shimmer>
+              </BarText>
+            ) : (
+              <BarChips>
+                <Pill small tone="white" onClick={() => startCall(flow.place)}>
+                  Повторить
+                </Pill>
+                <Pill small tone="glass" onClick={() => dispatch({ type: 'goto', step: 'finding' })}>
+                  Другое место
+                </Pill>
+              </BarChips>
+            )}
+          </BarSlot>
+        )
       return (
         <BarSlot id="done" hidden={hidden}>
           <BarChips>
@@ -93,7 +112,7 @@ export function AgentBar({ agent }: { agent: AgentFlow }) {
       return (
         <BarSlot id="hungup" hidden={hidden}>
           <BarChips>
-            <Pill small tone="white" onClick={() => dispatch({ type: 'call', place: flow.place })}>
+            <Pill small tone="white" onClick={() => startCall(flow.place)}>
               Перезвонить
             </Pill>
             <Pill small tone="glass" onClick={() => dispatch({ type: 'goto', step: 'finding' })}>

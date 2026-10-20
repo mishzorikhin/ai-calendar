@@ -18,6 +18,8 @@ export function BookingStep({
   guests,
   invite,
   code,
+  saving,
+  saveError,
   seconds,
   state,
   lines,
@@ -32,7 +34,10 @@ export function BookingStep({
   when: string
   guests: number
   invite: boolean
-  code: string
+  /** Номер брони от сервера; null — ещё не сохранена. */
+  code: string | null
+  saving: boolean
+  saveError: string | null
   seconds: number
   state: CallState
   lines: TranscriptLine[]
@@ -50,22 +55,32 @@ export function BookingStep({
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
   }, [heard.length, transcript])
 
+  // Ресторан подтвердил, но бронь ещё сохраняется или не сохранилась на сервере.
+  const unsaved = state === 'done' && !code
+  const failed = unsaved && !saving && saveError !== null
+
   const title =
     state === 'calling'
       ? 'Разговор с рестораном'
-      : state === 'done'
-        ? 'Столик забронирован'
-        : state === 'hungup'
-          ? 'Звонок прерван'
-          : 'Бронь отменена'
+      : failed
+        ? 'Бронь не сохранилась'
+        : unsaved
+          ? 'Сохраняю бронь…'
+          : state === 'done'
+            ? 'Столик забронирован'
+            : state === 'hungup'
+              ? 'Звонок прерван'
+              : 'Бронь отменена'
   const sub =
     state === 'calling'
       ? formatTimer(seconds)
-      : state === 'done'
-        ? `${when}, ${formatMinutes(slot.start)} · ${guestsLabel(guests)}`
-        : state === 'hungup'
-          ? 'Бронь не создана, ресторан ничего не записал'
-          : 'Ресторан предупреждён, приглашение отозвано'
+      : failed
+        ? saveError
+        : state === 'done'
+          ? `${when}, ${formatMinutes(slot.start)} · ${guestsLabel(guests)}`
+          : state === 'hungup'
+            ? 'Бронь не создана, ресторан ничего не записал'
+            : 'Ресторан предупреждён, приглашение отозвано'
 
   return (
     <div className={`${styles.step} ${styles.stepFill}`}>
@@ -104,10 +119,10 @@ export function BookingStep({
         <motion.div layout className={styles.statusCard} transition={spring}>
           <div className={styles.status}>
             <AnimatePresence mode="popLayout" initial={false}>
-              {state !== 'calling' && (
+              {state !== 'calling' && !(unsaved && !failed) && (
                 <motion.span
                   key={state}
-                  className={`${styles.statusIcon} ${state === 'done' ? styles.statusOk : styles.statusOff}`}
+                  className={`${styles.statusIcon} ${state === 'done' && !failed ? styles.statusOk : styles.statusOff}`}
                   initial={{ scale: 0, rotate: -40 }}
                   animate={{ scale: 1, rotate: 0 }}
                   transition={bouncy}
@@ -160,7 +175,7 @@ export function BookingStep({
           </div>
 
           <AnimatePresence initial={false}>
-            {state === 'done' && (
+            {state === 'done' && code && (
               <motion.div
                 key="details"
                 className={styles.details}
@@ -188,7 +203,7 @@ export function BookingStep({
                       exit={{ opacity: 0 }}
                     >
                       <span>Отменить бронь?</span>
-                      <Pill small tone="dark" onClick={onCancelBooking}>
+                      <Pill small tone="dark" onClick={onCancelBooking} disabled={saving}>
                         Да, отменить
                       </Pill>
                       <Pill small tone="ghost" onClick={() => setAskCancel(false)}>

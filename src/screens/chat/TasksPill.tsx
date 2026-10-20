@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
+import { useActiveBooking } from '../../api/queries'
 import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
 import { CheckIcon, ChevronDownIcon } from '../../components/Icons'
@@ -13,7 +14,8 @@ type Task = { id: string; title: string; sub: string; done: boolean; date: Date 
 
 /** «Живая активность» сверху: число задач ассистента, по нажатию — их список. */
 export function TasksPill() {
-  const { booking, setSelectedDate } = useCalendar()
+  const { setSelectedDate } = useCalendar()
+  const booking = useActiveBooking()
   const { go } = useNavigation()
   const [open, setOpen] = useState(false)
 

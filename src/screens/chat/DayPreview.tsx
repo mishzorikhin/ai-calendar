@@ -1,21 +1,21 @@
 import { motion } from 'framer-motion'
+import { useDayEvents } from '../../api/queries'
 import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
 import { DAY_PARTS } from '../../domain/calendar'
 import { formatMinutes, startOfDay } from '../../lib/dates'
 import { softSpring } from '../../lib/motion'
-import { eventsFor } from '../../mocks/calendar'
 import styles from './Chat.module.css'
 
 const morning = DAY_PARTS[0]
 
 /** Мини-превью утра сегодняшнего дня — день «уменьшается» до карточки при входе в чат. */
 export function DayPreview() {
-  const { booking, customEvents, setSelectedDate } = useCalendar()
+  const { setSelectedDate } = useCalendar()
   const { go } = useNavigation()
   const today = startOfDay(new Date())
-  const items = eventsFor(today, booking, customEvents)
-    .filter((e) => morning && e.start >= morning.from && e.start < morning.to)
+  const items = useDayEvents(today)
+    .events.filter((e) => morning && e.start >= morning.from && e.start < morning.to)
     .slice(0, 3)
 
   return (

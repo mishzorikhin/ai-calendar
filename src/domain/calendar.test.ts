@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { findFreeSlots, firstFreeTime, nearestTimeOption, partOf, slotAt } from './calendar'
 import type { CalendarEvent } from './types'
 
-const ev = (id: string, start: number, end: number): CalendarEvent => ({ id, title: id, start, end, badge: 'work' })
+const ev = (id: string, start: number, end: number): CalendarEvent => ({
+  id,
+  title: id,
+  start,
+  end,
+  badge: id === 'sleep' ? 'sleep' : 'work',
+})
 const h = (hours: number, minutes = 0) => hours * 60 + minutes
 
 const DAY: CalendarEvent[] = [

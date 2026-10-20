@@ -1,5 +1,7 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import type { ComponentType } from 'react'
+import type { CalendarApi } from './api/api'
+import { ApiProvider } from './api/provider'
 import { useNavigation, type Route } from './app/navigation'
 import { AppProviders } from './app/providers'
 import { BottomBar } from './components/BottomBar'
@@ -7,6 +9,9 @@ import { Device } from './components/Device'
 import { EventComposer } from './components/EventComposer'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { screenVariants } from './lib/motion'
+import { OfflineBadge } from './pwa/OfflineBadge'
+import { UpdatePrompt } from './pwa/UpdatePrompt'
+import { useLaunchAction } from './pwa/useLaunchAction'
 import { Agent } from './screens/agent/Agent'
 import { Chat } from './screens/chat/Chat'
 import { Day } from './screens/day/Day'
@@ -24,6 +29,7 @@ const SCREENS: Record<Route, ComponentType> = {
 
 function Screens() {
   const { route, dir } = useNavigation()
+  useLaunchAction()
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>
@@ -42,17 +48,21 @@ function Screens() {
   )
 }
 
-export function App() {
+export function App({ api }: { api: CalendarApi }) {
   return (
     <MotionConfig reducedMotion="user">
-      <AppProviders>
-        <Device>
-          <Screens />
-          <BottomBar />
-          <VoiceOverlay />
-          <EventComposer />
-        </Device>
-      </AppProviders>
+      <ApiProvider api={api}>
+        <AppProviders>
+          <Device>
+            <Screens />
+            <BottomBar />
+            <VoiceOverlay />
+            <EventComposer />
+            <OfflineBadge />
+            <UpdatePrompt />
+          </Device>
+        </AppProviders>
+      </ApiProvider>
     </MotionConfig>
   )
 }

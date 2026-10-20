@@ -94,3 +94,13 @@ export function relativeDayLabel(date: Date, today: Date = new Date()): string {
   if (diff === 2) return 'Послезавтра'
   return `${WEEKDAYS_SHORT[weekdayIndex(date)]}, ${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]}`
 }
+
+/** Дата для API: «2026-10-20» (локальная, без часового пояса). */
+export function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+export function fromISODate(s: string): Date {
+  const [y = 1970, m = 1, d = 1] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}

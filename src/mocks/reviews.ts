@@ -1,4 +1,6 @@
-export const REVIEWS = [
+import type { Review } from '../domain/types'
+
+export const REVIEWS: readonly Review[] = [
   {
     name: 'Анна',
     initials: 'А',

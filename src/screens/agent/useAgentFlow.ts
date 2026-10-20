@@ -1,4 +1,5 @@
 import { useReducer } from 'react'
+import { useAddMessage, useCancelBooking, useCreateBooking, useDayEvents, usePlaces } from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
 import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
@@ -8,10 +9,8 @@ import { isOpenAt, rankPlaces } from '../../domain/restaurants'
 import type { RequestParams, Restaurant } from '../../domain/types'
 import { WEEKDAYS, formatMinutes } from '../../lib/dates'
 import { useInterval, useTimeout } from '../../lib/hooks'
-import { BOOKING_CODE, TRANSCRIPT_DONE_AT, transcriptFor } from '../../mocks/assistant'
-import { eventsFor } from '../../mocks/calendar'
+import { TRANSCRIPT_DONE_AT, transcriptFor } from '../../mocks/assistant'
 import { FRIEND } from '../../mocks/people'
-import { RESTAURANTS } from '../../mocks/restaurants'
 
 export type CallState = 'calling' | 'hungup' | 'done' | 'cancelled'
 
@@ -23,7 +22,16 @@ export type Flow =
   | { step: 'request' }
   | { step: 'timing' }
   | { step: 'finding'; phase: 'radar' | 'results' }
-  | { step: 'booking'; place: Restaurant; call: CallState; seconds: number; transcript: boolean; listening: boolean }
+  | {
+      step: 'booking'
+      place: Restaurant
+      /** Время брони фиксируется при звонке: дальше свободные окна могут измениться. */
+      time: { start: number; end: number }
+      call: CallState
+      seconds: number
+      transcript: boolean
+      listening: boolean
+    }
 
 export type StepId = Flow['step']
 
@@ -45,13 +53,13 @@ type Action =
   | { type: 'params'; params: RequestParams }
   | { type: 'search' }
   | { type: 'selectSlot'; start: number }
-  | { type: 'find' }
+  | { type: 'find'; start: number }
   | { type: 'radarDone' }
   | { type: 'placeIdx'; index: number }
   | { type: 'openSheet'; kind: 'details' | 'reviews' }
   | { type: 'confirm'; place: Restaurant }
   | { type: 'closeOverlay' }
-  | { type: 'call'; place: Restaurant }
+  | { type: 'call'; place: Restaurant; time: { start: number; end: number } }
   | { type: 'tick' }
   | { type: 'hangup' }
   | { type: 'cancelBooking' }
@@ -85,7 +93,8 @@ export function agentReducer(state: State, action: Action): State {
     case 'selectSlot':
       return { ...state, slotStart: action.start }
     case 'find':
-      return { ...state, placeIdx: 0, flow: { step: 'finding', phase: 'radar' } }
+      // Выбранное окно запоминается: после брони оно станет занятым, и «первое свободное» сдвинется.
+      return { ...state, slotStart: action.start, placeIdx: 0, flow: { step: 'finding', phase: 'radar' } }
     case 'radarDone':
       return state.flow.step === 'finding' ? { ...state, flow: { step: 'finding', phase: 'results' } } : state
     case 'placeIdx':
@@ -103,6 +112,7 @@ export function agentReducer(state: State, action: Action): State {
         flow: {
           step: 'booking',
           place: action.place,
+          time: action.time,
           call: 'calling',
           seconds: 0,
           transcript: false,
@@ -153,41 +163,82 @@ function pick<T>(list: readonly T[], index: number): T {
   return item
 }
 
+const NO_PLACES: Restaurant[] = []
+
 /** Сценарий ассистента: состояние, производные данные и действия, которые выходят за пределы экрана. */
 export function useAgentFlow() {
   const [state, dispatch] = useReducer(agentReducer, INITIAL)
   const { back, reset } = useNavigation()
-  const { booking, customEvents, setBooking, setSelectedDate } = useCalendar()
-  const { prompt, setDraft, addMessage } = useAssistant()
+  const { setSelectedDate } = useCalendar()
+  const { prompt, setDraft } = useAssistant()
+  const addMessage = useAddMessage()
+  const createBooking = useCreateBooking()
+  const cancelBooking = useCancelBooking()
   const { params, flow } = state
 
   const date = paramsDate(params)
   const when = `${dayLabel(params.dayOffset)}, ${WEEKDAYS[date.getDay()]?.toLowerCase()}`
-  const events = eventsFor(date, booking, customEvents)
+  const { events } = useDayEvents(date)
+  const { data: allPlaces = NO_PLACES } = usePlaces()
   const free = findFreeSlots(events)
   const slot =
     free.find((s) => s.start === state.slotStart) ??
     (state.slotStart !== null ? slotAt(events, state.slotStart, 90) : (free[0] ?? slotAt(events, 9 * 60, 90)))
-  const places = rankPlaces(RESTAURANTS, slot.start)
-  const place = pick(places, state.placeIdx)
+  const places = rankPlaces(allPlaces, slot.start)
+  const place = places.length > 0 ? pick(places, state.placeIdx) : null
   const lines = transcriptFor(params, formatMinutes(slot.start))
+  const calling = flow.step === 'booking' && flow.call === 'calling'
 
-  useTimeout(() => dispatch({ type: 'radarDone' }), flow.step === 'finding' && flow.phase === 'radar' ? RADAR_MS : null)
-  useInterval(() => dispatch({ type: 'tick' }), flow.step === 'booking' && flow.call === 'calling' ? 1000 : null)
+  // Радар крутится, пока не загрузились места, и ещё немного — для ощущения поиска.
+  useTimeout(
+    () => dispatch({ type: 'radarDone' }),
+    flow.step === 'finding' && flow.phase === 'radar' && places.length > 0 ? RADAR_MS : null,
+  )
+
+  // Звонок идёт по секундам; когда ресторан подтверждает, бронь сохраняется на сервере.
+  useInterval(
+    () => {
+      if (flow.step !== 'booking' || flow.call !== 'calling') return
+      if (flow.seconds + 1 >= TRANSCRIPT_DONE_AT) {
+        createBooking.mutate({
+          placeId: flow.place.id,
+          date,
+          start: flow.time.start,
+          end: flow.time.end,
+          guests: params.guests,
+          invite: params.invite,
+        })
+      }
+      dispatch({ type: 'tick' })
+    },
+    calling ? 1000 : null,
+  )
 
   /** Забронировать можно только открытое в это время место — и только после подтверждения. */
   const askConfirm = (r: Restaurant) => {
     if (isOpenAt(r, slot.start)) dispatch({ type: 'confirm', place: r })
   }
 
+  const startCall = (r: Restaurant) => {
+    createBooking.reset()
+    cancelBooking.reset()
+    const time = flow.step === 'booking' ? flow.time : { start: slot.start, end: slot.end }
+    dispatch({ type: 'call', place: r, time })
+  }
+
+  const cancel = () => {
+    const saved = createBooking.data
+    if (saved) cancelBooking.mutate(saved.id, { onSuccess: () => dispatch({ type: 'cancelBooking' }) })
+    else dispatch({ type: 'cancelBooking' })
+  }
+
   const finish = (openDay: boolean) => {
-    if (flow.step !== 'booking') return
-    const restaurant = flow.place
-    setBooking({ restaurant, slot, date, guests: params.guests, invite: params.invite, code: BOOKING_CODE })
-    addMessage(
-      'ai',
-      `Забронировал столик в ${restaurant.name}: ${when.toLowerCase()}, ${formatMinutes(slot.start)}, ${guestsLabel(params.guests)}. Бронь ${BOOKING_CODE}.${params.invite ? ` ${FRIEND.nameDative} отправил приглашение.` : ''}`,
-    )
+    const saved = createBooking.data
+    if (flow.step !== 'booking' || !saved) return
+    addMessage.mutate({
+      role: 'ai',
+      text: `Забронировал столик в ${saved.restaurant.name}: ${when.toLowerCase()}, ${formatMinutes(saved.slot.start)}, ${guestsLabel(saved.guests)}. Бронь ${saved.code}.${saved.invite ? ` ${FRIEND.nameDative} отправил приглашение.` : ''}`,
+    })
     if (openDay) {
       setSelectedDate(date)
       reset('day')
@@ -216,9 +267,17 @@ export function useAgentFlow() {
     slot,
     places,
     place,
-    placeOpen: isOpenAt(place, slot.start),
+    placeOpen: place !== null && isOpenAt(place, slot.start),
     lines,
+    /** Сохранённая бронь и состояние запросов к серверу. */
+    booking: {
+      saved: createBooking.data ?? null,
+      saving: createBooking.isPending || cancelBooking.isPending,
+      error: (createBooking.error ?? cancelBooking.error)?.message ?? null,
+    },
     askConfirm,
+    startCall,
+    cancel,
     finish,
     editText,
     goBack,

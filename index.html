@@ -6,7 +6,8 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#f4f3f5" />
+    <meta name="theme-color" content="#f3f2f5" />
+    <meta name="format-detection" content="telephone=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -14,8 +15,14 @@
     <meta name="description" content="AI-календарь: планирование дня, встреч и бронирований одной фразой." />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <link rel="manifest" href="./manifest.webmanifest" />
     <title>AI Календарь</title>
+    <!-- Фон до загрузки скриптов: без белой вспышки при запуске с экрана «Домой». -->
+    <style>
+      html,
+      body {
+        background: #f3f2f5;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

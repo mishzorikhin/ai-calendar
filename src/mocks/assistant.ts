@@ -24,9 +24,6 @@ export const QUICK_PROMPTS = [
   { label: 'Спланировать отпуск', prompt: 'Спланируй мой отпуск целиком' },
 ] as const
 
-/** Номер брони, который «называет» ресторан в звонке. */
-export const BOOKING_CODE = 'A-4821'
-
 /** Секунда звонка, на которой бронь считается подтверждённой. */
 export const TRANSCRIPT_DONE_AT = 12
 
@@ -40,6 +37,6 @@ export function transcriptFor(params: RequestParams, time: string): TranscriptLi
     { at: 1, who: 'ai', text: `Здравствуйте! Хочу забронировать столик на ${guests} ${day} на ${time}.` },
     { at: 4, who: 'place', text: `Доброе утро! Да, на ${time} есть столик у окна.` },
     { at: 7, who: 'ai', text: 'Отлично, подойдёт. Бронь на имя владельца телефона, пожалуйста.' },
-    { at: 10, who: 'place', text: `Записала, номер брони ${BOOKING_CODE}. Ждём вас в ${time}!` },
+    { at: 10, who: 'place', text: `Записала. Ждём вас в ${time}!` },
   ]
 }

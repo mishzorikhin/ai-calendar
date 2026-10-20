@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
+import { useDayEvents } from '../../api/queries'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
@@ -12,7 +13,6 @@ import type { DayPartId } from '../../domain/types'
 import { MONTHS_GENITIVE, WEEKDAYS, dayKey, isSameDay, startOfWeek } from '../../lib/dates'
 import { minutesOf, useNow } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
-import { eventsFor } from '../../mocks/calendar'
 import { Agenda } from './Agenda'
 import { ModeToggle, type DayMode } from './ModeToggle'
 import { PartCard } from './PartCard'
@@ -21,7 +21,7 @@ import styles from './Day.module.css'
 
 export function Day() {
   const { back } = useNavigation()
-  const { selectedDate, setSelectedDate, booking, customEvents } = useCalendar()
+  const { selectedDate, setSelectedDate } = useCalendar()
   const composer = useComposer()
   const now = useNow()
   const [mode, setMode] = useState<DayMode>('timeline')
@@ -32,7 +32,7 @@ export function Day() {
   const isToday = isSameDay(selectedDate, now)
   const key = dayKey(selectedDate)
   const open: DayPartId = opened?.day === key ? opened.part : isToday ? partOf(minutesOf(now)) : 'morning'
-  const events = eventsFor(selectedDate, booking, customEvents)
+  const { events } = useDayEvents(selectedDate)
 
   return (
     <Sheet scroll={false} innerClassName={styles.inner}>

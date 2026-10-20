@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
+import { useAddMessage } from '../api/queries'
 import { useAssistant } from '../app/assistant'
 import { useNavigation } from '../app/navigation'
 import { useTimeout } from '../lib/hooks'
@@ -16,7 +17,8 @@ const FIRST_WORD_MS = 650
  * Запрос не уходит сам — пользователь проверяет текст и отправляет или исправляет его.
  */
 export function VoiceOverlay() {
-  const { voice, setVoice, setPrompt, setDraft, addMessage } = useAssistant()
+  const { voice, setVoice, setPrompt, setDraft } = useAssistant()
+  const addMessage = useAddMessage()
   const { route, go } = useNavigation()
   const visible = voice !== 'idle' && route !== 'chat' && route !== 'agent'
 
@@ -35,7 +37,7 @@ export function VoiceOverlay() {
             onRecognized={() => setVoice('review')}
             onSend={(text) => {
               setPrompt(text)
-              addMessage('user', text)
+              addMessage.mutate({ role: 'user', text })
               setVoice('idle')
               go('agent')
             }}

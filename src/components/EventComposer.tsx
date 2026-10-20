@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useCreateEvent, useDayEvents } from '../api/queries'
 import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
@@ -8,7 +9,6 @@ import { TIME_OPTIONS, firstFreeTime, nearestTimeOption, slotAt } from '../domai
 import { minutesOf } from '../lib/hooks'
 import { addDays, formatMinutes, isSameDay, relativeDayLabel, startOfDay } from '../lib/dates'
 import { spring } from '../lib/motion'
-import { eventsFor } from '../mocks/calendar'
 import { BottomSheet } from './BottomSheet'
 import { CloseIcon, InfinityIcon } from './Icons'
 import { CircleButton, Pill, Pressable } from './ui'
@@ -30,17 +30,19 @@ export function EventComposer() {
 }
 
 function Composer({ request, onClose }: { request: ComposerRequest; onClose: () => void }) {
-  const { addEvent, booking, customEvents, setSelectedDate } = useCalendar()
+  const { setSelectedDate } = useCalendar()
+  const createEvent = useCreateEvent()
   const { route, go } = useNavigation()
   const { setDraft } = useAssistant()
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(request.date)
-  const [start, setStart] = useState(() => {
-    if (request.start !== null) return nearestTimeOption(request.start)
-    const now = new Date()
-    const from = isSameDay(request.date, now) ? minutesOf(now) : 0
-    return firstFreeTime(eventsFor(request.date, booking, customEvents), from)
-  })
+  // Пока пользователь сам не выбрал время, предлагаем ближайшее свободное в выбранный день.
+  const [pickedStart, setStart] = useState<number | null>(() =>
+    request.start !== null ? nearestTimeOption(request.start) : null,
+  )
+  const { events } = useDayEvents(date)
+  const now = new Date()
+  const start = pickedStart ?? firstFreeTime(events, isSameDay(date, now) ? minutesOf(now) : 0)
   const [duration, setDuration] = useState<number>(60)
   const times = useRef<HTMLDivElement>(null)
 
@@ -48,7 +50,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const dates = [today, addDays(today, 1), addDays(today, 2)]
   if (!dates.some((d) => isSameDay(d, request.date))) dates.push(request.date)
 
-  const conflicts = slotAt(eventsFor(date, booking, customEvents), start, duration).conflicts
+  const conflicts = slotAt(events, start, duration).conflicts
 
   // Прокручиваем ленту времени к выбранному варианту до первой отрисовки.
   useLayoutEffect(() => {
@@ -58,19 +60,16 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   }, [])
 
   const create = () => {
-    addEvent({
-      id: `custom-${Date.now()}`,
-      title: title.trim() || 'Новое событие',
-      subtitle: 'Добавлено вручную',
-      start,
-      end: start + duration,
-      badge: 'routine',
-      highlight: true,
-      date,
-    })
-    setSelectedDate(date)
-    onClose()
-    if (route !== 'day') go('day')
+    createEvent.mutate(
+      { title: title.trim() || 'Новое событие', subtitle: 'Добавлено вручную', start, end: start + duration, date },
+      {
+        onSuccess: () => {
+          setSelectedDate(date)
+          onClose()
+          if (route !== 'day') go('day')
+        },
+      },
+    )
   }
 
   const delegate = () => {
@@ -85,8 +84,13 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       onClose={onClose}
       footer={
         <div className={styles.actions}>
-          <Pill tone="dark" type="submit" form={FORM_ID} className={styles.create}>
-            Создать событие
+          {createEvent.error && (
+            <p className={styles.error} role="alert">
+              {createEvent.error.message}
+            </p>
+          )}
+          <Pill tone="dark" type="submit" form={FORM_ID} className={styles.create} disabled={createEvent.isPending}>
+            {createEvent.isPending ? 'Сохраняю…' : 'Создать событие'}
           </Pill>
           <Pressable className={styles.delegate} onClick={delegate}>
             <InfinityIcon size={18} />

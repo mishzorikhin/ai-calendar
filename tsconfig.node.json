@@ -9,7 +9,8 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    "types": ["node"]
   },
   "include": ["vite.config.ts", "eslint.config.js"]
 }

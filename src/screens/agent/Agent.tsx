@@ -3,7 +3,6 @@ import { BackIcon } from '../../components/Icons'
 import { CircleButton, MeDot, PersonAvatar, RestaurantLogo, Stack } from '../../components/ui'
 import { dayLabel } from '../../domain/request'
 import { ease, spring } from '../../lib/motion'
-import { BOOKING_CODE } from '../../mocks/assistant'
 import { FRIEND } from '../../mocks/people'
 import { AgentBar } from './AgentBar'
 import { BookingStep } from './BookingStep'
@@ -21,6 +20,7 @@ export function Agent() {
   const agent = useAgentFlow()
   const { state, dispatch, slot, places, place, placeOpen, lines, when } = agent
   const { flow, overlay, params } = state
+  const sheetPlace = flow.step === 'booking' ? flow.place : place
 
   return (
     <>
@@ -74,7 +74,7 @@ export function Agent() {
                     alternatives={agent.free}
                     when={when}
                     onSelect={(start) => dispatch({ type: 'selectSlot', start })}
-                    onBook={() => dispatch({ type: 'find' })}
+                    onBook={() => dispatch({ type: 'find', start: slot.start })}
                   />
                 )}
                 {flow.step === 'finding' && (
@@ -92,11 +92,13 @@ export function Agent() {
                 {flow.step === 'booking' && (
                   <BookingStep
                     place={flow.place}
-                    slot={slot}
+                    slot={{ ...flow.time, conflicts: [] }}
                     when={dayLabel(params.dayOffset)}
                     guests={params.guests}
                     invite={params.invite}
-                    code={BOOKING_CODE}
+                    code={agent.booking.saved?.code ?? null}
+                    saving={agent.booking.saving}
+                    saveError={agent.booking.error}
                     seconds={flow.seconds}
                     state={flow.call}
                     lines={lines}
@@ -104,7 +106,7 @@ export function Agent() {
                     onTranscript={() => dispatch({ type: 'toggleTranscript' })}
                     listening={flow.listening}
                     onHangup={() => dispatch({ type: 'hangup' })}
-                    onCancelBooking={() => dispatch({ type: 'cancelBooking' })}
+                    onCancelBooking={agent.cancel}
                   />
                 )}
               </StepStack>
@@ -114,13 +116,13 @@ export function Agent() {
       </div>
 
       <AnimatePresence>
-        {(overlay?.kind === 'details' || overlay?.kind === 'reviews') && (
+        {(overlay?.kind === 'details' || overlay?.kind === 'reviews') && sheetPlace && (
           <PlaceSheet
             key="place"
-            place={flow.step === 'booking' ? flow.place : place}
+            place={sheetPlace}
             focus={overlay.kind}
             onClose={() => dispatch({ type: 'closeOverlay' })}
-            onBook={flow.step === 'finding' && placeOpen ? () => agent.askConfirm(place) : undefined}
+            onBook={flow.step === 'finding' && place && placeOpen ? () => agent.askConfirm(place) : undefined}
           />
         )}
         {overlay?.kind === 'confirm' && (
@@ -131,7 +133,7 @@ export function Agent() {
             when={when}
             params={params}
             onParams={(p) => dispatch({ type: 'params', params: p })}
-            onConfirm={() => dispatch({ type: 'call', place: overlay.place })}
+            onConfirm={() => agent.startCall(overlay.place)}
             onClose={() => dispatch({ type: 'closeOverlay' })}
           />
         )}
