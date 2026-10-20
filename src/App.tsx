@@ -1,18 +1,20 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
-import { AppProvider, useApp, type Route } from './app/store'
+import type { ComponentType } from 'react'
+import { useNavigation, type Route } from './app/navigation'
+import { AppProviders } from './app/providers'
 import { BottomBar } from './components/BottomBar'
 import { Device } from './components/Device'
 import { EventComposer } from './components/EventComposer'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { screenVariants } from './lib/motion'
-import { Agent } from './screens/Agent'
-import { Chat } from './screens/Chat'
-import { Day } from './screens/Day'
-import { Home } from './screens/Home'
-import { Month } from './screens/Month'
+import { Agent } from './screens/agent/Agent'
+import { Chat } from './screens/chat/Chat'
+import { Day } from './screens/day/Day'
+import { Home } from './screens/home/Home'
+import { Month } from './screens/month/Month'
 import styles from './App.module.css'
 
-const SCREENS: Record<Route, () => React.JSX.Element> = {
+const SCREENS: Record<Route, ComponentType> = {
   home: Home,
   month: Month,
   day: Day,
@@ -21,7 +23,7 @@ const SCREENS: Record<Route, () => React.JSX.Element> = {
 }
 
 function Screens() {
-  const { route, dir } = useApp()
+  const { route, dir } = useNavigation()
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>
@@ -43,14 +45,14 @@ function Screens() {
 export function App() {
   return (
     <MotionConfig reducedMotion="user">
-      <AppProvider>
+      <AppProviders>
         <Device>
           <Screens />
           <BottomBar />
           <VoiceOverlay />
           <EventComposer />
         </Device>
-      </AppProvider>
+      </AppProviders>
     </MotionConfig>
   )
 }

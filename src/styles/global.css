@@ -8,7 +8,7 @@
   --ink-2: #6b6b73;
   /* Для крупного второстепенного текста (≥ 3:1 по WCAG для крупного шрифта). */
   --ink-soft: #85858d;
-  --ink-3: #85858d;
+  --ink-3: var(--ink-soft);
   --ink-inverse: #ffffff;
   --line: rgba(15, 15, 30, 0.06);
   --weekend: #e5484d;
@@ -17,6 +17,7 @@
   --green: #4cc46d;
   --orange: #f08b3d;
   --yellow: #f5c445;
+  --purple: #9b7af0;
   --gold: #f5b83d;
   --lavender: #e3e5f8;
 
@@ -41,6 +42,12 @@
   --bar-h: calc(76px + var(--safe-bottom));
 
   --font: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+
+  /* Слои */
+  --z-bar: 30;
+  --z-overlay: 25;
+  --z-sheet: 50;
+  --z-device: 60;
 
   color-scheme: light;
 }
@@ -84,7 +91,9 @@ button {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible,
+[role='dialog']:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }

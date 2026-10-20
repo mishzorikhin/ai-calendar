@@ -85,3 +85,12 @@ export function formatTimer(seconds: number): string {
 export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
+
+/** «Сегодня», «Завтра», «Послезавтра» или «ср, 22 октября». */
+export function relativeDayLabel(date: Date, today: Date = new Date()): string {
+  const diff = Math.round((startOfDay(date).getTime() - startOfDay(today).getTime()) / 86_400_000)
+  if (diff === 0) return 'Сегодня'
+  if (diff === 1) return 'Завтра'
+  if (diff === 2) return 'Послезавтра'
+  return `${WEEKDAYS_SHORT[weekdayIndex(date)]}, ${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]}`
+}

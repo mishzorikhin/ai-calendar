@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, ChevronDownIcon, CloseIcon, PhoneDownIcon, PinIcon } from '../../components/Icons'
-import { Avatar, Pill, Pressable, SmartImage, Waveform } from '../../components/ui'
-import { FRIEND, guestsLabel, type Restaurant, type Slot, type TranscriptLine } from '../../data'
+import { PersonAvatar, Pill, Pressable, SmartImage, Waveform } from '../../components/ui'
+import { guestsLabel } from '../../domain/request'
+import type { Restaurant, Slot, TranscriptLine } from '../../domain/types'
 import { formatMinutes, formatTimer } from '../../lib/dates'
 import { bouncy, spring } from '../../lib/motion'
+import { FRIEND } from '../../mocks/people'
+import type { CallState } from './useAgentFlow'
 import styles from './steps.module.css'
-
-export type CallState = 'calling' | 'hungup' | 'done' | 'cancelled'
 
 /** Шаг 3: ассистент звонит в ресторан. Звонок можно слушать, читать и прервать; готовую бронь — отменить. */
 export function BookingStep({
@@ -173,8 +174,8 @@ export function BookingStep({
                 </p>
                 {invite && (
                   <p>
-                    <Avatar initials={FRIEND.initials} src={FRIEND.photo} size={16} ring={false} color="#dfe2f7" />
-                    Глебу отправлено приглашение
+                    <PersonAvatar person={FRIEND} size={16} ring={false} />
+                    {FRIEND.nameDative} отправлено приглашение
                   </p>
                 )}
                 <AnimatePresence mode="popLayout" initial={false}>

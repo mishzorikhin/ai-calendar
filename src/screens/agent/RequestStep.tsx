@@ -1,9 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { CalendarIcon, EditIcon, PinIcon, UsersIcon } from '../../components/Icons'
-import { Avatar, Pill, Pressable } from '../../components/ui'
-import { DAY_OPTIONS, FRIEND, dayLabel, guestsLabel, type RequestParams } from '../../data'
+import { PersonAvatar, Pill, Pressable } from '../../components/ui'
+import { DAY_OPTIONS, MAX_GUESTS, MIN_GUESTS, RADIUS_OPTIONS, dayLabel, guestsLabel } from '../../domain/request'
+import type { RequestParams } from '../../domain/types'
+import { useTimeout } from '../../lib/hooks'
 import { ease, spring } from '../../lib/motion'
+import { FRIEND } from '../../mocks/people'
 import styles from './steps.module.css'
 
 const AUTO_SECONDS = 4
@@ -30,22 +33,18 @@ export function RequestStep({
   onContinue: () => void
   onEditText: () => void
 }) {
-  const words = useMemo(() => prompt.split(/\s+/).filter(Boolean), [prompt])
+  const words = prompt.split(/\s+/).filter(Boolean)
   const [open, setOpen] = useState<Field | null>(null)
   const [paused, setPaused] = useState(!auto)
   const [left, setLeft] = useState(AUTO_SECONDS)
   const revealDelay = 0.15 + words.length * 0.04
 
-  useEffect(() => {
-    if (paused) return
-    if (left <= 0) {
-      onContinue()
-      return
-    }
-    const id = window.setTimeout(() => setLeft((l) => l - 1), left === AUTO_SECONDS ? 1000 + revealDelay * 1000 : 1000)
-    return () => window.clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, paused])
+  // Обратный отсчёт до автозапуска; первая секунда ждёт, пока проявится текст запроса.
+  useTimeout(
+    () => (left <= 1 ? onContinue() : setLeft(left - 1)),
+    paused ? null : left === AUTO_SECONDS ? 1000 + revealDelay * 1000 : 1000,
+    left,
+  )
 
   const toggle = (f: Field) => {
     setPaused(true)
@@ -62,20 +61,20 @@ export function RequestStep({
       <p className="caption">Ваш запрос</p>
       <h1 className={styles.prompt}>
         {words.map((w, i) => {
-          const friend = /^глеб/i.test(w)
+          const friend = w.toLowerCase().startsWith(FRIEND.name.toLowerCase())
           const soft = friend || /^(моим|моей|другом|подругой)$/i.test(w)
           return (
             <motion.span
               key={i}
               className={soft ? styles.soft : undefined}
-              initial={{ opacity: 0, y: 12, filter: 'blur(8px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + i * 0.04, ease }}
             >
               {w}
               {friend && (
                 <span className={styles.contact}>
-                  <Avatar initials={FRIEND.initials} src={FRIEND.photo} size={28} ring={false} color="#dfe2f7" />
+                  <PersonAvatar person={FRIEND} size={28} ring={false} />
                 </span>
               )}{' '}
             </motion.span>
@@ -103,9 +102,9 @@ export function RequestStep({
           <ParamChip
             active={open === 'invite'}
             onClick={() => toggle('invite')}
-            icon={<Avatar initials={FRIEND.initials} src={FRIEND.photo} size={18} ring={false} color="#dfe2f7" />}
+            icon={<PersonAvatar person={FRIEND} size={18} ring={false} />}
           >
-            {params.invite ? 'Пригласить Глеба' : 'Без приглашения'}
+            {params.invite ? `Пригласить ${FRIEND.nameAccusative}` : 'Без приглашения'}
           </ParamChip>
         </div>
 
@@ -133,7 +132,7 @@ export function RequestStep({
                     </Pill>
                   ))}
                 {open === 'guests' &&
-                  [1, 2, 3, 4, 5, 6].map((n) => (
+                  Array.from({ length: MAX_GUESTS - MIN_GUESTS + 1 }, (_, i) => MIN_GUESTS + i).map((n) => (
                     <Pill
                       key={n}
                       small
@@ -146,7 +145,7 @@ export function RequestStep({
                     </Pill>
                   ))}
                 {open === 'radius' &&
-                  [1, 3, 5].map((km) => (
+                  RADIUS_OPTIONS.map((km) => (
                     <Pill
                       key={km}
                       small
@@ -193,7 +192,7 @@ export function RequestStep({
               transition={{ duration: AUTO_SECONDS + revealDelay, ease: 'linear' }}
             />
           )}
-          <span>{paused ? 'Искать' : `Искать · ${Math.max(left, 1)} с`}</span>
+          <span>{paused ? 'Искать' : `Искать · ${left} с`}</span>
         </Pill>
         <Pressable className={styles.editText} onClick={onEditText} aria-label="Изменить текст запроса">
           <EditIcon size={20} />

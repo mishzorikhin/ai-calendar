@@ -47,19 +47,47 @@ npm run format
 
 ## Стек
 
-- **React 19 + TypeScript + Vite**;
-- **framer-motion** — пружинные переходы между экранами, layout-анимации (слои дня, стопка шагов ассистента, переключатели), жесты;
-- **CSS Modules** и дизайн-токены в `src/styles/global.css`;
+- **React 19 + TypeScript (strict, `noUncheckedIndexedAccess`) + Vite**;
+- **framer-motion** — переходы экранов, layout-анимации, жесты; бесконечные анимации отключаются при «уменьшении движения»;
+- **CSS Modules** и токены в `src/styles/global.css` (цвета, радиусы, тени, слои z-index);
 - шрифт **Inter Variable** подключён локально, с кириллицей.
+
+## Проверки
+
+```bash
+npm run typecheck   # tsc для приложения и конфигов
+npm run lint        # ESLint: typescript-eslint, react-hooks (правила React Compiler), jsx-a11y
+npm run test        # vitest: доменная логика, даты, склонения, редьюсер ассистента
+npm run check       # всё вместе + prettier --check
+```
+
+Те же проверки запускаются в CI (`.github/workflows/ci.yml`) на каждый пуш и PR.
+
+## Структура
 
 ```
 src/
-  app/store.tsx         навигация, состояние, конфигурация нижней панели
-  components/           Device (рамка телефона), BottomBar, Sheet, PlaceSheet, иконки, UI-примитивы
-  screens/              Home, Month, Day, Chat, Agent
-  screens/agent/        шаги ассистента: TimingStep, FindingStep, BookingStep
-  data.ts               моковые события, рестораны, расшифровка звонка
-  lib/                  даты, анимационные пресеты, хуки
+  app/                 состояние: узкие контексты вместо одного общего
+    navigation.tsx     стек экранов
+    calendar.tsx       выбранный день, бронь, события пользователя
+    assistant.tsx      запрос, черновик, история чата, голос
+    composer.tsx       шторка нового события
+    bar.tsx            нижняя панель: экран рендерит <BarSlot> через портал
+    providers.tsx
+  domain/              чистая логика без React и моков
+    types.ts           типы предметной области
+    calendar.ts        части суток, слоты, свободные окна
+    restaurants.ts     часы работы (в т. ч. после полуночи), ранжирование
+    request.ts         параметры запроса ассистенту
+  mocks/               данные прототипа: события, рестораны, люди, сценарий звонка
+  lib/                 даты, склонения (Intl.PluralRules), хуки таймеров, анимационные пресеты
+  components/          общие UI: кнопки, BottomSheet (Escape, фокус, inert фона), иконки, нижняя панель
+  screens/
+    home/              Home, NextEvent, BookedCard, TasksGrid, PrepCard
+    month/             Month, MonthGrid, MonthPicker, WeatherCard, WeatherArt
+    day/               Day, PartCard, EventCard, Agenda, WeekStrip, ModeToggle
+    chat/              Chat, ChatComposer, TasksPill, DayPreview
+    agent/             Agent, useAgentFlow (редьюсер сценария), AgentBar, StepStack, шаги и шторки
 ```
 
 Фото ресторанов и аватары грузятся с Unsplash. Если они недоступны, вместо них остаются нарисованные градиентные заглушки, и вёрстка не ломается.

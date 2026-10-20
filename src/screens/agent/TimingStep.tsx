@@ -2,15 +2,16 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { ClockIcon } from '../../components/Icons'
 import { Pill } from '../../components/ui'
-import { TIME_OPTIONS, type Slot } from '../../data'
+import { TIME_OPTIONS } from '../../domain/calendar'
+import type { Slot } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
 import { ease, spring } from '../../lib/motion'
 import styles from './steps.module.css'
 
 const swap = {
-  initial: { opacity: 0, y: 12, filter: 'blur(4px)' },
-  animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-  exit: { opacity: 0, y: -12, filter: 'blur(4px)' },
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -12 },
   transition: spring,
 }
 

@@ -1,16 +1,28 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState, type ReactNode } from 'react'
-import { useApp } from '../app/store'
+import { useAssistant } from '../app/assistant'
+import { useBarContext } from '../app/bar'
+import { useComposer } from '../app/composer'
+import { useNavigation } from '../app/navigation'
 import { softSpring, spring } from '../lib/motion'
+import { readFlag, writeFlag } from '../lib/storage'
 import { InfinityIcon, PlusIcon } from './Icons'
 import { CircleButton, Pressable, Waveform } from './ui'
 import styles from './BottomBar.module.css'
 
-/** Нижняя панель на градиенте: «∞» — ассистент, «+» — создать, в центре — контекст экрана. */
+const HINT_KEY = 'ai-calendar:hint-assistant'
+
+/**
+ * Нижняя панель на градиенте: «∞» — ассистент, «+» — новое событие.
+ * Центр заполняет активный экран через `<BarSlot>`.
+ */
 export function BottomBar() {
-  const { bar, go, voice, setVoice, openComposer, route } = useApp()
-  const centerKey = voice === true ? 'voice' : voice === 'review' ? 'voice-review' : bar.key
+  const { state, setSlot } = useBarContext()
+  const { go, route } = useNavigation()
+  const { voice, setVoice } = useAssistant()
+  const composer = useComposer()
   const [hint, setHint] = useState(() => !readFlag(HINT_KEY))
+  const voiceActive = voice !== 'idle'
 
   const dismissHint = () => {
     setHint(false)
@@ -21,9 +33,11 @@ export function BottomBar() {
     <motion.nav
       className={styles.bar}
       initial={false}
-      animate={{ y: bar.hidden ? '120%' : '0%', opacity: bar.hidden ? 0 : 1 }}
+      animate={{ y: state.hidden ? '120%' : '0%', opacity: state.hidden ? 0 : 1 }}
       transition={softSpring}
       aria-label="Панель действий"
+      aria-hidden={state.hidden}
+      inert={state.hidden}
     >
       <CircleButton
         tone="pink"
@@ -31,42 +45,43 @@ export function BottomBar() {
         aria-label="Ассистент"
         onClick={() => {
           dismissHint()
-          ;(bar.onAi ?? (() => go('chat')))()
+          go('chat')
         }}
-        className={bar.aiActive || voice ? styles.aiActive : undefined}
+        className={state.aiActive || voiceActive ? styles.aiActive : undefined}
       >
         <InfinityIcon size={22} />
       </CircleButton>
 
       <div className={styles.center}>
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
-            key={centerKey}
-            className={styles.centerInner}
-            initial={{ opacity: 0, y: 14, filter: 'blur(6px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
-            transition={spring}
-          >
-            {voice === 'review' ? (
-              <span className={styles.text}>Проверьте текст запроса</span>
-            ) : voice ? (
-              <Pressable className={styles.voice} onClick={() => setVoice(false)} aria-label="Остановить запись">
-                <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
-              </Pressable>
-            ) : (
-              bar.center
-            )}
-          </motion.div>
+        <div ref={setSlot} className={styles.slot} hidden={voiceActive} />
+        <AnimatePresence initial={false}>
+          {voiceActive && (
+            <motion.div
+              key={voice}
+              className={styles.centerInner}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={spring}
+            >
+              {voice === 'review' ? (
+                <span className={styles.text}>Проверьте текст запроса</span>
+              ) : (
+                <Pressable className={styles.voice} onClick={() => setVoice('idle')} aria-label="Остановить запись">
+                  <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
+                </Pressable>
+              )}
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
-      <CircleButton tone="glass" size={48} aria-label="Новое событие" onClick={bar.onPlus ?? (() => openComposer())}>
+      <CircleButton tone="glass" size={48} aria-label="Новое событие" onClick={() => composer.open()}>
         <PlusIcon size={22} />
       </CircleButton>
 
       <AnimatePresence>
-        {hint && route === 'home' && !bar.hidden && !voice && (
+        {hint && route === 'home' && !state.hidden && !voiceActive && (
           <motion.div
             className={styles.hint}
             role="status"
@@ -87,11 +102,11 @@ export function BottomBar() {
   )
 }
 
-/** Подсказка «Нажмите и говорите» — запускает голосовой ввод. */
+/** «Нажмите и говорите» — запускает голосовой ввод. */
 export function TapToSay() {
-  const { setVoice } = useApp()
+  const { setVoice } = useAssistant()
   return (
-    <Pressable className={styles.say} onClick={() => setVoice(true)} scale={0.97}>
+    <Pressable className={styles.say} onClick={() => setVoice('recording')} scale={0.97}>
       Нажмите и говорите
     </Pressable>
   )
@@ -102,28 +117,5 @@ export function BarText({ children }: { children: ReactNode }) {
 }
 
 export function BarChips({ children }: { children: ReactNode }) {
-  return (
-    <motion.div className={`${styles.chips} scroll-x`} layout transition={spring}>
-      {children}
-    </motion.div>
-  )
-}
-
-const HINT_KEY = 'ai-calendar:hint-assistant'
-
-// Хранилище может быть недоступно (приватный режим) — тогда подсказка просто покажется снова.
-function readFlag(key: string): boolean {
-  try {
-    return window.localStorage.getItem(key) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeFlag(key: string) {
-  try {
-    window.localStorage.setItem(key, '1')
-  } catch {
-    /* ничего страшного */
-  }
+  return <div className={`${styles.chips} scroll-x`}>{children}</div>
 }

@@ -1,9 +1,12 @@
-import { motion, useDragControls, type PanInfo } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { BottomSheet } from '../../components/BottomSheet'
 import { CalendarIcon, CloseIcon, MinusIcon, PinIcon, PlusIcon, UsersIcon } from '../../components/Icons'
-import { Avatar, CircleButton, Pill, Pressable, SmartImage } from '../../components/ui'
-import { FRIEND, guestsLabel, type RequestParams, type Restaurant, type Slot } from '../../data'
+import { CircleButton, Pill, PersonAvatar, Pressable, SmartImage } from '../../components/ui'
+import { MAX_GUESTS, MIN_GUESTS, clampGuests, guestsLabel } from '../../domain/request'
+import type { RequestParams, Restaurant, Slot } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
-import { softSpring, spring } from '../../lib/motion'
+import { spring } from '../../lib/motion'
+import { FRIEND } from '../../mocks/people'
 import styles from './ConfirmSheet.module.css'
 
 /**
@@ -27,116 +30,100 @@ export function ConfirmSheet({
   onConfirm: () => void
   onClose: () => void
 }) {
-  const drag = useDragControls()
-  const onDragEnd = (_: unknown, info: PanInfo) => {
-    if (info.offset.y > 110 || info.velocity.y > 600) onClose()
-  }
+  const setGuests = (n: number) => onParams({ ...params, guests: clampGuests(n) })
 
   return (
-    <motion.div className={styles.root} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className={styles.backdrop} onClick={onClose} />
-      <motion.div
-        className={styles.sheet}
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%', transition: { duration: 0.28 } }}
-        transition={softSpring}
-        drag="y"
-        dragControls={drag}
-        dragListener={false}
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={{ top: 0.05, bottom: 0.8 }}
-        onDragEnd={onDragEnd}
-        role="dialog"
-        aria-label="Подтверждение брони"
-      >
-        <div className={styles.handleZone} onPointerDown={(e) => drag.start(e)}>
-          <i />
-        </div>
-        <div className={styles.head}>
-          <h2>Проверьте бронь</h2>
-          <CircleButton tone="gray" size={40} onClick={onClose} aria-label="Закрыть">
-            <CloseIcon size={18} />
-          </CircleButton>
-        </div>
-
-        <div className={styles.place}>
-          <SmartImage src={place.photo} art={place.art} className={styles.thumb} />
-          <div>
-            <b>{place.name}</b>
-            <span>
-              <PinIcon size={13} /> {place.address} · {place.distance}
-            </span>
-          </div>
-        </div>
-
-        <ul className={styles.rows}>
-          <li>
-            <CalendarIcon size={18} />
-            <span className={styles.rowText}>
-              <b className="tnum">
-                {when}, {formatMinutes(slot.start)}–{formatMinutes(slot.end)}
-              </b>
-              <small>Добавлю в ваш календарь</small>
-            </span>
-          </li>
-          <li>
-            <UsersIcon size={18} />
-            <span className={styles.rowText}>
-              <b>{guestsLabel(params.guests)}</b>
-              <small>Столик на всех гостей</small>
-            </span>
-            <span className={styles.stepper}>
-              <Pressable
-                className={styles.stepBtn}
-                onClick={() => onParams({ ...params, guests: Math.max(1, params.guests - 1) })}
-                disabled={params.guests <= 1}
-                aria-label="Меньше гостей"
-              >
-                <MinusIcon size={16} />
-              </Pressable>
-              <Pressable
-                className={styles.stepBtn}
-                onClick={() => onParams({ ...params, guests: Math.min(8, params.guests + 1) })}
-                aria-label="Больше гостей"
-              >
-                <PlusIcon size={16} />
-              </Pressable>
-            </span>
-          </li>
-          <li>
-            <Avatar initials={FRIEND.initials} src={FRIEND.photo} size={22} ring={false} color="#dfe2f7" />
-            <span className={styles.rowText}>
-              <b>Пригласить Глеба</b>
-              <small>{params.invite ? 'Отправлю приглашение после брони' : 'Глеб не получит приглашение'}</small>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={params.invite}
-              aria-label="Пригласить Глеба"
-              className={`${styles.switch} ${params.invite ? styles.switchOn : ''}`}
-              onClick={() => onParams({ ...params, invite: !params.invite })}
-            >
-              <motion.i layout transition={spring} />
-            </button>
-          </li>
-        </ul>
-
-        <p className={styles.note}>
-          Я позвоню в ресторан от вашего имени и передам ваше имя и номер телефона. Звонок можно прервать в любой
-          момент.
-        </p>
-
+    <BottomSheet
+      label="Подтверждение брони"
+      onClose={onClose}
+      maxHeight="94%"
+      footer={
         <div className={styles.actions}>
           <Pill tone="dark" className={styles.confirm} onClick={onConfirm}>
             Позвонить и забронировать
           </Pill>
-          <Pill tone="ghost" className={styles.cancel} onClick={onClose}>
+          <Pill tone="ghost" className={styles.confirm} onClick={onClose}>
             Отмена
           </Pill>
         </div>
-      </motion.div>
-    </motion.div>
+      }
+    >
+      <div className={styles.head}>
+        <h2>Проверьте бронь</h2>
+        <CircleButton tone="gray" size={44} onClick={onClose} aria-label="Закрыть">
+          <CloseIcon size={18} />
+        </CircleButton>
+      </div>
+
+      <div className={styles.place}>
+        <SmartImage src={place.photo} art={place.art} className={styles.thumb} />
+        <div>
+          <b>{place.name}</b>
+          <span>
+            <PinIcon size={13} /> {place.address} · {place.distance}
+          </span>
+        </div>
+      </div>
+
+      <ul className={styles.rows}>
+        <li>
+          <CalendarIcon size={18} />
+          <span className={styles.rowText}>
+            <b className="tnum">
+              {when}, {formatMinutes(slot.start)}–{formatMinutes(slot.end)}
+            </b>
+            <small>Добавлю в ваш календарь</small>
+          </span>
+        </li>
+        <li>
+          <UsersIcon size={18} />
+          <span className={styles.rowText}>
+            <b aria-live="polite">{guestsLabel(params.guests)}</b>
+            <small>Столик на всех гостей</small>
+          </span>
+          <span className={styles.stepper}>
+            <Pressable
+              className={styles.stepBtn}
+              onClick={() => setGuests(params.guests - 1)}
+              disabled={params.guests <= MIN_GUESTS}
+              aria-label="Меньше гостей"
+            >
+              <MinusIcon size={16} />
+            </Pressable>
+            <Pressable
+              className={styles.stepBtn}
+              onClick={() => setGuests(params.guests + 1)}
+              disabled={params.guests >= MAX_GUESTS}
+              aria-label="Больше гостей"
+            >
+              <PlusIcon size={16} />
+            </Pressable>
+          </span>
+        </li>
+        <li>
+          <PersonAvatar person={FRIEND} size={22} ring={false} />
+          <span className={styles.rowText}>
+            <b>Пригласить {FRIEND.nameAccusative}</b>
+            <small>
+              {params.invite ? 'Отправлю приглашение после брони' : `${FRIEND.name} не получит приглашение`}
+            </small>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={params.invite}
+            aria-label={`Пригласить ${FRIEND.nameAccusative}`}
+            className={`${styles.switch} ${params.invite ? styles.switchOn : ''}`}
+            onClick={() => onParams({ ...params, invite: !params.invite })}
+          >
+            <motion.i layout transition={spring} />
+          </button>
+        </li>
+      </ul>
+
+      <p className={styles.note}>
+        Я позвоню в ресторан от вашего имени и передам ваше имя и номер телефона. Звонок можно прервать в любой момент.
+      </p>
+    </BottomSheet>
   )
 }

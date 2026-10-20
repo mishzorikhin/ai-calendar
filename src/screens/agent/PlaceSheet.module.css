@@ -1,58 +1,3 @@
-.root {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-}
-
-.backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(20, 15, 30, 0.28);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-}
-
-.sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 86%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 34px 34px 0 0;
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-
-.handleZone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 30px;
-  z-index: 3;
-  display: flex;
-  justify-content: center;
-  padding-top: 8px;
-  touch-action: none;
-  cursor: grab;
-}
-
-.handle {
-  width: 38px;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.75);
-}
-
-.body {
-  flex: 1;
-  min-height: 0;
-  padding: 0 0 20px;
-}
-
 .hero {
   height: 200px;
   color: #fff;
@@ -85,12 +30,13 @@
   letter-spacing: -0.04em;
 }
 
-.close {
-  position: absolute !important;
+/* Две класса — чтобы перебить стили CircleButton без !important. */
+.hero .close {
+  position: absolute;
   top: 16px;
   right: 16px;
   z-index: 2;
-  color: #fff !important;
+  color: #fff;
 }
 
 .facts {
@@ -189,13 +135,15 @@
   display: inline-flex;
 }
 
-.footer {
-  padding: 10px 16px calc(var(--safe-bottom) + 6px);
-  border-top: 1px solid var(--line);
-  background: var(--surface);
-}
-
 .book {
   width: 100%;
   height: 54px;
+}
+
+.star {
+  color: var(--gold);
+}
+
+.starOff {
+  color: #e0e0e6;
 }

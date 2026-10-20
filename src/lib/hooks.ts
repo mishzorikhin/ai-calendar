@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 
 /** Высота экранной клавиатуры (iOS накрывает ею страницу, а не сжимает её). */
 export function useKeyboardInset(): number {
@@ -18,24 +18,37 @@ export function useKeyboardInset(): number {
   return inset
 }
 
-/** Секундомер, который можно остановить. */
-export function useTicker(running: boolean, intervalMs = 1000): number {
-  const [ticks, setTicks] = useState(0)
-  useEffect(() => {
-    if (!running) return
-    const id = window.setInterval(() => setTicks((t) => t + 1), intervalMs)
-    return () => window.clearInterval(id)
-  }, [running, intervalMs])
-  return ticks
-}
-
-/** Вызывает колбэк через delay мс, пока условие истинно. */
-export function useTimeout(cb: () => void, delay: number | null) {
-  const ref = useRef(cb)
-  ref.current = cb
+/**
+ * Вызывает колбэк через `delay` мс. `null` — таймер не запущен.
+ * Смена `delay` или `resetKey` перезапускает отсчёт; при размонтировании таймер снимается.
+ */
+export function useTimeout(callback: () => void, delay: number | null, resetKey?: unknown) {
+  const onTimeout = useEffectEvent(callback)
   useEffect(() => {
     if (delay === null) return
-    const id = window.setTimeout(() => ref.current(), delay)
+    const id = window.setTimeout(() => onTimeout(), delay)
     return () => window.clearTimeout(id)
+  }, [delay, resetKey])
+}
+
+/** Вызывает колбэк каждые `delay` мс. `null` — пауза. */
+export function useInterval(callback: () => void, delay: number | null) {
+  const onTick = useEffectEvent(callback)
+  useEffect(() => {
+    if (delay === null) return
+    const id = window.setInterval(() => onTick(), delay)
+    return () => window.clearInterval(id)
   }, [delay])
+}
+
+/** Текущее время, обновляется раз в `step` мс — для линии «сейчас» и «Далее». */
+export function useNow(step = 60_000): Date {
+  const [now, setNow] = useState(() => new Date())
+  useInterval(() => setNow(new Date()), step)
+  return now
+}
+
+/** Минуты от полуночи. */
+export function minutesOf(d: Date): number {
+  return d.getHours() * 60 + d.getMinutes()
 }

@@ -329,9 +329,9 @@
   width: 100%;
 }
 
-.glassBtn {
-  color: #fff !important;
-  background: rgba(255, 255, 255, 0.18) !important;
+.placeBtns .glassBtn {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .pager {
@@ -666,9 +666,9 @@
   padding-top: 10px;
 }
 
-.square {
+.optionsRow .square {
   width: 44px;
-  padding: 0 !important;
+  padding: 0;
 }
 
 .progressBtn {
@@ -726,10 +726,6 @@
   margin-top: 8px;
 }
 
-.altRow > * {
-  height: 40px !important;
-}
-
 .altTimes {
   flex-wrap: nowrap;
   margin: 8px -16px 0;
@@ -767,4 +763,8 @@
 
 .disabled {
   opacity: 0.55;
+}
+
+.goldStar {
+  color: #f5c04a;
 }

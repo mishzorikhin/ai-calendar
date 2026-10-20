@@ -1,50 +1,3 @@
-.root {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-}
-
-.backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(20, 15, 30, 0.3);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-}
-
-.sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 94%;
-  overflow-y: auto;
-  padding: 26px 16px calc(var(--safe-bottom) + 10px);
-  border-radius: 34px 34px 0 0;
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
-}
-
-.handleZone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 26px;
-  display: flex;
-  justify-content: center;
-  padding-top: 8px;
-  touch-action: none;
-  cursor: grab;
-}
-
-.handleZone i {
-  width: 38px;
-  height: 5px;
-  border-radius: 3px;
-  background: #dcdce2;
-}
-
 .head {
   display: flex;
   align-items: center;
@@ -178,14 +131,12 @@
 }
 
 .actions {
-  margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.confirm,
-.cancel {
+.confirm {
   width: 100%;
   height: 54px;
 }

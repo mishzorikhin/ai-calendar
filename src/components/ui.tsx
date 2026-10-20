@@ -1,6 +1,7 @@
-import { motion, type HTMLMotionProps } from 'framer-motion'
+import { motion, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { spring } from '../lib/motion'
+import type { Person } from '../domain/types'
 import { ForkLogo } from './Icons'
 import styles from './ui.module.css'
 
@@ -43,20 +44,21 @@ export function Pill({ tone = 'white', small, className, ...rest }: PillProps) {
   )
 }
 
-/** Изображение с художественной заглушкой: если фото не загрузится, остаётся градиент. */
-export function SmartImage({
-  src,
-  art,
-  className,
-  style,
-  children,
-}: {
+type SmartImageProps = {
   src: string
   art: string
   className?: string
   style?: CSSProperties
   children?: ReactNode
-}) {
+}
+
+/** Изображение с художественной заглушкой: если фото не загрузится, остаётся градиент. */
+export function SmartImage(props: SmartImageProps) {
+  // Ключ по src: при смене фото состояние загрузки начинается заново.
+  return <SmartImageInner key={props.src} {...props} />
+}
+
+function SmartImageInner({ src, art, className, style, children }: SmartImageProps) {
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
   return (
     <div className={`${styles.smartImage} ${className ?? ''}`} style={{ background: art, ...style }}>
@@ -78,28 +80,46 @@ export function SmartImage({
   )
 }
 
-export function Avatar({
-  src,
-  initials,
-  color = '#dfe2f7',
-  size = 32,
-  ring = true,
-}: {
+type AvatarProps = {
   src?: string
   initials: string
   color?: string
   size?: number
   ring?: boolean
-}) {
+  label?: string
+}
+
+export function Avatar(props: AvatarProps) {
+  return <AvatarInner key={props.src ?? 'none'} {...props} />
+}
+
+function AvatarInner({ src, initials, color = 'var(--lavender)', size = 32, ring = true, label }: AvatarProps) {
   const [failed, setFailed] = useState(false)
   return (
     <span
       className={`${styles.avatar} ${ring ? styles.avatarRing : ''}`}
       style={{ width: size, height: size, background: color, fontSize: size * 0.4 }}
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
     >
       <span>{initials}</span>
       {src && !failed && <img src={src} alt="" draggable={false} onError={() => setFailed(true)} />}
     </span>
+  )
+}
+
+/** Аватар человека из данных (друг, вы). */
+export function PersonAvatar({ person, size, ring }: { person: Person; size?: number; ring?: boolean }) {
+  return (
+    <Avatar
+      src={person.photo}
+      initials={person.initials}
+      color={person.color}
+      size={size}
+      ring={ring}
+      label={person.name}
+    />
   )
 }
 
@@ -113,16 +133,21 @@ export function RestaurantLogo({ size = 32 }: { size?: number }) {
 
 /** Точка «это вы» — синяя с белым ободком. */
 export function MeDot({ size = 32 }: { size?: number }) {
+  const still = useReducedMotion()
   return (
     <span className={`${styles.avatar} ${styles.avatarRing} ${styles.meDot}`} style={{ width: size, height: size }}>
-      <motion.i animate={{ scale: [1, 1.18, 1] }} transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }} />
+      <motion.i
+        animate={still ? undefined : { scale: [1, 1.18, 1] }}
+        transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+      />
     </span>
   )
 }
 
 export function Stack({ children, overlap = 10 }: { children: ReactNode; overlap?: number }) {
+  const style: CSSProperties & Record<'--overlap', string> = { '--overlap': `-${overlap}px` }
   return (
-    <span className={styles.stack} style={{ ['--overlap' as string]: `-${overlap}px` }}>
+    <span className={styles.stack} style={style}>
       {children}
     </span>
   )
@@ -134,12 +159,13 @@ export function Shimmer({ children }: { children: ReactNode }) {
 }
 
 export function Dots() {
+  const still = useReducedMotion()
   return (
-    <span className={styles.dots} aria-label="Загрузка">
+    <span className={styles.dots} role="img" aria-label="Загрузка">
       {[0, 1, 2].map((i) => (
         <motion.i
           key={i}
-          animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }}
+          animate={still ? undefined : { opacity: [0.25, 1, 0.25], y: [0, -2, 0] }}
           transition={{ duration: 1, repeat: Infinity, delay: i * 0.16 }}
         />
       ))}
@@ -147,7 +173,7 @@ export function Dots() {
   )
 }
 
-/** Анимированная звуковая волна. */
+/** Анимированная звуковая волна; при «уменьшении движения» — статичная. */
 export function Waveform({
   bars = 18,
   color = 'currentColor',
@@ -157,13 +183,16 @@ export function Waveform({
   color?: string
   height?: number
 }) {
+  const still = useReducedMotion()
   return (
-    <span className={styles.wave} style={{ height }}>
+    <span className={styles.wave} style={{ height }} aria-hidden="true">
       {Array.from({ length: bars }, (_, i) => (
         <motion.i
           key={i}
-          style={{ background: color }}
-          animate={{ scaleY: [0.25, 0.5 + ((i * 37) % 50) / 100, 0.3, 0.9 - ((i * 23) % 40) / 100, 0.25] }}
+          style={{ background: color, scaleY: 0.3 + ((i * 37) % 50) / 100 }}
+          animate={
+            still ? undefined : { scaleY: [0.25, 0.5 + ((i * 37) % 50) / 100, 0.3, 0.9 - ((i * 23) % 40) / 100, 0.25] }
+          }
           transition={{ duration: 1.1 + (i % 4) * 0.12, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 }}
         />
       ))}

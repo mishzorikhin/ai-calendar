@@ -30,6 +30,18 @@
   isolation: isolate;
 }
 
+.app {
+  position: absolute;
+  inset: 0;
+}
+
+.modalRoot {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sheet);
+  pointer-events: none;
+}
+
 /* Десктоп: макет телефона на розовой сцене */
 @media (min-width: 640px) and (min-height: 700px) {
   .stage {
@@ -101,7 +113,7 @@
     border-radius: 60px;
     --safe-top: 54px;
     --safe-bottom: 22px;
-    --live-top: 11px;
+    --live-top: 52px;
     box-shadow:
       0 0 0 10px #faf6f8,
       0 0 0 11.5px #e3d6dc,
@@ -124,7 +136,7 @@
     font-weight: 600;
     letter-spacing: -0.02em;
     color: var(--ink);
-    z-index: 50;
+    z-index: var(--z-device);
     pointer-events: none;
   }
 
@@ -160,7 +172,7 @@
     margin-left: -62px;
     border-radius: 20px;
     background: #000;
-    z-index: 60;
+    z-index: var(--z-device);
     pointer-events: none;
   }
 
@@ -185,7 +197,7 @@
     margin-left: -67px;
     border-radius: 3px;
     background: rgba(0, 0, 0, 0.82);
-    z-index: 60;
+    z-index: var(--z-device);
     pointer-events: none;
   }
 }

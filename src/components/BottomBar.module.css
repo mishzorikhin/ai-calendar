@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 30;
+  z-index: var(--z-bar);
 }
 
 .center {
@@ -105,4 +105,18 @@
   color: var(--ink);
   font-size: 14px;
   font-weight: 500;
+}
+
+.slot {
+  position: absolute;
+  inset: 0;
+}
+
+/* Элемент, который экран кладёт в панель через BarSlot. */
+.slot :global(.bar-slot-item) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

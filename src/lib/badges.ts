@@ -1,10 +1,11 @@
-import type { Badge } from '../data'
+import type { Badge } from '../domain/types'
 
+/** Цвет значка события — из токенов дизайн-системы. */
 export const BADGE_COLOR: Record<Badge, string> = {
-  sleep: '#4cc46d',
-  routine: '#3a78f2',
-  work: '#3a78f2',
-  food: '#f08b3d',
-  sport: '#4cc46d',
-  read: '#9b7af0',
+  sleep: 'var(--green)',
+  routine: 'var(--blue)',
+  work: 'var(--blue)',
+  food: 'var(--orange)',
+  sport: 'var(--green)',
+  read: 'var(--purple)',
 }

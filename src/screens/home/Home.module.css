@@ -428,3 +428,13 @@
 .span .trip {
   height: 150px;
 }
+
+.starOn {
+  display: inline-flex;
+  color: var(--gold);
+}
+
+.starOff {
+  display: inline-flex;
+  color: #d4d4da;
+}

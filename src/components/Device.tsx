@@ -26,7 +26,13 @@ export function Device({ children }: { children: ReactNode }) {
         <i className={styles.glass} />
       </div>
       <div className={styles.device}>
-        <div className={styles.screen}>{children}</div>
+        <div className={styles.screen}>
+          <div className={styles.app} data-app-root>
+            {children}
+          </div>
+          {/* Сюда портируются модальные шторки, чтобы фон можно было сделать inert. */}
+          <div id="modal-root" className={styles.modalRoot} />
+        </div>
         <div className={styles.statusBar} aria-hidden="true">
           <span className="tnum">{time}</span>
           <span className={styles.statusIcons}>
