@@ -73,7 +73,7 @@ export function PlaceSheet({
               sub="1 240 оценок"
             />
             <Fact icon={<PinIcon size={16} />} title={place.distance} sub={`${place.minutes} мин пешком`} />
-            <Fact icon={<ClockIcon size={16} />} title="09:00" sub={place.hours} />
+            <Fact icon={<ClockIcon size={16} />} title={place.hours} sub={`Средний чек ${place.price}`} />
           </div>
 
           <p className={styles.desc}>{place.description}</p>
@@ -115,7 +115,7 @@ export function PlaceSheet({
         {onBook && (
           <div className={styles.footer}>
             <Pill tone="dark" className={styles.book} onClick={onBook}>
-              Забронировать столик
+              Забронировать
             </Pill>
           </div>
         )}

@@ -55,7 +55,7 @@
 
 .free {
   position: relative;
-  height: 158px;
+  height: 140px;
   padding: 14px 16px;
   border-radius: 24px;
   background: var(--surface-2);
@@ -102,10 +102,15 @@
 }
 
 .cta {
+  /* Кнопка всегда видна над вкладками следующих шагов, даже если контент прокручивается. */
+  position: sticky;
+  bottom: 16px;
+  z-index: 2;
   margin-top: auto;
   padding-top: 22px;
   display: flex;
   gap: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0, var(--surface) 22px);
 }
 
 .ctaMain {
@@ -332,13 +337,14 @@
 .pager {
   display: flex;
   justify-content: center;
-  gap: 2px;
-  padding-top: 10px;
+  padding-top: 4px;
 }
 
 .pager button {
-  padding: 4px 3px;
+  min-height: 32px;
+  padding: 0 6px;
   display: flex;
+  align-items: center;
 }
 
 .pager i {
@@ -415,37 +421,40 @@
   margin: auto;
 }
 
-.status {
+.statusCard {
   position: relative;
   z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px 10px 14px;
   border-radius: 20px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
   color: var(--ink);
+  overflow: hidden;
 }
 
-.statusOk {
-  position: relative;
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+}
+
+.statusIcon {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--green);
   color: #fff;
   flex-shrink: 0;
 }
 
-.statusOk i {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
+.statusOk {
   background: var(--green);
+}
+
+.statusOff {
+  background: #8b8b93;
 }
 
 .statusText {
@@ -464,7 +473,7 @@
 }
 
 .statusText > span {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-2);
 }
 
@@ -473,11 +482,12 @@
 }
 
 .statusChevron,
-.statusChat {
+.hangup {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .statusChevron {
@@ -487,21 +497,62 @@
     var(--shadow-sm);
 }
 
-.statusChat {
-  background: var(--blue);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(58, 120, 242, 0.35);
-}
-
-.statusChat i {
+.statusChevron i {
   position: absolute;
-  top: -1px;
-  right: -1px;
+  top: 0;
+  right: 0;
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--blue);
   box-shadow: 0 0 0 2px #fff;
+}
+
+.hangup {
+  background: #ff3b4f;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(255, 59, 79, 0.35);
+}
+
+.details {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.details p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.details b {
+  color: var(--ink);
+}
+
+.cancelLink {
+  height: 36px;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #c2273a;
+}
+
+.askCancel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.askCancel span {
+  margin-right: auto;
+  font-size: 13.5px;
+  color: var(--ink);
 }
 
 /* Невысокие экраны (iPhone SE и т. п.): ужимаем шаг «Время», чтобы кнопка была видна сразу. */
@@ -543,4 +594,177 @@
   .ctaMain {
     height: 50px;
   }
+}
+
+/* ——— Запрос ——— */
+
+.prompt {
+  margin-top: 10px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.prompt > span {
+  display: inline-block;
+  white-space: pre;
+}
+
+.soft {
+  color: var(--ink-soft);
+}
+
+.contact {
+  display: inline-flex;
+  vertical-align: middle;
+  margin: -4px 0 0 6px;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(30, 30, 60, 0.12);
+}
+
+.understood {
+  margin-top: 20px;
+}
+
+.paramChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.paramChip {
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 14px;
+  font-weight: 500;
+  gap: 6px;
+  color: var(--ink);
+}
+
+.paramChip svg {
+  color: var(--ink-2);
+}
+
+.paramChipOn {
+  background: var(--lavender);
+  box-shadow: inset 0 0 0 1.5px rgba(90, 100, 210, 0.35);
+}
+
+.options {
+  overflow: hidden;
+}
+
+.optionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.square {
+  width: 44px;
+  padding: 0 !important;
+}
+
+.progressBtn {
+  position: relative;
+  overflow: hidden;
+}
+
+.progressBtn span {
+  position: relative;
+}
+
+.progress {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.editText {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* ——— Время: варианты ——— */
+
+.freeBusy {
+  background: #fdf0e6;
+}
+
+.freeBusy .sun {
+  filter: grayscale(0.7) blur(0.5px);
+  opacity: 0.6;
+}
+
+.conflict {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  font-size: 13px;
+  color: #8a4210;
+  text-align: center;
+}
+
+.altBlock {
+  margin-top: 16px;
+}
+
+.altRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.altRow > * {
+  height: 40px !important;
+}
+
+.altTimes {
+  flex-wrap: nowrap;
+  margin: 8px -16px 0;
+  padding: 0 16px;
+}
+
+/* ——— Поиск: статус места ——— */
+
+.openState {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.openState i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.isOpen i {
+  background: #7ee29a;
+}
+
+.isClosed {
+  color: #ffd2b0;
+}
+
+.isClosed i {
+  background: #ffa25c;
+}
+
+.disabled {
+  opacity: 0.55;
 }

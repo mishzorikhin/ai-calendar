@@ -1,16 +1,19 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { useApp, useBar } from '../app/store'
-import { ArrowRightIcon, BackIcon, InfinityIcon, MicIcon, PaperclipIcon } from '../components/Icons'
+import { ArrowRightIcon, BackIcon, CheckIcon, ChevronDownIcon, MicIcon, PaperclipIcon } from '../components/Icons'
 import { CircleButton, Pill, Pressable, Waveform } from '../components/ui'
 import { CHAT_CATEGORIES, DEMO_PROMPT, QUICK_PROMPTS } from '../data'
+import { formatMinutes, isSameDay } from '../lib/dates'
 import { useKeyboardInset } from '../lib/hooks'
 import { itemVariants, softSpring, spring } from '../lib/motion'
 import styles from './Chat.module.css'
 
 export function Chat() {
-  const { back, go, setPrompt } = useApp()
-  const [text, setText] = useState('')
+  const { back, go, setPrompt, draft, setDraft, messages, addMessage, booking, setSelectedDate } = useApp()
+  const [text, setText] = useState(draft)
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const list = useRef<HTMLDivElement>(null)
   const [category, setCategory] = useState<string | null>(null)
   const [typing, setTyping] = useState<'idle' | 'auto' | 'dictation'>('idle')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -21,6 +24,35 @@ export function Chat() {
 
   useEffect(() => () => window.clearInterval(timer.current), [])
 
+  // Черновик (например, запрос, который нужно поправить) забираем в поле один раз.
+  useEffect(() => {
+    if (draft) {
+      setDraft('')
+      inputRef.current?.focus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    list.current?.scrollTo({ top: list.current.scrollHeight })
+  }, [messages.length])
+
+  const tasks = [
+    ...(booking
+      ? [
+          {
+            id: 'booking',
+            title: `Завтрак в ${booking.restaurant.name}`,
+            sub: `${isSameDay(booking.date, new Date()) ? 'Сегодня' : 'Завтра'}, ${formatMinutes(booking.slot.start)} · бронь подтверждена`,
+            done: true,
+            date: booking.date,
+          },
+        ]
+      : []),
+    { id: 'prep', title: 'Подготовка к встрече', sub: 'Сегодня · собрать материалы', done: false, date: new Date() },
+    { id: 'trip', title: 'Поездка во Францию', sub: 'Ищу билеты на 26 июля', done: false, date: new Date() },
+  ]
+
   // Поле растёт вместе с текстом, как в iMessage.
   useEffect(() => {
     const el = inputRef.current
@@ -29,7 +61,15 @@ export function Chat() {
     el.style.height = `${Math.min(el.scrollHeight, 112)}px`
   }, [text])
 
-  /** Печатает подсказку в поле по буквам — как будто её набирают. */
+  /** Подсказка сразу попадает в поле — её можно отредактировать перед отправкой. */
+  const insert = (value: string) => {
+    window.clearInterval(timer.current)
+    setTyping('idle')
+    setText(value)
+    inputRef.current?.focus()
+  }
+
+  /** Имитация диктовки: текст появляется постепенно. */
   const typeIn = (value: string, mode: 'auto' | 'dictation') => {
     window.clearInterval(timer.current)
     setTyping(mode)
@@ -51,6 +91,7 @@ export function Chat() {
   const send = () => {
     const value = text.trim()
     if (!value) return
+    addMessage('user', value)
     setPrompt(value)
     go('agent')
   }
@@ -60,21 +101,66 @@ export function Chat() {
 
   return (
     <div className={styles.screen}>
-      <motion.div
+      <motion.button
+        type="button"
         className={styles.live}
         initial={{ scaleX: 0.6, opacity: 0 }}
         animate={{ scaleX: 1, opacity: 1 }}
         transition={{ ...spring, delay: 0.15 }}
+        onClick={() => setTasksOpen((o) => !o)}
+        aria-expanded={tasksOpen}
+        aria-label={`Задачи ассистента: ${tasks.length}`}
       >
         <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
-          <b className="tnum">2</b> задачи
+          <b className="tnum">{tasks.length}</b> {tasks.length === 1 ? 'задача' : tasks.length < 5 ? 'задачи' : 'задач'}
         </motion.span>
-        <motion.i
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, rotate: 360 }}
-          transition={{ opacity: { delay: 0.35 }, rotate: { duration: 6, repeat: Infinity, ease: 'linear' } }}
-        />
-      </motion.div>
+        <motion.span className={styles.liveChevron} animate={{ rotate: tasksOpen ? 180 : 0 }} transition={spring}>
+          <ChevronDownIcon size={14} strokeWidth={2.4} />
+        </motion.span>
+      </motion.button>
+
+      <AnimatePresence>
+        {tasksOpen && (
+          <>
+            <motion.div
+              key="scrim"
+              className={styles.tasksScrim}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setTasksOpen(false)}
+            />
+            <motion.div
+              key="tasks"
+              className={styles.tasks}
+              initial={{ opacity: 0, scale: 0.85, y: -20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: -16 }}
+              transition={spring}
+            >
+              {tasks.map((t) => (
+                <Pressable
+                  key={t.id}
+                  className={styles.task}
+                  scale={0.98}
+                  onClick={() => {
+                    setSelectedDate(t.date)
+                    go('day')
+                  }}
+                >
+                  <span className={`${styles.taskIcon} ${t.done ? styles.taskDone : ''}`}>
+                    {t.done ? <CheckIcon size={14} strokeWidth={2.6} /> : <i />}
+                  </span>
+                  <span className={styles.taskText}>
+                    <b>{t.title}</b>
+                    <small>{t.sub}</small>
+                  </span>
+                </Pressable>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <motion.button
         type="button"
@@ -108,16 +194,19 @@ export function Chat() {
         Сегодня
       </motion.h1>
 
-      <div className={`${styles.messages} scroll-y`}>
-        <motion.p
-          className={styles.bubble}
-          initial={{ opacity: 0, y: 12, scale: 0.92 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ ...spring, delay: 0.3 }}
-          style={{ originX: 0, originY: 1 }}
-        >
-          Чем могу помочь?
-        </motion.p>
+      <div ref={list} className={`${styles.messages} scroll-y`} aria-live="polite">
+        {messages.map((m, i) => (
+          <motion.p
+            key={m.id}
+            className={`${styles.bubble} ${m.role === 'user' ? styles.bubbleUser : ''}`}
+            initial={{ opacity: 0, y: 12, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...spring, delay: i === messages.length - 1 ? 0.25 : 0 }}
+            style={{ originX: m.role === 'user' ? 1 : 0, originY: 1 }}
+          >
+            {m.text}
+          </motion.p>
+        ))}
       </div>
 
       <motion.div
@@ -139,7 +228,7 @@ export function Chat() {
             >
               {text ? (
                 QUICK_PROMPTS.map((q) => (
-                  <Pill key={q.label} small tone="glass" onClick={() => typeIn(q.prompt, 'auto')}>
+                  <Pill key={q.label} small tone="glass" onClick={() => insert(q.prompt)}>
                     {q.label}
                   </Pill>
                 ))
@@ -154,7 +243,7 @@ export function Chat() {
                     <BackIcon size={16} />
                   </CircleButton>
                   {active.prompts.map((p) => (
-                    <Pill key={p} small tone="glass" onClick={() => typeIn(p, 'auto')}>
+                    <Pill key={p} small tone="glass" onClick={() => insert(p)}>
                       {p}
                     </Pill>
                   ))}
@@ -171,8 +260,8 @@ export function Chat() {
         </div>
 
         <div className={styles.row}>
-          <CircleButton tone="glass" size={48} onClick={back} aria-label="Назад">
-            <InfinityIcon size={22} />
+          <CircleButton tone="glass" size={48} onClick={back} aria-label="Закрыть чат">
+            <BackIcon size={20} />
           </CircleButton>
           <label className={styles.input}>
             <textarea

@@ -1,36 +1,70 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef } from 'react'
-import { ChatIcon, CheckIcon, ChevronDownIcon } from '../../components/Icons'
-import { Pressable, SmartImage, Waveform } from '../../components/ui'
-import { TRANSCRIPT, type Restaurant, type Slot } from '../../data'
+import { useEffect, useRef, useState } from 'react'
+import { CheckIcon, ChevronDownIcon, CloseIcon, PhoneDownIcon, PinIcon } from '../../components/Icons'
+import { Avatar, Pill, Pressable, SmartImage, Waveform } from '../../components/ui'
+import { FRIEND, guestsLabel, type Restaurant, type Slot, type TranscriptLine } from '../../data'
 import { formatMinutes, formatTimer } from '../../lib/dates'
 import { bouncy, spring } from '../../lib/motion'
 import styles from './steps.module.css'
 
-/** Шаг 3: ассистент звонит в ресторан; можно слушать разговор и читать расшифровку. */
+export type CallState = 'calling' | 'hungup' | 'done' | 'cancelled'
+
+/** Шаг 3: ассистент звонит в ресторан. Звонок можно слушать, читать и прервать; готовую бронь — отменить. */
 export function BookingStep({
   place,
   slot,
+  when,
+  guests,
+  invite,
+  code,
   seconds,
-  done,
+  state,
+  lines,
   transcript,
   onTranscript,
   listening,
+  onHangup,
+  onCancelBooking,
 }: {
   place: Restaurant
   slot: Slot
+  when: string
+  guests: number
+  invite: boolean
+  code: string
   seconds: number
-  done: boolean
+  state: CallState
+  lines: TranscriptLine[]
   transcript: boolean
   onTranscript: () => void
   listening: boolean
+  onHangup: () => void
+  onCancelBooking: () => void
 }) {
-  const lines = TRANSCRIPT.filter((l) => l.at <= seconds)
+  const heard = lines.filter((l) => l.at <= seconds)
   const list = useRef<HTMLDivElement>(null)
+  const [askCancel, setAskCancel] = useState(false)
 
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
-  }, [lines.length, transcript])
+  }, [heard.length, transcript])
+
+  const title =
+    state === 'calling'
+      ? 'Разговор с рестораном'
+      : state === 'done'
+        ? 'Столик забронирован'
+        : state === 'hungup'
+          ? 'Звонок прерван'
+          : 'Бронь отменена'
+  const sub =
+    state === 'calling'
+      ? formatTimer(seconds)
+      : state === 'done'
+        ? `${when}, ${formatMinutes(slot.start)} · ${guestsLabel(guests)}`
+        : state === 'hungup'
+          ? 'Бронь не создана, ресторан ничего не записал'
+          : 'Ресторан предупреждён, приглашение отозвано'
 
   return (
     <div className={`${styles.step} ${styles.stepFill}`}>
@@ -49,8 +83,8 @@ export function BookingStep({
               exit={{ opacity: 0, y: 30 }}
               transition={spring}
             >
-              {lines.length === 0 && <p className={styles.lineWait}>Соединяю…</p>}
-              {lines.map((l) => (
+              {heard.length === 0 && <p className={styles.lineWait}>Соединяю…</p>}
+              {heard.map((l) => (
                 <motion.p
                   key={l.at}
                   className={`${styles.line} ${l.who === 'ai' ? styles.lineAi : styles.linePlace}`}
@@ -66,62 +100,111 @@ export function BookingStep({
           )}
         </AnimatePresence>
 
-        <motion.div layout className={styles.status} transition={spring}>
-          <AnimatePresence mode="popLayout" initial={false}>
-            {done ? (
-              <motion.span
-                key="ok"
-                className={styles.statusOk}
-                initial={{ scale: 0, rotate: -40 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={bouncy}
-              >
-                <CheckIcon size={18} strokeWidth={2.6} />
-                <motion.i
-                  initial={{ scale: 1, opacity: 0.6 }}
-                  animate={{ scale: 2.2, opacity: 0 }}
-                  transition={{ duration: 0.9 }}
-                />
-              </motion.span>
-            ) : null}
-          </AnimatePresence>
-          <span className={styles.statusText}>
+        <motion.div layout className={styles.statusCard} transition={spring}>
+          <div className={styles.status}>
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.b
-                key={done ? 'done' : 'call'}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
+              {state !== 'calling' && (
+                <motion.span
+                  key={state}
+                  className={`${styles.statusIcon} ${state === 'done' ? styles.statusOk : styles.statusOff}`}
+                  initial={{ scale: 0, rotate: -40 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={bouncy}
+                >
+                  {state === 'done' ? (
+                    <CheckIcon size={18} strokeWidth={2.6} />
+                  ) : (
+                    <CloseIcon size={16} strokeWidth={2.6} />
+                  )}
+                </motion.span>
+              )}
+            </AnimatePresence>
+            <span className={styles.statusText} aria-live="polite">
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.b
+                  key={title}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={spring}
+                >
+                  {title}
+                </motion.b>
+              </AnimatePresence>
+              <span className="tnum">{sub}</span>
+            </span>
+            {listening && state === 'calling' && (
+              <span className={styles.statusWave}>
+                <Waveform bars={6} height={18} color="#3a78f2" />
+              </span>
+            )}
+            <Pressable
+              className={styles.statusChevron}
+              onClick={onTranscript}
+              aria-label={transcript ? 'Скрыть расшифровку' : 'Показать расшифровку'}
+              aria-expanded={transcript}
+            >
+              <motion.span animate={{ rotate: transcript ? 180 : 0 }} transition={spring} style={{ display: 'flex' }}>
+                <ChevronDownIcon size={18} strokeWidth={2.2} />
+              </motion.span>
+              {!transcript && heard.length > 0 && state === 'calling' && (
+                <motion.i key={heard.length} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={bouncy} />
+              )}
+            </Pressable>
+            {state === 'calling' && (
+              <Pressable className={styles.hangup} onClick={onHangup} aria-label="Прервать звонок">
+                <PhoneDownIcon size={20} />
+              </Pressable>
+            )}
+          </div>
+
+          <AnimatePresence initial={false}>
+            {state === 'done' && (
+              <motion.div
+                key="details"
+                className={styles.details}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
                 transition={spring}
               >
-                {done ? 'Столик забронирован' : 'Разговор с рестораном'}
-              </motion.b>
-            </AnimatePresence>
-            <span className="tnum">
-              {done ? `Завтра, ${formatMinutes(slot.start)} · 2 гостя` : formatTimer(seconds)}
-            </span>
-          </span>
-          {listening && !done && (
-            <span className={styles.statusWave}>
-              <Waveform bars={7} height={18} color="#3a78f2" />
-            </span>
-          )}
-          <Pressable
-            className={styles.statusChevron}
-            onClick={onTranscript}
-            aria-label={transcript ? 'Скрыть расшифровку' : 'Показать расшифровку'}
-            aria-expanded={transcript}
-          >
-            <motion.span animate={{ rotate: transcript ? 180 : 0 }} transition={spring} style={{ display: 'flex' }}>
-              <ChevronDownIcon size={18} strokeWidth={2.2} />
-            </motion.span>
-          </Pressable>
-          <Pressable className={styles.statusChat} onClick={onTranscript} aria-label="Расшифровка">
-            <ChatIcon size={18} />
-            {!transcript && lines.length > 0 && !done && (
-              <motion.i key={lines.length} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={bouncy} />
+                <p>
+                  <PinIcon size={14} /> {place.address} · бронь <b className="tnum">{code}</b>
+                </p>
+                {invite && (
+                  <p>
+                    <Avatar initials={FRIEND.initials} src={FRIEND.photo} size={16} ring={false} color="#dfe2f7" />
+                    Глебу отправлено приглашение
+                  </p>
+                )}
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {askCancel ? (
+                    <motion.div
+                      key="ask"
+                      className={styles.askCancel}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <span>Отменить бронь?</span>
+                      <Pill small tone="dark" onClick={onCancelBooking}>
+                        Да, отменить
+                      </Pill>
+                      <Pill small tone="ghost" onClick={() => setAskCancel(false)}>
+                        Нет
+                      </Pill>
+                    </motion.div>
+                  ) : (
+                    <motion.div key="link" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <Pressable className={styles.cancelLink} onClick={() => setAskCancel(true)}>
+                        Отменить бронь
+                      </Pressable>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
             )}
-          </Pressable>
+          </AnimatePresence>
         </motion.div>
       </SmartImage>
     </div>

@@ -1,9 +1,18 @@
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useApp, useBar } from '../app/store'
-import { BADGE_ICON, CardsIcon, CloseIcon, ListIcon, MoonIcon, SunIcon } from '../components/Icons'
+import {
+  ArrowRightIcon,
+  BADGE_ICON,
+  BackIcon,
+  CardsIcon,
+  CloseIcon,
+  ListIcon,
+  MoonIcon,
+  SunIcon,
+} from '../components/Icons'
 import { Sheet } from '../components/Sheet'
-import { CircleButton, Pressable } from '../components/ui'
+import { CircleButton, Pill, Pressable } from '../components/ui'
 import { DAY_PARTS, eventsFor, type CalendarEvent, type DayPart } from '../data'
 import { BADGE_COLOR } from '../lib/badges'
 import {
@@ -14,6 +23,7 @@ import {
   formatMinutes,
   isSameDay,
   isWeekend,
+  startOfDay,
   startOfWeek,
 } from '../lib/dates'
 import { ease, itemVariants, spring } from '../lib/motion'
@@ -24,10 +34,17 @@ type Mode = 'timeline' | 'agenda'
 const HOUR_H = 62
 
 export function Day() {
-  const { reset, selectedDate, setSelectedDate, booking } = useApp()
+  const { back, selectedDate, setSelectedDate, booking, customEvents, openComposer } = useApp()
   const [mode, setMode] = useState<Mode>('timeline')
-  const [open, setOpen] = useState<DayPart['id']>('morning')
-  const events = useMemo(() => eventsFor(selectedDate, booking), [selectedDate, booking])
+  const isToday = isSameDay(selectedDate, new Date())
+  // Для сегодняшнего дня сразу открываем ту часть суток, которая идёт сейчас.
+  const [open, setOpen] = useState<DayPart['id']>(() => (isToday ? currentPart() : 'morning'))
+  const events = useMemo(() => eventsFor(selectedDate, booking, customEvents), [selectedDate, booking, customEvents])
+
+  useEffect(() => {
+    if (isToday) setOpen(currentPart())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate])
 
   useBar(
     {
@@ -54,9 +71,26 @@ export function Day() {
             </h2>
           </motion.div>
         </AnimatePresence>
-        <CircleButton tone="white" size={44} onClick={() => reset('home')} aria-label="Закрыть">
-          <CloseIcon size={20} />
-        </CircleButton>
+        <div className={styles.headerActions}>
+          <AnimatePresence initial={false}>
+            {!isToday && (
+              <motion.span
+                key="today"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={spring}
+              >
+                <Pill small tone="white" onClick={() => setSelectedDate(startOfDay(new Date()))}>
+                  Сегодня
+                </Pill>
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <CircleButton tone="white" size={44} onClick={back} aria-label="Закрыть">
+            <CloseIcon size={20} />
+          </CircleButton>
+        </div>
       </motion.header>
 
       <div className={styles.body}>
@@ -79,6 +113,8 @@ export function Day() {
                   onOpen={() => setOpen(part.id)}
                   events={events.filter((e) => e.start >= part.from && e.start < part.to)}
                   dateKey={selectedDate.toDateString()}
+                  showNow={isToday}
+                  onEmpty={(start) => openComposer({ date: selectedDate, start })}
                 />
               ))}
             </motion.div>
@@ -139,6 +175,8 @@ function PartCard({
   onOpen,
   events,
   dateKey,
+  showNow,
+  onEmpty,
 }: {
   part: DayPart
   index: number
@@ -146,9 +184,32 @@ function PartCard({
   onOpen: () => void
   events: CalendarEvent[]
   dateKey: string
+  showNow: boolean
+  onEmpty: (start: number) => void
 }) {
   const Icon = PART_ICON[part.id]
   const hours = (part.to - part.from) / 60
+  const wrap = useRef<HTMLDivElement>(null)
+  const nowMins = new Date().getHours() * 60 + new Date().getMinutes()
+  const nowInside = showNow && nowMins >= part.from && nowMins < part.to
+
+  // Прокручиваем шкалу к текущему времени.
+  useEffect(() => {
+    if (!expanded || !nowInside) return
+    const id = window.setTimeout(() => {
+      wrap.current?.scrollTo({ top: Math.max(0, ((nowMins - part.from) / 60) * HOUR_H - 80), behavior: 'smooth' })
+    }, 350)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, nowInside])
+
+  /** Нажатие на пустое место шкалы — новое событие на это время (с шагом 30 минут). */
+  const onTimelineClick = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('[data-event]')) return
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top
+    const mins = part.from + Math.floor((y / HOUR_H) * 2) * 30
+    onEmpty(Math.min(Math.max(mins, part.from), part.to - 30))
+  }
   return (
     <motion.section
       layout
@@ -178,6 +239,7 @@ function PartCard({
         {expanded && (
           <motion.div
             key="tl"
+            ref={wrap}
             layout
             className={`${styles.timelineWrap} scroll-y`}
             initial={{ opacity: 0 }}
@@ -189,6 +251,8 @@ function PartCard({
                 key={dateKey}
                 className={styles.timeline}
                 style={{ height: hours * HOUR_H }}
+                onClick={onTimelineClick}
+                role="presentation"
                 initial={{ opacity: 0, x: 24 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -24 }}
@@ -202,7 +266,18 @@ function PartCard({
                 {events.map((e, i) => (
                   <EventCard key={e.id} event={e} from={part.from} index={i} />
                 ))}
+                {nowInside && (
+                  <span
+                    className={styles.now}
+                    style={{ top: ((nowMins - part.from) / 60) * HOUR_H }}
+                    aria-label="Сейчас"
+                  >
+                    <b className="tnum">{formatMinutes(nowMins)}</b>
+                    <i />
+                  </span>
+                )}
               </motion.div>
+              <p className={styles.emptyHint}>Нажмите на свободное время, чтобы добавить событие</p>
             </AnimatePresence>
           </motion.div>
         )}
@@ -225,6 +300,7 @@ function EventCard({ event, from, index }: { event: CalendarEvent; from: number;
   const height = Math.max(((event.end - event.start) / 60) * HOUR_H - 6, 44)
   return (
     <motion.div
+      data-event
       className={`${styles.event} ${event.highlight ? styles.eventNew : ''}`}
       style={{ top, height }}
       initial={{ opacity: 0, y: 14, scale: 0.97 }}
@@ -308,6 +384,16 @@ function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date)
     setWeekStart((w) => addDays(w, delta * 7))
   }
 
+  // Если день выбрали снаружи (кнопка «Сегодня»), лента переезжает на его неделю.
+  useEffect(() => {
+    const target = startOfWeek(selected)
+    if (!isSameDay(target, weekStart)) {
+      setDir(target > weekStart ? 1 : -1)
+      setWeekStart(target)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected])
+
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.x < -50) shift(1)
     else if (info.offset.x > 50) shift(-1)
@@ -315,7 +401,9 @@ function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date)
 
   return (
     <div className={styles.week}>
-      <i className={styles.grabber} />
+      <Pressable className={styles.weekArrow} onClick={() => shift(-1)} aria-label="Предыдущая неделя">
+        <BackIcon size={18} />
+      </Pressable>
       <div className={styles.weekViewport}>
         <AnimatePresence mode="popLayout" initial={false} custom={dir}>
           <motion.div
@@ -339,6 +427,7 @@ function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date)
                   onClick={() => onSelect(d)}
                   scale={0.88}
                   aria-pressed={active}
+                  aria-label={`${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_GENITIVE[d.getMonth()]}`}
                 >
                   {active && <motion.i layoutId="week-sel" className={styles.weekSel} transition={spring} />}
                   <span className={styles.weekName}>{WEEKDAYS_SHORT[i]}</span>
@@ -350,6 +439,14 @@ function WeekStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date)
           </motion.div>
         </AnimatePresence>
       </div>
+      <Pressable className={styles.weekArrow} onClick={() => shift(1)} aria-label="Следующая неделя">
+        <ArrowRightIcon size={18} />
+      </Pressable>
     </div>
   )
+}
+
+function currentPart(): DayPart['id'] {
+  const mins = new Date().getHours() * 60 + new Date().getMinutes()
+  return DAY_PARTS.find((p) => mins >= p.from && mins < p.to)?.id ?? 'morning'
 }

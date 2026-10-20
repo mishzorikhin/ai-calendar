@@ -189,6 +189,31 @@ export const CalendarIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const PhoneDownIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.5 13.2c4.8-4.3 12.2-4.3 17 0 .6.6.6 1.5 0 2.1l-1.6 1.5c-.5.5-1.3.5-1.8.1l-1.9-1.5c-.4-.3-.6-.8-.5-1.3l.2-1.4a10.6 10.6 0 0 0-6.8 0l.2 1.4c.1.5-.1 1-.5 1.3l-1.9 1.5c-.5.4-1.3.4-1.8-.1l-1.6-1.5c-.6-.6-.6-1.5 0-2.1Z" />
+  </Svg>
+)
+
+export const UsersIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8.5" r="3.2" />
+    <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6M15.5 5.6a3 3 0 0 1 0 5.8M17.5 14.6c1.6.6 2.6 2 3 4.4" />
+  </Svg>
+)
+
+export const MinusIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 12h14" />
+  </Svg>
+)
+
+export const EditIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14.5 5.5 18.5 9.5M4.5 19.5l1-4.5L15.8 4.7a1.8 1.8 0 0 1 2.5 0l1 1a1.8 1.8 0 0 1 0 2.5L9 18.5l-4.5 1Z" />
+  </Svg>
+)
+
 /** Логотип ресторана: красная вилка на чёрном. */
 export const ForkLogo = ({ size = 22 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">

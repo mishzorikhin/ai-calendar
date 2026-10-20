@@ -2,6 +2,7 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { AppProvider, useApp, type Route } from './app/store'
 import { BottomBar } from './components/BottomBar'
 import { Device } from './components/Device'
+import { EventComposer } from './components/EventComposer'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { screenVariants } from './lib/motion'
 import { Agent } from './screens/Agent'
@@ -47,6 +48,7 @@ export function App() {
           <Screens />
           <BottomBar />
           <VoiceOverlay />
+          <EventComposer />
         </Device>
       </AppProvider>
     </MotionConfig>

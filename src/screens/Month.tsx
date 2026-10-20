@@ -2,13 +2,13 @@ import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
 import { useState } from 'react'
 import { useApp, useBar } from '../app/store'
 import { TapToSay } from '../components/BottomBar'
-import { ArrowUpRightIcon, ChevronDownIcon, CloseIcon, StarIcon } from '../components/Icons'
+import { ArrowRightIcon, ArrowUpRightIcon, BackIcon, ChevronDownIcon, CloseIcon, StarIcon } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
 import { CircleButton, Pill, Pressable } from '../components/ui'
 import { WeatherArt } from '../components/WeatherArt'
 import { monthDots } from '../data'
 import { BADGE_COLOR } from '../lib/badges'
-import { MONTHS, MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, isWeekend, monthGrid, startOfDay } from '../lib/dates'
+import { MONTHS, MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, monthGrid, startOfDay } from '../lib/dates'
 import { ease, itemVariants, spring } from '../lib/motion'
 import styles from './Month.module.css'
 
@@ -60,7 +60,7 @@ export function Month() {
             </AnimatePresence>
             <CircleButton
               tone="white"
-              size={30}
+              size={36}
               onClick={() => setPickerOpen((o) => !o)}
               aria-label="Выбрать месяц"
               aria-expanded={pickerOpen}
@@ -84,9 +84,19 @@ export function Month() {
             </motion.h2>
           </AnimatePresence>
         </div>
-        <CircleButton tone="white" size={44} onClick={back} aria-label="Закрыть">
-          <CloseIcon size={20} />
-        </CircleButton>
+        <div className={styles.headerSide}>
+          <CircleButton tone="white" size={44} onClick={back} aria-label="Закрыть">
+            <CloseIcon size={20} />
+          </CircleButton>
+          <div className={styles.arrows}>
+            <CircleButton tone="white" size={40} onClick={() => shift(-1)} aria-label="Предыдущий месяц">
+              <BackIcon size={18} />
+            </CircleButton>
+            <CircleButton tone="white" size={40} onClick={() => shift(1)} aria-label="Следующий месяц">
+              <ArrowRightIcon size={18} />
+            </CircleButton>
+          </div>
+        </div>
       </motion.header>
 
       <AnimatePresence initial={false}>
@@ -156,7 +166,7 @@ export function Month() {
                   <motion.button
                     key={d.getDate()}
                     type="button"
-                    className={`${styles.day} ${isWeekend(d) ? styles.dayWeekend : ''} ${isToday ? styles.today : ''}`}
+                    className={`${styles.day} ${d < today ? styles.dayPast : ''} ${isToday ? styles.today : ''}`}
                     onClick={() => openDay(d)}
                     whileTap={{ scale: 0.86 }}
                     initial={{ opacity: 0, scale: 0.6 }}

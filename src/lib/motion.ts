@@ -19,7 +19,7 @@ export const screenVariants: Variants = {
     scale: 1,
     y: 0,
     zIndex: 2,
-    transition: { ...softSpring, staggerChildren: 0.045, delayChildren: 0.06 },
+    transition: { ...softSpring, staggerChildren: 0.03, delayChildren: 0.03 },
   },
   exit: (dir: number) => ({
     opacity: 0,

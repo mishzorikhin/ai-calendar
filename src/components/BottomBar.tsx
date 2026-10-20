@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useApp } from '../app/store'
 import { softSpring, spring } from '../lib/motion'
 import { InfinityIcon, PlusIcon } from './Icons'
@@ -8,8 +8,14 @@ import styles from './BottomBar.module.css'
 
 /** Нижняя панель на градиенте: «∞» — ассистент, «+» — создать, в центре — контекст экрана. */
 export function BottomBar() {
-  const { bar, go, voice, setVoice } = useApp()
-  const centerKey = voice ? 'voice' : bar.key
+  const { bar, go, voice, setVoice, openComposer, route } = useApp()
+  const centerKey = voice === true ? 'voice' : voice === 'review' ? 'voice-review' : bar.key
+  const [hint, setHint] = useState(() => !readFlag(HINT_KEY))
+
+  const dismissHint = () => {
+    setHint(false)
+    writeFlag(HINT_KEY)
+  }
 
   return (
     <motion.nav
@@ -23,7 +29,10 @@ export function BottomBar() {
         tone="pink"
         size={48}
         aria-label="Ассистент"
-        onClick={bar.onAi ?? (() => go('chat'))}
+        onClick={() => {
+          dismissHint()
+          ;(bar.onAi ?? (() => go('chat')))()
+        }}
         className={bar.aiActive || voice ? styles.aiActive : undefined}
       >
         <InfinityIcon size={22} />
@@ -39,7 +48,9 @@ export function BottomBar() {
             exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
             transition={spring}
           >
-            {voice ? (
+            {voice === 'review' ? (
+              <span className={styles.text}>Проверьте текст запроса</span>
+            ) : voice ? (
               <Pressable className={styles.voice} onClick={() => setVoice(false)} aria-label="Остановить запись">
                 <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
               </Pressable>
@@ -50,9 +61,28 @@ export function BottomBar() {
         </AnimatePresence>
       </div>
 
-      <CircleButton tone="glass" size={48} aria-label="Создать" onClick={bar.onPlus ?? (() => go('chat'))}>
+      <CircleButton tone="glass" size={48} aria-label="Новое событие" onClick={bar.onPlus ?? (() => openComposer())}>
         <PlusIcon size={22} />
       </CircleButton>
+
+      <AnimatePresence>
+        {hint && route === 'home' && !bar.hidden && !voice && (
+          <motion.div
+            className={styles.hint}
+            role="status"
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.95 }}
+            transition={{ ...spring, delay: 0.8 }}
+          >
+            <b>Это ваш ассистент</b>
+            Скажите или напишите, что нужно запланировать: он найдёт время, место и забронирует.
+            <Pressable className={styles.hintBtn} onClick={dismissHint}>
+              Понятно
+            </Pressable>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.nav>
   )
 }
@@ -77,4 +107,23 @@ export function BarChips({ children }: { children: ReactNode }) {
       {children}
     </motion.div>
   )
+}
+
+const HINT_KEY = 'ai-calendar:hint-assistant'
+
+// Хранилище может быть недоступно (приватный режим) — тогда подсказка просто покажется снова.
+function readFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    window.localStorage.setItem(key, '1')
+  } catch {
+    /* ничего страшного */
+  }
 }

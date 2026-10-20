@@ -42,7 +42,6 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 28px 24px;
   border-radius: 32px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -62,7 +61,7 @@
 }
 
 .soft {
-  color: #b8b8c0;
+  color: var(--ink-soft);
 }
 
 .contact {

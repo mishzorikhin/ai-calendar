@@ -1,7 +1,32 @@
 .top {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 2px 4px 10px;
+}
+
+.todayLink {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.todayLabel {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.todayHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
 .dateChip {
@@ -28,14 +53,18 @@
   color: var(--ink-2);
 }
 
-.dateDot {
+.dateBadge {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 11px;
-  height: 11px;
+  top: -4px;
+  right: -4px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--red);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  color: #fff;
   box-shadow: 0 0 0 3px var(--bg);
 }
 
@@ -91,22 +120,12 @@
   letter-spacing: -0.015em;
 }
 
-.bookmark {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  color: #d6d6dc;
-  transition: color 0.25s;
-}
-
-.bookmarkOn {
-  color: #c6c9e9;
-}
-
 .meetingActions {
   grid-column: 1 / -1;
   margin-top: 18px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .start {
@@ -166,6 +185,20 @@
   gap: 4px;
 }
 
+.invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.bookedArrow {
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+
 .bookedTitle {
   font-size: 16px;
   font-weight: 600;
@@ -192,6 +225,11 @@
 
 .grid > * {
   min-width: 0;
+}
+
+/* Карточка с открытой оценкой занимает всю ширину, чтобы звёзды были крупными. */
+.span {
+  grid-column: 1 / -1;
 }
 
 .cardText {
@@ -276,6 +314,11 @@
   color: #fff;
 }
 
+.dinnerOpen {
+  height: auto !important;
+  min-height: 132px;
+}
+
 .dinner {
   position: relative;
   height: 204px;
@@ -318,16 +361,16 @@
 
 .stars {
   display: flex;
-  gap: 0;
-  padding: 4px 4px;
+  gap: 2px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
 }
 
 .star {
-  width: 26px;
-  height: 28px;
+  width: 46px;
+  height: 46px;
 }
 
 .prep {
@@ -367,7 +410,7 @@
   transition: color 0.2s;
 }
 
-.segBtn[aria-selected='true'] svg {
+.segBtn[aria-checked='true'] svg {
   color: var(--ink);
 }
 
@@ -376,4 +419,12 @@
   inset: 0;
   border-radius: 50%;
   background: #fff;
+}
+
+.dinnerOpen .rateRow {
+  justify-content: center;
+}
+
+.span .trip {
+  height: 150px;
 }

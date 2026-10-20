@@ -3,18 +3,31 @@ import { useEffect, useRef, useState } from 'react'
 import { HeartIcon, StarIcon } from '../../components/Icons'
 import { Pill, Pressable, SmartImage } from '../../components/ui'
 import { RESTAURANTS, type Restaurant } from '../../data'
+import { formatMinutes } from '../../lib/dates'
 import { bouncy, ease, spring } from '../../lib/motion'
 import styles from './steps.module.css'
+
+/** Открыто ли место в нужное время. */
+export function isOpenAt(r: Restaurant, mins: number) {
+  return r.opensAt <= mins
+}
 
 /** Шаг 2: поиск мест рядом — сначала радар, затем карусель карточек. */
 export function FindingStep({
   phase,
+  places,
+  time,
+  radiusKm,
   index,
   onIndex,
   onBook,
   onDetails,
 }: {
   phase: 'radar' | 'results'
+  /** Места, отсортированные: сначала открытые в нужное время. */
+  places: Restaurant[]
+  time: number
+  radiusKm: number
   index: number
   onIndex: (i: number) => void
   onBook: (r: Restaurant) => void
@@ -22,14 +35,22 @@ export function FindingStep({
 }) {
   return (
     <div className={`${styles.step} ${styles.stepFill}`}>
-      <p className={styles.kicker}>Поиск ресторана</p>
+      <p className={styles.kicker}>Поиск ресторана · до {radiusKm} км</p>
       <h2 className={styles.heading}>Рядом с вами</h2>
       <div className={styles.findArea}>
         <AnimatePresence mode="popLayout" initial={false}>
           {phase === 'radar' ? (
             <Radar key="radar" />
           ) : (
-            <Carousel key="carousel" index={index} onIndex={onIndex} onBook={onBook} onDetails={onDetails} />
+            <Carousel
+              key="carousel"
+              places={places}
+              time={time}
+              index={index}
+              onIndex={onIndex}
+              onBook={onBook}
+              onDetails={onDetails}
+            />
           )}
         </AnimatePresence>
       </div>
@@ -70,7 +91,7 @@ function Radar() {
           style={{ left: `${50 + r.radar[0] * 42}%`, top: `${50 + r.radar[1] * 42}%` }}
           initial={{ opacity: 0, scale: 0.3, filter: 'blur(6px)' }}
           animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-          transition={{ ...bouncy, delay: 0.5 + i * 0.4 }}
+          transition={{ ...bouncy, delay: 0.3 + i * 0.25 }}
         >
           {r.rating.toFixed(1)}
           <StarIcon size={15} />
@@ -81,11 +102,15 @@ function Radar() {
 }
 
 function Carousel({
+  places,
+  time,
   index,
   onIndex,
   onBook,
   onDetails,
 }: {
+  places: Restaurant[]
+  time: number
   index: number
   onIndex: (i: number) => void
   onBook: (r: Restaurant) => void
@@ -118,53 +143,69 @@ function Carousel({
       transition={spring}
     >
       <div ref={track} className={styles.track} onScroll={onScroll}>
-        {RESTAURANTS.map((r, i) => (
-          <div key={r.id} className={styles.slide}>
-            <SmartImage src={r.photo} art={r.art} className={styles.placeCard}>
-              <div className={styles.placeShade} />
-              <motion.div
-                className={styles.placeName}
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ ...spring, delay: 0.15 + i * 0.05 }}
-              >
-                <span>{r.cuisine}</span>
-                <strong>{r.name}</strong>
-              </motion.div>
-              <div className={styles.placePanel} style={{ background: r.tint }}>
-                <Pressable
-                  className={styles.heart}
-                  scale={0.8}
-                  onClick={() => setLiked((l) => ({ ...l, [r.id]: !l[r.id] }))}
-                  aria-label="В избранное"
-                  aria-pressed={!!liked[r.id]}
+        {places.map((r, i) => {
+          const open = isOpenAt(r, time)
+          return (
+            <div key={r.id} className={styles.slide}>
+              <SmartImage src={r.photo} art={r.art} className={styles.placeCard}>
+                <div className={styles.placeShade} />
+                <motion.div
+                  className={styles.placeName}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ ...spring, delay: 0.15 + i * 0.05 }}
                 >
-                  <motion.span animate={{ scale: liked[r.id] ? [1, 1.35, 1] : 1 }} transition={{ duration: 0.35 }}>
-                    <HeartIcon size={20} filled={!!liked[r.id]} />
-                  </motion.span>
-                </Pressable>
-                <div className={styles.placeMeta}>
-                  <StarIcon size={14} style={{ color: '#f5c04a' }} />
-                  <b className="tnum">{r.rating.toFixed(1)}</b>
-                  <span className="tnum">{r.minutes} мин</span>
+                  <span>{r.cuisine}</span>
+                  <strong>{r.name}</strong>
+                </motion.div>
+                <div className={styles.placePanel} style={{ background: r.tint }}>
+                  <Pressable
+                    className={styles.heart}
+                    scale={0.8}
+                    onClick={() => setLiked((l) => ({ ...l, [r.id]: !l[r.id] }))}
+                    aria-label="В избранное"
+                    aria-pressed={!!liked[r.id]}
+                  >
+                    <motion.span animate={{ scale: liked[r.id] ? [1, 1.35, 1] : 1 }} transition={{ duration: 0.35 }}>
+                      <HeartIcon size={20} filled={!!liked[r.id]} />
+                    </motion.span>
+                  </Pressable>
+                  <div className={styles.placeMeta}>
+                    <StarIcon size={14} style={{ color: '#f5c04a' }} />
+                    <b className="tnum">{r.rating.toFixed(1)}</b>
+                    <span className="tnum">
+                      · пешком {r.minutes} мин · {r.price}
+                    </span>
+                  </div>
+                  <p className={`${styles.openState} ${open ? styles.isOpen : styles.isClosed}`}>
+                    <i />
+                    {open
+                      ? `Открыто в ${formatMinutes(time)} · ${r.hours}`
+                      : `Закрыто в ${formatMinutes(time)} · откроется в ${formatMinutes(r.opensAt)}`}
+                  </p>
+                  <p className={styles.placeDesc}>{r.description}</p>
+                  <div className={styles.placeBtns}>
+                    <Pill
+                      tone="white"
+                      onClick={() => onBook(r)}
+                      disabled={!open}
+                      className={!open ? styles.disabled : undefined}
+                    >
+                      {open ? 'Забронировать' : 'Закрыто'}
+                    </Pill>
+                    <Pill tone="glass" className={styles.glassBtn} onClick={onDetails}>
+                      Подробнее
+                    </Pill>
+                  </div>
                 </div>
-                <p className={styles.placeDesc}>{r.description}</p>
-                <div className={styles.placeBtns}>
-                  <Pill tone="white" onClick={() => onBook(r)}>
-                    Забронировать
-                  </Pill>
-                  <Pill tone="glass" className={styles.glassBtn} onClick={onDetails}>
-                    Подробнее
-                  </Pill>
-                </div>
-              </div>
-            </SmartImage>
-          </div>
-        ))}
+              </SmartImage>
+            </div>
+          )
+        })}
       </div>
       <div className={styles.pager}>
-        {RESTAURANTS.map((r, i) => (
-          <button key={r.id} type="button" onClick={() => scrollTo(i)} aria-label={r.name}>
+        {places.map((r, i) => (
+          <button key={r.id} type="button" onClick={() => scrollTo(i)} aria-label={`Показать ${r.name}`}>
             <motion.i animate={{ width: i === index ? 18 : 6, opacity: i === index ? 1 : 0.35 }} transition={spring} />
           </button>
         ))}

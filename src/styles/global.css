@@ -5,8 +5,10 @@
   --surface-2: #f4f4f6;
   --surface-3: #ececf0;
   --ink: #0d0d10;
-  --ink-2: #8a8a92;
-  --ink-3: #b8b8bf;
+  --ink-2: #6b6b73;
+  /* Для крупного второстепенного текста (≥ 3:1 по WCAG для крупного шрифта). */
+  --ink-soft: #85858d;
+  --ink-3: #85858d;
   --ink-inverse: #ffffff;
   --line: rgba(15, 15, 30, 0.06);
   --weekend: #e5484d;
