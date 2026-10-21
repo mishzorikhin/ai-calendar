@@ -90,42 +90,54 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
     getMessages: () => request<ChatMessage[]>('/api/messages'),
     addMessage: (role, text) => post<ChatMessage>('/api/messages', { role, text }),
-    async sendChat(text, onEvent) {
+    async sendChat(text, onEvent, signal) {
       let res: Response
       try {
         res = await fetch(`${baseUrl}/api/chat`, {
           method: 'POST',
           headers: headers({ body: '{}' }),
           body: JSON.stringify({ text }),
+          signal,
         })
       } catch {
+        if (signal?.aborted) return
         throw new ApiError(0, 'Нет соединения с сервером')
       }
+      if (res.status === 401 && getSession()) setSession(null)
       if (!res.ok || !res.body) {
         const body: unknown = await res.json().catch(() => null)
         throw new ApiError(res.status, errorMessage(body, res.status))
       }
+      // Сервер уже сохранил реплику: дальше любая ошибка — обрыв ответа, а не «не отправлено».
+      onEvent({ type: 'open' })
       // SSE: фреймы вида «data: {json}» разделены пустой строкой.
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buf = ''
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        let cut = buf.indexOf('\n\n')
-        while (cut >= 0) {
-          for (const line of buf.slice(0, cut).split('\n')) {
-            if (!line.startsWith('data:')) continue
-            try {
-              onEvent(JSON.parse(line.slice(5)) as ChatEvent)
-            } catch {
-              /* битый фрейм пропускаем */
+      try {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          let cut = buf.indexOf('\n\n')
+          while (cut >= 0) {
+            for (const line of buf.slice(0, cut).split('\n')) {
+              if (!line.startsWith('data:')) continue
+              try {
+                onEvent(JSON.parse(line.slice(5)) as ChatEvent)
+              } catch {
+                /* битый фрейм пропускаем */
+              }
             }
+            buf = buf.slice(cut + 2)
+            cut = buf.indexOf('\n\n')
           }
-          buf = buf.slice(cut + 2)
-          cut = buf.indexOf('\n\n')
         }
+      } catch {
+        if (signal?.aborted) return
+        throw new ApiError(0, 'Связь оборвалась во время ответа')
+      } finally {
+        reader.releaseLock()
       }
     },
 

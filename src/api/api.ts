@@ -26,6 +26,8 @@ export type Session = { token: string; user: User }
  * Сервер сам сохраняет обе реплики в историю.
  */
 export type ChatEvent =
+  /** Сервер принял сообщение и сохранил его (шлёт сам клиент API, а не поток): дальше ошибка — уже обрыв ответа. */
+  | { type: 'open' }
   | { type: 'delta'; text: string }
   | { type: 'tool'; name: string; status: 'run' | 'done'; detail?: string; date?: string }
   | { type: 'done' }
@@ -53,7 +55,8 @@ export interface CalendarApi {
   getMessages(): Promise<ChatMessage[]>
   addMessage(role: ChatMessage['role'], text: string): Promise<ChatMessage>
   /** Сообщение ассистенту: ответ приходит потоком событий в onEvent. */
-  sendChat(text: string, onEvent: (e: ChatEvent) => void): Promise<void>
+  /** Сообщение ассистенту; ответ — потоком событий. `signal` прерывает чтение ответа (ушли из чата). */
+  sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>
 
   /** Профиль текущего пользователя. */
   me(): Promise<User>

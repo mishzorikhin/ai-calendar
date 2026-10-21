@@ -186,3 +186,69 @@ describe('outbox flush', () => {
     expect(await o.flush()).toMatchObject({ synced: 0, remaining: 1 })
   })
 })
+
+describe('outbox owner', () => {
+  it('вход другого пользователя стирает чужие операции, повторный вход того же — нет', async () => {
+    const backend = createMemoryBackend()
+    const o = await openOutbox(backend)
+    await o.setOwner('1')
+    await o.enqueue(deleteOp('evt-1'))
+    await o.setOwner(null) // выход: правки ждут возвращения хозяина
+    await o.setOwner('1')
+    expect(o.list()).toHaveLength(1)
+    await o.setOwner('2')
+    expect(o.list()).toHaveLength(0)
+    expect(await backend.list()).toHaveLength(0)
+    // Владелец переживает перезапуск: новая очередь на том же хранилище помнит, чья она.
+    await o.enqueue(deleteOp('evt-2'))
+    const reopened = await openOutbox(backend)
+    await reopened.setOwner('2')
+    expect(reopened.list()).toHaveLength(1)
+  })
+})
+
+describe('outbox in-flight', () => {
+  /** fetch, где POST ждёт ручного release, а остальные запросы отвечают сразу и пишутся в calls. */
+  function stubSlowPost() {
+    const ctl = { release: null as ((r: Response) => void) | null, calls: [] as string[] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        ctl.calls.push(`${method} ${url}${init?.body ? ` ${String(init.body)}` : ''}`)
+        if (method === 'POST') return new Promise<Response>((resolve) => (ctl.release = resolve))
+        if (method === 'GET') return Promise.resolve(json([]))
+        return Promise.resolve(json({ id: 'evt-77' }))
+      }),
+    )
+    return ctl
+  }
+
+  it('правка во время отправки create не теряется, а уходит следом', async () => {
+    const ctl = stubSlowPost()
+    const o = await freshOutbox()
+    await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))
+    const flushing = o.flush()
+    await vi.waitFor(() => expect(ctl.release).not.toBeNull())
+    // Create уже летит: правка не может дописаться в его тело — она отдельная операция.
+    await o.enqueue(makeOp({ entityId: 'offline-1', body: { title: 'Б' } }))
+    expect(o.list()).toHaveLength(2)
+    ctl.release?.(json({ id: 'evt-77' }, 201))
+    await flushing
+    expect(o.list()).toHaveLength(0)
+    expect(ctl.calls.at(-1)).toBe('PATCH /api/events/evt-77 {"title":"Б"}')
+  })
+
+  it('удаление во время отправки create не отменяет его, а уходит следом', async () => {
+    const ctl = stubSlowPost()
+    const o = await freshOutbox()
+    await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))
+    const flushing = o.flush()
+    await vi.waitFor(() => expect(ctl.release).not.toBeNull())
+    await o.enqueue(deleteOp('offline-1'))
+    ctl.release?.(json({ id: 'evt-5' }, 201))
+    await flushing
+    expect(o.list()).toHaveLength(0)
+    expect(ctl.calls.at(-1)).toBe('DELETE /api/events/evt-5')
+  })
+})
