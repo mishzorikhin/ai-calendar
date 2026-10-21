@@ -11,6 +11,7 @@ alwaysApply: true
 - Слои: `screens → components/app/api → domain/lib`. Данные — только через `src/api/queries.ts`.
 - Новый метод API: `api.ts` + `http.ts` + `local.ts` + хук в `queries.ts` + Go-хендлер с тестом (+ офлайн-очередь для мутаций событий/задач).
 - Все маршруты данных — за авторизацией; хранилище Go (файл и PostgreSQL) меняйте в обеих реализациях.
+- Внешние календари: события пишутся через `*Synced` в `api/calendars.go`, внешние запросы — через `calsync.Net`, секреты — `secret.Box`. Упоминание делит задачу только новое (`newMentions`).
 - Запрещены `eslint-disable`, `!important`, `as any`. Таймеры — `lib/hooks.ts`, колбэки в эффектах — `useEffectEvent`.
 - Стили — CSS Modules и токены; модалки — `BottomSheet`; нижняя панель — `<BarSlot>`.
 - Готово, когда зелёные `npm run check` и `go test ./...`, а UI проверен на 390×844.

@@ -64,7 +64,7 @@ src/
   lib/        dates, plural (Intl.PluralRules), hooks (useTimeout/useInterval/useNow), motion-пресеты,
               speech (Web Speech API), storage, badges, sheetDrag
   components/ общие UI: ui.tsx (Pressable, Pill, CircleButton, Avatar…), BottomSheet, BottomBar,
-              EventComposer, VoiceOverlay, Icons
+              EventComposer, ReadOnlyEvent, VoiceOverlay, Icons
   pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync
   screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари»), month, day, chat —
               у каждого экрана своя папка
