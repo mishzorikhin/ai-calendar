@@ -63,7 +63,9 @@ docker run -p 8080:8080 -v ai-calendar-data:/data ai-calendar
 
 ### Деплой на сервер
 
-Продакшен-копия живёт на домашнем сервере `192.168.0.16` (SSH: `root`, ключ `~/.ssh/id_ed25519`), проект — в `/opt/ai-calendar`, UI — на `http://192.168.0.16:8090`. Обновление:
+Продакшен-копия живёт на домашнем сервере `192.168.0.16` (SSH: `root`, ключ `~/.ssh/id_ed25519`), проект — в `/opt/ai-calendar`, UI — на `http://192.168.0.16:8090`. Снаружи приложение доступно по `https://aicall.mish-tech.ru/` — обратный прокси с TLS к тому же контейнеру.
+
+Важно: push-уведомления и service worker работают только по HTTPS-адресу — по `http://192.168.0.16:8090` браузер считает origin небезопасным (`isSecureContext === false`), `navigator.serviceWorker` недоступен, и подписаться на уведомления нельзя. Это ограничение браузеров, а не сервера. Обновление:
 
 ```bash
 # исходники → сервер (.env сервера не трогаем: там LLM_API_KEY и APP_PORT)
@@ -81,6 +83,11 @@ TOK=$(curl -s -X POST http://192.168.0.16:8090/api/auth/login -H 'Content-Type: 
   -d '{"username":"...","password":"..."}' | jq -r .token)
 curl -N -X POST http://192.168.0.16:8090/api/chat -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' -d '{"text":"привет"}'
+
+# push: ключ VAPID и число подписанных устройств
+curl -s http://192.168.0.16:8090/api/push -H "Authorization: Bearer $TOK"
+# тестовое уведомление на все устройства аккаунта (409 — ни одно не подписано)
+curl -X POST http://192.168.0.16:8090/api/push/test -H "Authorization: Bearer $TOK"
 ```
 
 Нюансы: порт хоста задаёт `APP_PORT` в `.env` — там `8090`, потому что `8080` занят llama.cpp; данные — в PostgreSQL (`db-data`), пересборка их не трогает; `--delete` убирает удалённые из репозитория файлы, исключённые пути сохраняются.
