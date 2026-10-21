@@ -382,3 +382,101 @@ func TestSessionExpiry(t *testing.T) {
 		t.Fatalf("удалённая сессия: %v", err)
 	}
 }
+
+// Упоминания в живом тексте: пунктуация, e-mail, повторные сохранения, выход и упоминание владельца.
+func TestMentionsEdgeCases(t *testing.T) {
+	h, alice := newAuthedServer(t)
+	bob := register(t, h, "bob")
+	bobNotifs := func() int {
+		return len(decode[[]model.Notification](t, doAs(t, h, bob, "GET", "/api/notifications", "")))
+	}
+	create := func(body string) model.Task {
+		t.Helper()
+		rec := doAs(t, h, alice, "POST", "/api/tasks", body)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("создание %s: %d %s", body, rec.Code, rec.Body)
+		}
+		return decode[model.Task](t, rec)
+	}
+
+	// Точка в конце предложения к логину не относится.
+	if task := create(`{"title":"Купить палатку с @bob."}`); len(task.Members) != 1 {
+		t.Fatalf("«@bob.»: %+v", task.Members)
+	}
+	// В e-mail упоминания нет.
+	if task := create(`{"title":"Написать на misha@bob"}`); len(task.Members) != 0 {
+		t.Fatalf("e-mail поделил задачу: %+v", task.Members)
+	}
+
+	// Кириллица перед @ — тоже часть слова, а точка — граница.
+	register(t, h, "carol")
+	if task := create(`{"title":"Написать иван@bob"}`); len(task.Members) != 0 {
+		t.Fatalf("«иван@bob» поделил задачу: %+v", task.Members)
+	}
+	if task := create(`{"title":"Купить хлеб.@carol и @bob.@carol"}`); len(task.Members) != 2 {
+		t.Fatalf("упоминания после точки: %+v", task.Members)
+	}
+	// Логин с подчёркиванием на конце и без него — разные люди.
+	register(t, h, "bob_")
+	task := create(`{"title":"Позвать @bob_"}`)
+	got := decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Позвать @bob_ и @bob"}`))
+	if len(got.Members) != 2 {
+		t.Fatalf("@bob после @bob_: %+v", got.Members)
+	}
+
+	// Повторные сохранения того же текста не шлют уведомления снова.
+	task = create(`{"title":"Поход с @bob"}`)
+	before := bobNotifs()
+	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в субботу","subtitle":""}`)
+	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в субботу","subtitle":"взять палатку"}`)
+	if got := bobNotifs() - before; got != 0 {
+		t.Fatalf("повторные уведомления: %d", got)
+	}
+
+	// Вышел — правка текста со старым упоминанием его не возвращает.
+	doAs(t, h, bob, "DELETE", "/api/tasks/"+task.ID, "")
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в воскресенье"}`))
+	if len(got.Members) != 0 {
+		t.Fatalf("вышедшего вернули: %+v", got.Members)
+	}
+	// То же, когда владелец убрал участника вручную.
+	task = create(`{"title":"Ужин с @bob"}`)
+	doAs(t, h, alice, "DELETE", "/api/tasks/"+task.ID+"/members/bob", "")
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Ужин с @bob в 19:00"}`))
+	if len(got.Members) != 0 {
+		t.Fatalf("убранного вернули: %+v", got.Members)
+	}
+	// Упоминание, которое уже было в названии, в заметке новым не считается:
+	// вернуть убранного можно только явно — через участников.
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"subtitle":"и снова @bob"}`))
+	if len(got.Members) != 0 {
+		t.Fatalf("упоминание из названия засчитано как новое: %+v", got.Members)
+	}
+
+	// Участник упоминает владельца — сохранение проходит, владелец не «добавляется».
+	task = create(`{"title":"Общая","members":["bob"]}`)
+	rec := doAs(t, h, bob, "PATCH", "/api/tasks/"+task.ID, `{"title":"Общая","subtitle":"@alice купи хлеб"}`)
+	if rec.Code != http.StatusOK || len(decode[model.Task](t, rec).Members) != 1 {
+		t.Fatalf("участник упомянул владельца: %d %s", rec.Code, rec.Body)
+	}
+	// Явное добавление владельца или уже участника — тоже не ошибка и без уведомлений.
+	before = bobNotifs()
+	if rec := doAs(t, h, alice, "POST", "/api/tasks/"+task.ID+"/members", `{"username":"bob"}`); rec.Code != http.StatusOK {
+		t.Fatalf("повторное добавление: %d %s", rec.Code, rec.Body)
+	}
+	if bobNotifs() != before {
+		t.Fatal("уведомление за повторное добавление")
+	}
+	// А явное приглашение владельца — понятная ошибка, а не тихое «ничего».
+	if rec := doAs(t, h, bob, "POST", "/api/tasks/"+task.ID+"/members", `{"username":"alice"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("явное добавление владельца: %d %s", rec.Code, rec.Body)
+	}
+	// Стёрли упоминание и написали заново — это новое приглашение.
+	task = create(`{"title":"Кино с @bob"}`)
+	doAs(t, h, bob, "DELETE", "/api/tasks/"+task.ID, "")
+	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино"}`)
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино с @bob"}`))
+	if len(got.Members) != 1 {
+		t.Fatalf("новое приглашение после выхода: %+v", got.Members)
+	}
+}

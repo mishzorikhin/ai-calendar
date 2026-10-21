@@ -359,10 +359,9 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// Упоминания @логин в названии/заметке делят задачу с упомянутыми.
-	mentioned, _ := s.resolveUsernames(r.Context(), mentionUsernames(t))
-	users = mergeUsers(users, mentioned)
+	users = mergeUsers(users, s.mentionedUsers(r.Context(), t))
 	if len(users) > 0 {
-		if t, err = s.shareTaskWith(r.Context(), t.ID, users); err != nil {
+		if t, err = s.shareTaskWith(r.Context(), t, users); err != nil {
 			return shareErr(err)
 		}
 	}
@@ -427,6 +426,18 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 	if len(unknown) > 0 {
 		return badRequest("Нет пользователей: @%s", strings.Join(unknown, ", @"))
 	}
+	// Текст до правки — чтобы делиться только по новым упоминаниям (галочке он не нужен).
+	textChanged := in.Title != nil || in.Subtitle != nil
+	var before model.Task
+	if textChanged {
+		var err error
+		if before, err = s.store.Task(r.Context(), r.PathValue("id")); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return notFound("Задача")
+			}
+			return err
+		}
+	}
 	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), model.TaskPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind,
 		Category: in.Category, Done: in.Done, Due: in.Due,
@@ -438,12 +449,11 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// Новые @упоминания в изменённом тексте добавляют участников (убрать — только вручную).
-	if in.Title != nil || in.Subtitle != nil {
-		mentioned, _ := s.resolveUsernames(r.Context(), mentionUsernames(t))
-		users = mergeUsers(users, mentioned)
+	if textChanged {
+		users = mergeUsers(users, s.newMentions(r.Context(), before, t))
 	}
 	if len(users) > 0 {
-		if t, err = s.shareTaskWith(r.Context(), t.ID, users); err != nil {
+		if t, err = s.shareTaskWith(r.Context(), t, users); err != nil {
 			return shareErr(err)
 		}
 	}

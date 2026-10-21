@@ -685,9 +685,8 @@ func (s *server) toolCreateTask(ctx context.Context, args map[string]any) (strin
 		return `{"error":"не удалось сохранить задачу"}`, toolMeta{}
 	}
 	// @логин в тексте тоже делит задачу.
-	mentioned, _ := s.resolveUsernames(ctx, mentionUsernames(created))
-	if all := mergeUsers(users, mentioned); len(all) > 0 {
-		if created, err = s.shareTaskWith(ctx, created.ID, all); err != nil {
+	if all := mergeUsers(users, s.mentionedUsers(ctx, created)); len(all) > 0 {
+		if created, err = s.shareTaskWith(ctx, created, all); err != nil {
 			return `{"error":"задача создана, но поделиться не вышло"}`, toolMeta{}
 		}
 	}
@@ -736,17 +735,25 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 			return fmt.Sprintf(`{"error":"нет пользователей: @%s — посмотри логины через list_users"}`, strings.Join(unknown, ", @")), toolMeta{}
 		}
 	}
+	textChanged := patch.Title != nil || patch.Subtitle != nil
+	var before model.Task
+	if textChanged {
+		var err error
+		if before, err = s.store.Task(ctx, id); err != nil {
+			return `{"error":"задача не найдена"}`, toolMeta{}
+		}
+	}
 	t, err := s.store.UpdateTask(ctx, id, patch)
 	if err != nil {
 		return `{"error":"задача не найдена"}`, toolMeta{}
 	}
-	if _, ok := args["title"]; ok {
-		if mentioned, _ := s.resolveUsernames(ctx, mentionUsernames(t)); len(mentioned) > 0 {
+	if textChanged {
+		if mentioned := s.newMentions(ctx, before, t); len(mentioned) > 0 {
 			users = mergeUsers(users, mentioned)
 		}
 	}
 	if len(users) > 0 {
-		if t, err = s.shareTaskWith(ctx, t.ID, users); err != nil {
+		if t, err = s.shareTaskWith(ctx, t, users); err != nil {
 			return `{"error":"задача обновлена, но поделиться не вышло"}`, toolMeta{}
 		}
 	}

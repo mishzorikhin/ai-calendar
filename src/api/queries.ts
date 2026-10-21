@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppNotification,
   CalDavCredentials,
@@ -228,15 +228,28 @@ export function useUserSearch(query: string) {
 
 const NO_NOTIFICATIONS: AppNotification[] = []
 
-/** Уведомления с периодической проверкой: бейдж непрочитанных на аватаре. */
+/**
+ * Уведомления с периодической проверкой: бейдж непрочитанных на аватаре.
+ * Новое уведомление значит, что с вами поделились задачей, — тогда перечитываем
+ * и задачи: общая задача появляется без перезагрузки и без отдельного опроса.
+ */
 export function useNotifications() {
   const api = useApi()
+  const qc = useQueryClient()
   const query = useQuery({
     queryKey: keys.notifications,
     queryFn: () => api.getNotifications(),
     refetchInterval: 60_000,
   })
   const notifications = query.data ?? NO_NOTIFICATIONS
+  // -1 — список загружен и пуст: первое же уведомление тоже новое. undefined — ещё не загружен.
+  const newest = query.data ? (notifications[0]?.id ?? -1) : undefined
+  const seen = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (newest === undefined) return
+    if (seen.current !== undefined && newest > seen.current) void qc.invalidateQueries({ queryKey: keys.tasks })
+    seen.current = newest
+  }, [newest, qc])
   return { ...query, notifications, unread: notifications.filter((n) => !n.read).length }
 }
 

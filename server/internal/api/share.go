@@ -2,6 +2,10 @@
 // Правила как у Todoist/GitHub: владелец и участники видят и правят задачу;
 // @username в названии или заметке добавляет человека участником и шлёт ему
 // уведомление; владелец удаляет задачу у всех, участник выходит из неё.
+//
+// Делит задачу только *новое* упоминание — которого не было в тексте до правки.
+// Иначе каждое сохранение возвращало бы того, кто вышел или кого убрал владелец,
+// и слало бы повторные уведомления.
 package api
 
 import (
@@ -9,25 +13,91 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
+	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 	"github.com/mishzorikhin/ai-calendar/server/internal/store"
 )
 
-// mentionRe — @логин в тексте задачи: латиница, начинается с буквы (как при регистрации).
-var mentionRe = regexp.MustCompile(`@([a-zA-Z][a-zA-Z0-9_.-]{1,23})`)
-
-// mentionUsernames — уникальные логины из title+subtitle (без повторов).
-func mentionUsernames(t model.Task) []string {
+// mentionsIn — упоминания @логин в тексте. Каждое — варианты логина: как написано
+// и без точки/дефиса/подчёркивания в конце («с @bob.» — это @bob, если @bob. нет).
+// Перед @ — начало текста или не буква/цифра/_/-/@: в «иван@bob» и
+// «misha@bob.ru» упоминания нет, а в «хлеб.@carol» и «@bob.@carol» — есть.
+func mentionsIn(text string) [][]string {
+	var out [][]string
 	seen := map[string]bool{}
-	var out []string
-	for _, m := range mentionRe.FindAllStringSubmatch(t.Title+" "+t.Subtitle, -1) {
-		name := strings.ToLower(m[1])
-		if !seen[name] {
-			seen[name] = true
-			out = append(out, name)
+	for i := 0; i < len(text); i++ {
+		if text[i] != '@' {
+			continue
+		}
+		if i > 0 {
+			if r, _ := utf8.DecodeLastRuneInString(text[:i]); unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("_-@", r) {
+				continue
+			}
+		}
+		j := i + 1
+		for j < len(text) && isLoginByte(text[j]) {
+			j++
+		}
+		name := strings.ToLower(text[i+1 : j])
+		i = j - 1
+		variants := []string{name}
+		if trimmed := strings.TrimRight(name, "._-"); trimmed != name {
+			variants = append(variants, trimmed)
+		}
+		var valid []string
+		for _, v := range variants {
+			if usernameRe.MatchString(v) {
+				valid = append(valid, v)
+			}
+		}
+		if len(valid) > 0 && !seen[valid[0]] {
+			seen[valid[0]] = true
+			out = append(out, valid)
+		}
+	}
+	return out
+}
+
+func isLoginByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-'
+}
+
+// mentionedUsers — пользователи, упомянутые в названии и заметке задачи (без повторов).
+func (s *server) mentionedUsers(ctx context.Context, t model.Task) []model.User {
+	var out []model.User
+	seen := map[int64]bool{}
+	for _, variants := range mentionsIn(t.Title + " " + t.Subtitle) {
+		for _, name := range variants {
+			u, err := s.store.UserByUsername(ctx, name)
+			if err != nil {
+				continue // неизвестное @имя — просто текст
+			}
+			if !seen[u.ID] {
+				seen[u.ID] = true
+				out = append(out, u)
+			}
+			break
+		}
+	}
+	return out
+}
+
+// newMentions — кто упомянут в after, но не был упомянут в before (сравнение по
+// пользователям, а не по строкам). Если упоминание стёрли и написали заново — это
+// новое приглашение: человек вернётся, даже если выходил.
+func (s *server) newMentions(ctx context.Context, before, after model.Task) []model.User {
+	old := map[int64]bool{}
+	for _, u := range s.mentionedUsers(ctx, before) {
+		old[u.ID] = true
+	}
+	var out []model.User
+	for _, u := range s.mentionedUsers(ctx, after) {
+		if !old[u.ID] {
+			out = append(out, u)
 		}
 	}
 	return out
@@ -64,16 +134,17 @@ func (s *server) notifyShare(ctx context.Context, to model.User, task model.Task
 	})
 }
 
-// shareTaskWith добавляет участников и шлёт им уведомления.
-func (s *server) shareTaskWith(ctx context.Context, taskID string, users []model.User) (model.Task, error) {
-	var task model.Task
-	var err error
+// shareTaskWith добавляет участников к задаче task (свежей, после создания или правки)
+// и шлёт уведомления только тем, кого действительно добавили. Себя, владельца и уже
+// участвующих пропускает молча: участник может упомянуть владельца в заметке.
+func (s *server) shareTaskWith(ctx context.Context, task model.Task, users []model.User) (model.Task, error) {
+	me, _ := store.UserFrom(ctx)
 	for _, u := range users {
-		me, _ := store.UserFrom(ctx)
-		if u.ID == me.ID {
-			continue // себя не добавляем
+		already := slices.ContainsFunc(task.Members, func(m model.User) bool { return m.ID == u.ID })
+		if u.ID == me.ID || u.ID == task.OwnerID || already {
+			continue
 		}
-		task, err = s.store.AddTaskMember(ctx, taskID, u.ID)
+		added, err := s.store.AddTaskMember(ctx, task.ID, u.ID)
 		if err != nil {
 			var me *store.MemberError
 			if errors.As(err, &me) {
@@ -81,9 +152,10 @@ func (s *server) shareTaskWith(ctx context.Context, taskID string, users []model
 			}
 			return task, err
 		}
+		task = added
 		s.notifyShare(ctx, u, task)
 	}
-	return s.store.Task(ctx, taskID)
+	return task, nil
 }
 
 // membersInput — {username} для POST /api/tasks/{id}/members.
@@ -117,8 +189,15 @@ func (s *server) addTaskMember(w http.ResponseWriter, r *http.Request) error {
 	if len(unknown) > 0 {
 		return notFound("Пользователь @" + unknown[0])
 	}
-	t, err := s.shareTaskWith(r.Context(), r.PathValue("id"), users)
+	t, err := s.store.Task(r.Context(), r.PathValue("id"))
 	if err != nil {
+		return shareErr(err)
+	}
+	// Явный запрос — явная ошибка: молча пропускаем владельца только в @упоминаниях.
+	if len(users) == 1 && users[0].ID == t.OwnerID {
+		return badRequest("Владелец и так видит задачу")
+	}
+	if t, err = s.shareTaskWith(r.Context(), t, users); err != nil {
 		return shareErr(err)
 	}
 	writeJSON(w, http.StatusOK, t)
