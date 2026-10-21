@@ -16,6 +16,16 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.neuraldeep.ru/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.6-unlim-noreason}
+      # Внешние календари (см. README, «Внешние календари»). Ключ шифрования по умолчанию
+      # лежит в томе data (secret.key) и переживает пересборку.
+      SECRET_KEY: ${SECRET_KEY:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      CALENDAR_ALLOW_PRIVATE: ${CALENDAR_ALLOW_PRIVATE:-}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Moscow}
     depends_on:
       db:
         condition: service_healthy

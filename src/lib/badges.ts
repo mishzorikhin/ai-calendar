@@ -9,3 +9,13 @@ export const BADGE_COLOR: Record<Badge, string> = {
   sport: 'var(--green)',
   read: 'var(--purple)',
 }
+
+/** Типы событий для выбора в интерфейсе — в порядке показа. */
+export const BADGE_OPTIONS = [
+  { id: 'routine', label: 'Дело' },
+  { id: 'work', label: 'Работа' },
+  { id: 'food', label: 'Еда' },
+  { id: 'sport', label: 'Спорт' },
+  { id: 'read', label: 'Чтение' },
+  { id: 'sleep', label: 'Сон' },
+] as const satisfies readonly { id: Badge; label: string }[]

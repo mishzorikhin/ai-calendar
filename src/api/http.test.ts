@@ -115,4 +115,57 @@ describe('сессия', () => {
       expect.objectContaining({ method: 'POST', body: '{"username":"bob"}' }),
     )
   })
+
+  it('не тащит служебные поля сервера в событие и сохраняет источник', async () => {
+    mockFetch(200, [
+      {
+        id: 'evt-2',
+        date: '2026-10-21',
+        title: 'Планёрка',
+        start: 540,
+        end: 600,
+        badge: 'work',
+        source: 'cal-1',
+        readOnly: true,
+        externalId: '/calendars/alice/work/m1.ics',
+        etag: '"e1"',
+        userId: 1,
+      },
+    ])
+    const [e] = await createHttpApi().getEvents(new Date(2026, 9, 21))
+    expect(e).toMatchObject({ id: 'evt-2', source: 'cal-1', readOnly: true })
+    expect(e).not.toHaveProperty('externalId')
+    expect(e).not.toHaveProperty('etag')
+  })
+
+  it('подключение календаря и поиск CalDAV ходят в нужные маршруты', async () => {
+    const fetch = mockFetch(200, { calendars: [{ url: 'https://dav/x/', name: 'Работа', writable: true }] })
+    const api = createHttpApi()
+    const cals = await api.discoverCalDav({ url: 'https://caldav.yandex.ru', username: 'a', password: 'p' })
+    expect(cals).toHaveLength(1)
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/integrations/caldav/discover',
+      expect.objectContaining({ method: 'POST' }),
+    )
+
+    mockFetch(204, null)
+    await api.deleteIntegration('cal-1')
+    const del = mockFetch(200, { id: 'cal-1' })
+    await api.syncIntegration('cal-1')
+    expect(del).toHaveBeenLastCalledWith('/api/integrations/cal-1/sync', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('ссылка на ленту — абсолютная, выключенная — null', async () => {
+    mockFetch(200, { path: '' })
+    expect(await createHttpApi().getFeed()).toBeNull()
+    mockFetch(200, { path: '/api/feed/abc.ics' })
+    expect(await createHttpApi('https://cal.example.com').resetFeed()).toBe('https://cal.example.com/api/feed/abc.ics')
+  })
+
+  it('пояс браузера обновляет пользователя в сессии', async () => {
+    setSession({ token: 't', user: { id: 1, username: 'alice', name: 'Alice' } })
+    mockFetch(200, { id: 1, username: 'alice', name: 'Alice', timeZone: 'Asia/Tokyo' })
+    await createHttpApi().setTimeZone('Asia/Tokyo')
+    expect(getSession()?.user.timeZone).toBe('Asia/Tokyo')
+  })
 })

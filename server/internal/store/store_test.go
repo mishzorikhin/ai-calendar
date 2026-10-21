@@ -214,3 +214,145 @@ func TestRollbackOnSaveError(t *testing.T) {
 		t.Fatalf("события: %+v", got)
 	}
 }
+
+// testIntegrations — общий сценарий подключённых календарей для обеих реализаций хранилища.
+func testIntegrations(t *testing.T, s Store, actx context.Context) {
+	t.Helper()
+	ctx := context.Background()
+	bob, err := s.CreateUser(ctx, "bob-cal", "Bob", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bctx := WithUser(ctx, bob)
+
+	a, err := s.SaveIntegration(actx, model.Integration{Kind: model.IntegrationCalDAV, Name: "Яндекс", Badge: model.BadgeWork, Writable: true, Primary: true, Secret: "v1:x"})
+	if err != nil || a.ID == "" || a.CreatedAt.IsZero() {
+		t.Fatalf("создание: %+v %v", a, err)
+	}
+	b, err := s.SaveIntegration(actx, model.Integration{Kind: model.IntegrationGoogle, Name: "Google", Writable: true, Primary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Основной календарь один: новый Primary снимает отметку со старого.
+	if got, _ := s.Integration(actx, a.ID); got.Primary || got.Secret != "v1:x" {
+		t.Fatalf("старый основной: %+v", got)
+	}
+	if got := s.Integrations(actx); len(got) != 2 || got[0].ID != a.ID || !got[1].Primary {
+		t.Fatalf("список: %+v", got)
+	}
+	if got := s.Integrations(bctx); len(got) != 0 {
+		t.Fatalf("bob видит чужие календари: %+v", got)
+	}
+	if _, err := s.Integration(bctx, a.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("чужой календарь: %v", err)
+	}
+	if _, err := s.SaveIntegration(bctx, model.Integration{ID: a.ID, Name: "взлом"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("чужой календарь не перезаписать: %v", err)
+	}
+	if all := s.AllIntegrations(ctx); len(all) != 2 {
+		t.Fatalf("все подключения: %+v", all)
+	}
+
+	// Синхронизация: id сохраняются, лишнее удаляется, своё не трогается.
+	own, _ := s.CreateEvent(actx, model.Event{Date: "2026-10-21", Title: "Своё", Start: 600, End: 660, Badge: model.BadgeRoutine})
+	ext := func(id, title string, start int) model.Event {
+		return model.Event{Date: "2026-10-21", Title: title, Start: start, End: start + 60, Badge: model.BadgeWork, ExternalID: id, ETag: "1"}
+	}
+	stats, err := s.SyncEvents(actx, a.ID, []model.Event{ext("x1", "Планёрка", 540), ext("x2", "Обед", 780), ext("x2", "дубль", 0)})
+	if err != nil || stats.Added != 2 {
+		t.Fatalf("первая синхронизация: %+v %v", stats, err)
+	}
+	day := s.EventsOn(actx, "2026-10-21")
+	var planID string
+	for _, e := range day {
+		if e.ExternalID == "x1" {
+			planID = e.ID
+			if e.Source != a.ID || e.Highlight || e.ETag != "1" {
+				t.Fatalf("внешнее событие: %+v", e)
+			}
+		}
+	}
+	if len(day) != 3 || planID == "" {
+		t.Fatalf("день: %+v", day)
+	}
+	upd := ext("x1", "Планёрка (перенесли)", 600)
+	upd.ReadOnly, upd.ETag = true, "2"
+	stats, err = s.SyncEvents(actx, a.ID, []model.Event{upd})
+	if err != nil || stats.Updated != 1 || stats.Removed != 1 || stats.Added != 0 {
+		t.Fatalf("вторая синхронизация: %+v %v", stats, err)
+	}
+	got, err := s.Event(actx, planID)
+	if err != nil || got.Title != "Планёрка (перенесли)" || got.Start != 600 || !got.ReadOnly || got.ETag != "2" {
+		t.Fatalf("обновлённое событие сохранило id: %+v %v", got, err)
+	}
+	if stats, _ := s.SyncEvents(actx, a.ID, []model.Event{upd}); stats.Updated != 0 {
+		t.Fatalf("без изменений — без обновлений: %+v", stats)
+	}
+	if err := s.SetEventETag(actx, planID, "3"); err != nil {
+		t.Fatal(err)
+	}
+	if between := s.EventsBetween(actx, "2026-10-20", "2026-10-21"); len(between) != 2 {
+		t.Fatalf("EventsBetween: %+v", between)
+	}
+
+	// Удаление подключения уносит его события, своё остаётся.
+	if err := s.DeleteIntegration(actx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if day := s.EventsOn(actx, "2026-10-21"); len(day) != 1 || day[0].ID != own.ID {
+		t.Fatalf("после удаления календаря: %+v", day)
+	}
+	if err := s.DeleteIntegration(actx, a.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("повторное удаление: %v", err)
+	}
+	_ = b
+
+	// Пояс и лента.
+	u, err := s.SetTimeZone(actx, "Asia/Yekaterinburg")
+	if err != nil || u.TimeZone != "Asia/Yekaterinburg" {
+		t.Fatalf("пояс: %+v %v", u, err)
+	}
+	me, _ := UserFrom(actx)
+	if byID, err := s.UserByID(ctx, me.ID); err != nil || byID.TimeZone != "Asia/Yekaterinburg" || byID.PassHash != "" {
+		t.Fatalf("UserByID: %+v %v", byID, err)
+	}
+	if tok, _ := s.FeedToken(actx); tok != "" {
+		t.Fatalf("лента выключена по умолчанию: %q", tok)
+	}
+	if err := s.SetFeedToken(actx, "feed-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if owner, err := s.UserByFeedToken(ctx, "feed-secret"); err != nil || owner.ID != me.ID {
+		t.Fatalf("владелец ленты: %+v %v", owner, err)
+	}
+	if _, err := s.UserByFeedToken(ctx, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("пустой токен: %v", err)
+	}
+	_ = s.SetFeedToken(actx, "")
+	if _, err := s.UserByFeedToken(ctx, "feed-secret"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("выключенная лента: %v", err)
+	}
+}
+
+func TestFileIntegrations(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := userCtx(t, s)
+	testIntegrations(t, s, ctx)
+
+	// Всё переживает перезапуск.
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx2 := userCtx(t, s2)
+	if got := s2.Integrations(ctx2); len(got) != 1 || got[0].Name != "Google" {
+		t.Fatalf("после перезапуска: %+v", got)
+	}
+	if u, _ := UserFrom(ctx2); u.TimeZone != "Asia/Yekaterinburg" {
+		t.Fatalf("пояс после перезапуска: %+v", u)
+	}
+}

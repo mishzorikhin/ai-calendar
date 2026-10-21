@@ -14,6 +14,7 @@ import { MONTHS_GENITIVE, WEEKDAYS, dayKey, isSameDay, startOfWeek } from '../..
 import { minutesOf, useNow } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
 import { Agenda } from './Agenda'
+import { AllDayStrip } from './AllDayStrip'
 import { ModeToggle, type DayMode } from './ModeToggle'
 import { PartCard } from './PartCard'
 import { WeekStrip } from './WeekStrip'
@@ -32,7 +33,7 @@ export function Day() {
   const isToday = isSameDay(selectedDate, now)
   const key = dayKey(selectedDate)
   const open: DayPartId = opened?.day === key ? opened.part : isToday ? partOf(minutesOf(now)) : 'morning'
-  const { events } = useDayEvents(selectedDate)
+  const { events, allDay } = useDayEvents(selectedDate)
 
   return (
     <Sheet scroll={false} innerClassName={styles.inner}>
@@ -77,6 +78,8 @@ export function Day() {
           </CircleButton>
         </div>
       </motion.header>
+
+      <AllDayStrip events={allDay} onOpen={(e) => composer.open({ event: { ...e, date: selectedDate } })} />
 
       <div className={styles.body}>
         <AnimatePresence mode="popLayout" initial={false}>

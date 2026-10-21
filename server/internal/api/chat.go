@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -157,7 +158,8 @@ func chatSystemPrompt(now time.Time) string {
 - Просят добавить задачу или цель — create_task; «задача» — одно дело, «цель» — то, к чему идут (с дедлайном due, если назвали срок). Отметить выполненной или поменять — update_task, id бери из list_tasks.
 - Совместная задача: чтобы поделиться, передай логины в members (create_task/update_task) или впиши @логин в название — участник увидит задачу у себя и получит уведомление. Логины всех пользователей — list_users; «задача для Анны» — найди её логин через list_users.
 - delete_event и delete_task вызывай только после явного согласия пользователя в этом диалоге: сначала назови что именно удаляешь и спроси подтверждение.
-- id событий и задач не выдумывай — бери из get_day_schedule и list_tasks.`, now.Format("02.01.2006"), ruWeekdays[now.Weekday()])
+- id событий и задач не выдумывай — бери из get_day_schedule и list_tasks.
+- События с external: true пришли из подключённого календаря (Google, Яндекс, iCloud…). С read_only: true их не изменить и не удалить — так и скажи пользователю. События с all_day: true идут весь день и время не занимают.`, now.Format("02.01.2006"), ruWeekdays[now.Weekday()])
 }
 
 // Инструменты календаря. Даты — ГГГГ-ММ-ДД, время — «ЧЧ:ММ»: так модель ошибается реже.
@@ -380,13 +382,32 @@ type toolEvent struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Subtitle string `json:"subtitle,omitempty"`
-	Start    string `json:"start"`
-	End      string `json:"end"`
+	Start    string `json:"start,omitempty"`
+	End      string `json:"end,omitempty"`
 	Badge    string `json:"badge"`
+	AllDay   bool   `json:"all_day,omitempty"`
+	// ReadOnly — событие внешнего календаря, которое можно изменить только там.
+	ReadOnly bool `json:"read_only,omitempty"`
+	// External — событие из подключённого календаря (Google, Яндекс…).
+	External bool `json:"external,omitempty"`
 }
 
 func toToolEvent(e model.Event) toolEvent {
-	return toolEvent{ID: e.ID, Title: e.Title, Subtitle: e.Subtitle, Start: hm(e.Start), End: hm(e.End), Badge: string(e.Badge)}
+	t := toolEvent{ID: e.ID, Title: e.Title, Subtitle: e.Subtitle, Badge: string(e.Badge),
+		AllDay: e.AllDay, ReadOnly: e.ReadOnly, External: e.Source != ""}
+	if !e.AllDay {
+		t.Start, t.End = hm(e.Start), hm(e.End)
+	}
+	return t
+}
+
+// toolErr — текст ошибки для модели: понятные ошибки API передаём как есть.
+func toolErr(err error, fallback string) string {
+	var ae *apiError
+	if errors.As(err, &ae) && ae.Status != http.StatusNotFound {
+		return toolJSON(map[string]string{"error": ae.Message})
+	}
+	return toolJSON(map[string]string{"error": fallback})
 }
 
 func toolJSON(v any) string {
@@ -430,7 +451,8 @@ func (s *server) toolFreeSlots(ctx context.Context, args map[string]any) (string
 	free := []map[string]string{}
 	cursor := slotDayStart
 	for _, e := range events {
-		if e.End <= slotDayStart || e.Start >= slotDayEnd {
+		// События на весь день (дни рождения, праздники) время не занимают.
+		if e.AllDay || e.End <= slotDayStart || e.Start >= slotDayEnd {
 			continue
 		}
 		if e.Start-cursor >= duration {
@@ -465,12 +487,12 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if !badge.Valid() {
 		return `{"error":"badge должен быть routine|work|food|sport|read|sleep"}`, toolMeta{}
 	}
-	ev, err := s.store.CreateEvent(ctx, model.Event{
+	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
 		Start: start, End: end, Badge: badge, Highlight: true,
 	})
 	if err != nil {
-		return `{"error":"не удалось сохранить событие"}`, toolMeta{}
+		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
 	}
 	meta := toolMeta{detail: fmt.Sprintf("%s · %s–%s", title, hm(start), hm(end)), date: day.Format(time.DateOnly)}
 	return toolJSON(map[string]any{"ok": true, "event": toToolEvent(ev)}), meta
@@ -533,9 +555,9 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 	if validateRange(merged.Start, merged.End) != nil {
 		return `{"error":"конец должен быть позже начала"}`, toolMeta{}
 	}
-	ev, err := s.store.UpdateEvent(ctx, id, patch)
+	ev, err := s.updateEventSynced(ctx, cur, patch)
 	if err != nil {
-		return `{"error":"событие не найдено"}`, toolMeta{}
+		return toolErr(err, "событие не найдено"), toolMeta{}
 	}
 	meta := toolMeta{detail: fmt.Sprintf("%s · %s–%s", ev.Title, hm(ev.Start), hm(ev.End)), date: ev.Date}
 	return toolJSON(map[string]any{"ok": true, "event": toToolEvent(ev)}), meta
@@ -551,8 +573,8 @@ func (s *server) toolDeleteEvent(ctx context.Context, args map[string]any) (stri
 	if err != nil {
 		return `{"error":"событие не найдено"}`, toolMeta{}
 	}
-	if err := s.store.DeleteEvent(ctx, id); err != nil {
-		return `{"error":"событие не найдено"}`, toolMeta{}
+	if err := s.deleteEventSynced(ctx, ev); err != nil {
+		return toolErr(err, "событие не найдено"), toolMeta{}
 	}
 	return `{"ok":true}`, toolMeta{detail: ev.Title, date: ev.Date}
 }

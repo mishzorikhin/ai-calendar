@@ -2,6 +2,7 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { useEffect, type ComponentType } from 'react'
 import type { CalendarApi } from './api/api'
 import { ApiProvider } from './api/provider'
+import { useSyncTimeZone } from './api/queries'
 import { useCalendar } from './app/calendar'
 import { useNavigation, type Route } from './app/navigation'
 import { AppProviders } from './app/providers'
@@ -56,6 +57,7 @@ function RouteHashSync() {
 function Screens() {
   const { route, dir } = useNavigation()
   useLaunchAction()
+  useSyncTimeZone()
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>

@@ -82,4 +82,12 @@ describe('local api', () => {
     await expect(api.addMessage('user', 'я'.repeat(2001))).rejects.toMatchObject({ status: 400 })
     await expect(api.sendChat('я'.repeat(2001), () => {})).rejects.toMatchObject({ status: 400 })
   })
+
+  it('без сервера календари не подключаются, а список пуст', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    expect(await api.getIntegrations()).toEqual({ items: [], providers: { google: false, outlook: false } })
+    expect(await api.getFeed()).toBeNull()
+    await expect(api.createIntegration({ kind: 'ics', url: 'https://x/a.ics' })).rejects.toBeInstanceOf(ApiError)
+    await expect(api.startOAuth('google')).rejects.toBeInstanceOf(ApiError)
+  })
 })

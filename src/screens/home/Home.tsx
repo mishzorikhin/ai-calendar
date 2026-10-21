@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApi } from '../../api/provider'
 import { useDayEvents, useMe, useNotifications, useTasks } from '../../api/queries'
 import { useSession } from '../../api/session'
@@ -18,6 +18,8 @@ import { itemVariants } from '../../lib/motion'
 import { pluralize } from '../../lib/plural'
 import { InstallBanner } from '../../pwa/InstallBanner'
 import { AccountSheet, userColor, userInitials } from './AccountSheet'
+import { CalendarsSheet } from './calendars/CalendarsSheet'
+import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
 import { TaskSheet } from './TaskSheet'
@@ -33,7 +35,10 @@ export function Home() {
   const me = useMe()
   const { unread } = useNotifications()
   const [taskSheet, setTaskSheet] = useState<Task | 'new' | null>(null)
-  const [accountOpen, setAccountOpen] = useState(false)
+  // Вернулись со страницы входа Google/Microsoft — сразу открываем «Календари» с результатом.
+  const [oauthReturn] = useState(readOAuthReturn)
+  const [sheet, setSheet] = useState<'account' | 'calendars' | null>(oauthReturn ? 'calendars' : null)
+  useEffect(clearOAuthReturn, [])
   const user = me.data ?? session?.user
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.
   const now = useNow()
@@ -75,7 +80,7 @@ export function Home() {
           {api.mode === 'server' && user && (
             <Pressable
               className={styles.accountBtn}
-              onClick={() => setAccountOpen(true)}
+              onClick={() => setSheet('account')}
               aria-label={unread > 0 ? `Аккаунт, ${unread} новых уведомлений` : 'Аккаунт'}
             >
               <Avatar initials={userInitials(user)} color={userColor(user.username)} size={40} ring={false} />
@@ -150,7 +155,12 @@ export function Home() {
             onClose={() => setTaskSheet(null)}
           />
         )}
-        {accountOpen && <AccountSheet key="account-sheet" onClose={() => setAccountOpen(false)} />}
+        {sheet === 'account' && (
+          <AccountSheet key="account-sheet" onClose={() => setSheet(null)} onCalendars={() => setSheet('calendars')} />
+        )}
+        {sheet === 'calendars' && (
+          <CalendarsSheet key="calendars-sheet" notice={oauthReturn} onClose={() => setSheet(null)} />
+        )}
       </AnimatePresence>
     </Sheet>
   )

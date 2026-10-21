@@ -199,9 +199,10 @@ func mustWipe(ctx context.Context, t *testing.T, s Store) {
 	t.Helper()
 	pg := s.(*pgStore)
 	for _, stmt := range []string{
-		`TRUNCATE events, messages, tasks, task_members, users, sessions, notifications RESTART IDENTITY`,
+		`TRUNCATE events, messages, tasks, task_members, users, sessions, notifications, integrations RESTART IDENTITY`,
 		`SELECT setval('event_id_seq', 1, FALSE)`,
 		`SELECT setval('task_id_seq', 1, FALSE)`,
+		`SELECT setval('integration_id_seq', 1, FALSE)`,
 	} {
 		if _, err := pg.pool.Exec(ctx, stmt); err != nil {
 			t.Fatalf("очистка: %v", err)
@@ -220,4 +221,25 @@ func writeDataJSON(t *testing.T, dir string) {
 	if err := os.WriteFile(dir+"/data.json", []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestPostgresIntegrations(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL не задан")
+	}
+	ctx := context.Background()
+	s, err := OpenPostgres(ctx, dsn, "")
+	if err != nil {
+		t.Fatalf("подключение: %v", err)
+	}
+	defer s.(*pgStore).pool.Close()
+	mustWipe(ctx, t, s)
+	testIntegrations(t, s, userCtx(t, s))
+	// Миграции повторяемы: второй запуск на той же базе проходит.
+	s2, err := OpenPostgres(ctx, dsn, "")
+	if err != nil {
+		t.Fatalf("повторная миграция: %v", err)
+	}
+	s2.(*pgStore).pool.Close()
 }

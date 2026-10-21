@@ -20,6 +20,11 @@
   --purple: #9b7af0;
   --gold: #f5b83d;
   --lavender: #e3e5f8;
+  /* Текст ошибок и успеха: контраст на белом ≥ 4.5:1 */
+  --danger-ink: #b42318;
+  --danger-bg: rgba(180, 35, 24, 0.1);
+  --success-ink: #1f7a3a;
+  --success-bg: rgba(76, 196, 109, 0.14);
 
   /* Нижняя панель — розово-сиреневый градиент из референса */
   --bar-gradient: linear-gradient(100deg, #f6c4bd 0%, #f1d0d6 34%, #e3d6ec 62%, #cdd2f3 100%);

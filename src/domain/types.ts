@@ -9,6 +9,12 @@ export type CalendarEvent = {
   end: number
   badge: Badge
   highlight?: boolean
+  /** Id подключённого календаря, откуда пришло событие (Google, Яндекс…); нет — своё. */
+  source?: string
+  /** Изменить можно только в исходном календаре: подписка, повтор серии, многодневное. */
+  readOnly?: boolean
+  /** На весь день: start 0, end 1440, время не занимает. */
+  allDay?: boolean
 }
 
 /** Событие, созданное пользователем вручную, привязано к дате. */
@@ -63,6 +69,8 @@ export type User = {
   id: number
   username: string
   name: string
+  /** IANA-пояс (Europe/Moscow): в нём сервер переводит время внешних календарей. */
+  timeZone?: string
 }
 
 /** Уведомление аккаунта («вам поделились задачей»), новые первыми. */
@@ -112,3 +120,41 @@ export type TaskPatch = {
   due?: string
   members?: string[]
 }
+
+/** Вид подключённого календаря. */
+export type IntegrationKind = 'ics' | 'caldav' | 'google' | 'outlook'
+
+/** Подключённый внешний календарь. */
+export type Integration = {
+  id: string
+  kind: IntegrationKind
+  name: string
+  /** Логин, e-mail или хост — подпись в списке. */
+  account?: string
+  badge: Badge
+  /** В календарь можно записывать. */
+  writable: boolean
+  /** Сюда уходят новые события. */
+  primary: boolean
+  /** ISO-время последней удачной синхронизации. */
+  lastSync?: string
+  lastError?: string
+}
+
+/** Список подключений и какие OAuth-сервисы включены на сервере. */
+export type IntegrationsInfo = {
+  items: Integration[]
+  providers: { google: boolean; outlook: boolean }
+}
+
+/** Календарь, найденный на CalDAV-сервере. */
+export type CalDavCalendar = { url: string; name: string; color?: string; writable: boolean }
+
+export type CalDavCredentials = { url: string; username: string; password: string }
+
+/** Новое подключение: подписка по ссылке или CalDAV-календарь. */
+export type NewIntegration =
+  | { kind: 'ics'; url: string; name?: string; badge?: Badge }
+  | ({ kind: 'caldav'; name?: string; badge?: Badge; writable: boolean; primary?: boolean } & CalDavCredentials)
+
+export type IntegrationPatch = { name?: string; badge?: Badge; primary?: boolean }

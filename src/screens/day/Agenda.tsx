@@ -1,10 +1,16 @@
 import { motion } from 'framer-motion'
+import { useCalendarName } from '../../api/queries'
 import { DAY_PARTS } from '../../domain/calendar'
 import type { CalendarEvent } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
 import { spring } from '../../lib/motion'
+import { EventSub } from './EventCard'
 import styles from './Day.module.css'
+
+function AgendaSub({ event }: { event: CalendarEvent }) {
+  return <EventSub event={event} calendar={useCalendarName(event.source)} />
+}
 
 /** Компактный список всех событий дня, сгруппированный по частям суток; тап открывает правку. */
 export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: (e: CalendarEvent) => void }) {
@@ -40,7 +46,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
                   <i style={{ background: BADGE_COLOR[e.badge] }} />
                   <span className={styles.agendaText}>
                     <span className={styles.eventTitle}>{e.title}</span>
-                    {e.subtitle && <span className={styles.eventSub}>{e.subtitle}</span>}
+                    <AgendaSub event={e} />
                   </span>
                 </button>
               </motion.li>

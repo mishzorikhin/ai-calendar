@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -101,8 +102,16 @@ func withLogging(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		slog.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "dur", time.Since(start).Round(time.Microsecond))
+		slog.Info("http", "method", r.Method, "path", logPath(r.URL.Path), "status", rec.status, "dur", time.Since(start).Round(time.Microsecond))
 	})
+}
+
+// logPath скрывает секрет ленты .ics: ссылка — это и есть доступ к календарю.
+func logPath(p string) string {
+	if strings.HasPrefix(p, "/api/feed/") {
+		return "/api/feed/…"
+	}
+	return p
 }
 
 func withRecover(next http.Handler) http.Handler {

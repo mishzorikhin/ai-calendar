@@ -5,6 +5,7 @@
 
 - Комментарии, тексты интерфейса и коммиты — на русском; идентификаторы — на английском.
 - Данные во фронтенде — только через `src/api/queries.ts`; новый метод API реализуется и в `http.ts`, и в `local.ts`.
+- Маршруты данных требуют Bearer-токен; хранилище Go (JSON-файл и PostgreSQL) меняйте в обеих реализациях; мутации событий и задач учитывайте в офлайн-очереди (`src/api/outbox.ts`).
 - Контракт API синхронизирован между `server/internal/model` и `src/domain/types.ts`.
 - Без `eslint-disable`, `!important` и `as any`; таймеры — `useTimeout`/`useInterval`, колбэки в эффектах — `useEffectEvent`.
 - Стили — CSS Modules и токены из `src/styles/global.css`; модалки — `components/BottomSheet`.

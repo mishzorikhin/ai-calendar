@@ -1,7 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../api/api'
-import { useCreateEvent, useDayEvents, useDeleteEvent, useUpdateEvent } from '../api/queries'
+import {
+  useCalendarName,
+  useCreateEvent,
+  useDayEvents,
+  useDeleteEvent,
+  usePrimaryCalendar,
+  useUpdateEvent,
+} from '../api/queries'
 import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
@@ -9,11 +16,13 @@ import { useNavigation } from '../app/navigation'
 import { TIME_OPTIONS, firstFreeTime, nearestTimeOption, slotAt } from '../domain/calendar'
 import { minutesOf } from '../lib/hooks'
 import { addDays, formatMinutes, isSameDay, relativeDayLabel, startOfDay } from '../lib/dates'
+import { BADGE_OPTIONS } from '../lib/badges'
 import { spring } from '../lib/motion'
 import { BADGE_ICON } from './Icons'
 import type { Badge } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
-import { CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { CalendarIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { CircleButton, Pill, Pressable } from './ui'
 import styles from './EventComposer.module.css'
 
@@ -26,15 +35,6 @@ const DURATIONS = [
   { value: 240, label: '4 ч' },
 ] as const
 
-const BADGES = [
-  { id: 'routine', label: 'Дело' },
-  { id: 'work', label: 'Работа' },
-  { id: 'food', label: 'Еда' },
-  { id: 'sport', label: 'Спорт' },
-  { id: 'read', label: 'Чтение' },
-  { id: 'sleep', label: 'Сон' },
-] as const satisfies readonly { id: Badge; label: string }[]
-
 /** Сколько ближайших дней предлагаем в композере. */
 const DAY_CHOICES = 14
 
@@ -43,7 +43,16 @@ const FORM_ID = 'event-composer'
 /** Шторка события: «+» или тап по пустому времени — создание; тап по событию — правка и удаление. */
 export function EventComposer() {
   const { request, close } = useComposer()
-  return <AnimatePresence>{request && <Composer key="composer" request={request} onClose={close} />}</AnimatePresence>
+  return (
+    <AnimatePresence>
+      {request &&
+        (request.event?.readOnly ? (
+          <ReadOnlyEvent key="read-only" event={request.event} onClose={close} />
+        ) : (
+          <Composer key="composer" request={request} onClose={close} />
+        ))}
+    </AnimatePresence>
+  )
 }
 
 /** Вставляет value в отсортированный список, если его там ещё нет. */
@@ -66,6 +75,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const deleteEvent = useDeleteEvent()
   const { route, go } = useNavigation()
   const { setDraft } = useAssistant()
+  // Куда уйдёт событие: календарь, откуда оно пришло, или основной для новых.
+  const sourceCalendar = useCalendarName(editing?.source)
+  const primaryCalendar = usePrimaryCalendar()
+  const syncTarget = editing ? sourceCalendar : primaryCalendar
 
   const [title, setTitle] = useState(editing?.title ?? '')
   const [subtitle, setSubtitle] = useState(editing?.subtitle ?? '')
@@ -203,6 +216,13 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           </CircleButton>
         </div>
 
+        {syncTarget && (
+          <p className={styles.syncNote}>
+            <CalendarIcon size={14} />
+            {editing ? `Изменения уйдут в «${syncTarget}»` : `Сохранится и в «${syncTarget}»`}
+          </p>
+        )}
+
         <input
           id="event-title"
           className={styles.title}
@@ -277,7 +297,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           Тип
         </p>
         <div className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-badge">
-          {BADGES.map(({ id, label }) => {
+          {BADGE_OPTIONS.map(({ id, label }) => {
             const Icon = BADGE_ICON[id]
             return (
               <Pill
