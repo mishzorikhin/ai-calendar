@@ -1,5 +1,6 @@
 import type { ChatMessage, DatedEvent, NotifySettings, Task, User } from '../domain/types'
 import {
+  LIMITS,
   isValidRange,
   messageError,
   normalizeReminders,
@@ -144,17 +145,19 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
           subtitleError(subtitle),
           remindersError(input.reminders),
           repeatError(input.repeat, input.repeatUntil, toISODate(input.date)),
-        ) ?? (isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+        ) ?? (input.allDay || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
         title,
         subtitle,
-        start: input.start,
-        end: input.end,
+        // На весь день — как на сервере: время 0–1440.
+        start: input.allDay ? 0 : input.start,
+        end: input.allDay ? LIMITS.dayMinutes : input.end,
         badge: input.badge ?? 'routine',
         highlight: true,
         date: input.date,
+        allDay: input.allDay || undefined,
         reminders: input.reminders ? normalizeReminders(input.reminders) : null,
         repeat: input.repeat,
         repeatUntil: input.repeat ? input.repeatUntil || undefined : undefined,
@@ -191,8 +194,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         ...prev,
         title: title ?? prev.title,
         subtitle: subtitle ?? prev.subtitle,
-        start: patch.start ?? prev.start,
-        end: patch.end ?? prev.end,
+        start: patch.allDay ? 0 : (patch.start ?? prev.start),
+        end: patch.allDay ? LIMITS.dayMinutes : (patch.end ?? prev.end),
+        allDay: patch.allDay === undefined ? prev.allDay : patch.allDay || undefined,
         badge: patch.badge ?? prev.badge,
         date,
         // undefined — не трогаем, null — по умолчанию, [] — без напоминаний.

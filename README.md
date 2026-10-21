@@ -133,7 +133,7 @@ Workflow `.github/workflows/deploy.yml` публикует статическу�
 | `GET /api/notifications`                          | Уведомления (о шаринге задач), последние 100                                                                      |
 | `POST /api/notifications/read`                    | Отметить все прочитанными                                                                                         |
 | `GET /api/events?date=2026-10-20`                 | События дня пользователя                                                                                          |
-| `POST /api/events`                                | Новое событие `{date, title, subtitle?, start, end, badge?, reminders?, repeat?, repeatUntil?}`                   |
+| `POST /api/events`                                | Новое событие `{date, title, subtitle?, start, end, badge?, reminders?, repeat?, repeatUntil?, allDay?}`          |
 | `PATCH /api/events/{id}`                          | Изменить: любые поля; `reminders: null` — по умолчанию; `occurrence` + `date` — сдвиг серии, `skip` — убрать день |
 | `DELETE /api/events/{id}`                         | Удалить событие                                                                                                   |
 | `GET /api/month?year=&month=`                     | Значки событий по дням месяца (месяц с 1)                                                                         |
@@ -221,6 +221,10 @@ TEST_DATABASE_URL=postgres://... go test ./internal/store -run TestPostgres
 - **Общие задачи.** Участники узнают, когда задачу отметили выполненной, вернули в работу или перенесли срок (правки текста не сообщаются).
 - **Устройства.** Список устройств с уведомлениями («Chrome · Android») — старое можно отключить.
 - Ассистент умеет «напомни за час» — параметр `reminders` в `create_event`/`update_event`.
+
+## События на весь день
+
+В шторке события длительность «Весь день»: отпуск, переезд, день рождения (вместе с «Каждый год»). Такое событие время не занимает и лежит полосой над шкалой — как праздники из подключённых календарей. Напоминание о нём приходит в плане на день, в ленту `.ics` оно уходит датой (`VALUE=DATE`). Как и серии, во внешний календарь оно не пишется. Ассистенту — `all_day` в `create_event`.
 
 ## Повторяющиеся события
 

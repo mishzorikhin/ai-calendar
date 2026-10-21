@@ -116,6 +116,8 @@ type EventPatch struct {
 	RepeatUntil *string
 	SkipDate    *string
 	ExDates     *[]string
+	// AllDay: true — на весь день (время 0–1440), false — снова со временем (Start и End — из патча).
+	AllDay *bool
 }
 
 // Apply применяет патч к событию на месте.
@@ -137,6 +139,12 @@ func (e *Event) Apply(p EventPatch) {
 	}
 	if p.Badge != nil {
 		e.Badge = *p.Badge
+	}
+	if p.AllDay != nil {
+		e.AllDay = *p.AllDay
+		if e.AllDay {
+			e.Start, e.End = 0, 24*60
+		}
 	}
 	if p.Reminders != nil {
 		e.Reminders = slices.Clone(*p.Reminders)
@@ -161,7 +169,7 @@ func (e *Event) Apply(p EventPatch) {
 // OnlyReminders — патч меняет только напоминания: во внешний календарь писать нечего.
 func (p EventPatch) OnlyReminders() bool {
 	return p.Reminders != nil && p.Title == nil && p.Subtitle == nil && p.Date == nil &&
-		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil
+		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil && p.AllDay == nil
 }
 
 // TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).

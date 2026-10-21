@@ -463,3 +463,64 @@ func doAsUA(t *testing.T, h http.Handler, token, method, path, body, ua string) 
 	h.ServeHTTP(rec, req)
 	return rec
 }
+
+func TestAllDayEvents(t *testing.T) {
+	h, token := newAuthedServer(t)
+	rec := doAs(t, h, token, "POST", "/api/events", `{"date":"2026-10-24","title":"Переезд","allDay":true,"start":600,"end":660}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("создание: %d %s", rec.Code, rec.Body)
+	}
+	ev := decode[model.Event](t, rec)
+	if !ev.AllDay || ev.Start != 0 || ev.End != 1440 {
+		t.Fatalf("весь день: %+v", ev)
+	}
+	// День рождения каждый год — тоже на весь день.
+	bday := decode[model.Event](t, doAs(t, h, token, "POST", "/api/events",
+		`{"date":"2026-11-02","title":"ДР Глеба","allDay":true,"repeat":"yearly"}`))
+	if got := decode[[]model.Event](t, doAs(t, h, token, "GET", "/api/events?date=2027-11-02", "")); len(got) != 1 || !got[0].AllDay || got[0].ID != bday.ID {
+		t.Fatalf("через год: %+v", got)
+	}
+	// Снова со временем — с переданными началом и концом; и обратно.
+	rec = doAs(t, h, token, "PATCH", "/api/events/"+ev.ID, `{"allDay":false,"start":540,"end":600}`)
+	if got := decode[model.Event](t, rec); got.AllDay || got.Start != 540 || got.End != 600 {
+		t.Fatalf("со временем: %s", rec.Body)
+	}
+	rec = doAs(t, h, token, "PATCH", "/api/events/"+ev.ID, `{"allDay":true}`)
+	if got := decode[model.Event](t, rec); !got.AllDay || got.Start != 0 || got.End != 1440 {
+		t.Fatalf("обратно на весь день: %s", rec.Body)
+	}
+	// В ленте .ics — датой, без времени.
+	path := decode[map[string]string](t, doAs(t, h, token, "POST", "/api/feed", ""))["path"]
+	body := do(t, h, "GET", path, "").Body.String()
+	if !strings.Contains(body, "DTSTART;VALUE=DATE:20261024") || !strings.Contains(body, "DTEND;VALUE=DATE:20261025") {
+		t.Fatalf("лента:\n%s", body)
+	}
+}
+
+func TestAllDayNotForExternal(t *testing.T) {
+	_, h, st := newPushServer(t)
+	token := register(t, h, "alice")
+	ctx := store.WithUser(context.Background(), mustUser(t, st, "alice"))
+	if _, err := st.SyncEvents(ctx, "cal-1", []model.Event{{ExternalID: "x", Date: "2026-10-20", Title: "Чужое", Start: 600, End: 660, Badge: model.BadgeWork}}); err != nil {
+		t.Fatal(err)
+	}
+	ev := st.EventsOn(ctx, "2026-10-20")[0]
+	if rec := doAs(t, h, token, "PATCH", "/api/events/"+ev.ID, `{"allDay":true}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("весь день у внешнего: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestChatAllDayTool(t *testing.T) {
+	st, _ := store.Open("")
+	s := &server{store: st, cal: newCalendars(CalendarOptions{})}
+	h := New(Options{Store: st})
+	register(t, h, "alice")
+	ctx := store.WithUser(context.Background(), mustUser(t, st, "alice"))
+	out, meta := s.toolCreateEvent(ctx, map[string]any{"date": "2026-10-24", "title": "Отпуск", "all_day": true})
+	if !strings.Contains(out, `"all_day":true`) || meta.detail != "Отпуск · весь день" {
+		t.Fatalf("весь день: %s %+v", out, meta)
+	}
+	if out, _ := s.toolCreateEvent(ctx, map[string]any{"date": "2026-10-24", "title": "Без времени"}); !strings.Contains(out, "error") {
+		t.Fatalf("без времени и all_day: %s", out)
+	}
+}

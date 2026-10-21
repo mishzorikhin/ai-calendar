@@ -63,6 +63,8 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   reminders?: number[]
   repeat?: Repeat
   repeatUntil?: string
+  /** На весь день: start 0, end 1440, время не занимает. */
+  allDay?: boolean
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -82,6 +84,8 @@ export type EventPatch = {
   occurrence?: Date
   /** Убрать из серии один день. */
   skip?: Date
+  /** true — на весь день; false — снова со временем (вместе с start и end). */
+  allDay?: boolean
 }
 
 /** Значки событий по числам месяца. */

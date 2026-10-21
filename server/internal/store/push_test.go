@@ -236,6 +236,22 @@ func testPush(t *testing.T, s Store) {
 		t.Fatalf("повтор снят: %+v", got)
 	}
 
+	// «Весь день» сохраняется и снимается правкой.
+	yes, no := true, false
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{AllDay: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Event(alice, rep.ID); !got.AllDay || got.Start != 0 || got.End != 1440 {
+		t.Fatalf("весь день: %+v", got)
+	}
+	start, end := 540, 600
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{AllDay: &no, Start: &start, End: &end}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Event(alice, rep.ID); got.AllDay || got.Start != 540 {
+		t.Fatalf("снова со временем: %+v", got)
+	}
+
 	// Подпись устройства сохраняется.
 	if err := s.SavePushSubscription(alice, model.PushSubscription{Endpoint: "https://push.example/label", P256DH: "k", Auth: "a", Label: "Chrome · Android"}); err != nil {
 		t.Fatal(err)

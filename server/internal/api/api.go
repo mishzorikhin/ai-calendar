@@ -190,6 +190,8 @@ type eventInput struct {
 	// Repeat — повтор (daily, weekdays, weekly, monthly, yearly), RepeatUntil — последний день серии.
 	Repeat      model.Repeat `json:"repeat"`
 	RepeatUntil string       `json:"repeatUntil"`
+	// AllDay — на весь день: Start и End не нужны (станут 0 и 1440).
+	AllDay bool `json:"allDay"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -242,6 +244,9 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateSubtitle(in.Subtitle); err != nil {
 		return err
 	}
+	if in.AllDay {
+		in.Start, in.End = 0, dayMinutes
+	}
 	if err := validateRange(in.Start, in.End); err != nil {
 		return err
 	}
@@ -260,7 +265,7 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
-		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil,
+		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
 	})
 	if err != nil {
 		return err
@@ -286,6 +291,8 @@ type eventPatchInput struct {
 	Occurrence *string `json:"occurrence"`
 	// Skip — убрать из серии один день (удалить «только это»).
 	Skip *string `json:"skip"`
+	// AllDay: true — на весь день; false — снова со временем (передайте start и end).
+	AllDay *bool `json:"allDay"`
 }
 
 // remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
@@ -362,7 +369,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	// Интервал проверяем по итоговым значениям до записи.
 	patch := model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
-		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip,
+		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip, AllDay: in.AllDay,
 	}
 	if in.Occurrence != nil {
 		if err := seriesPatch(current, *in.Occurrence, &patch); err != nil {

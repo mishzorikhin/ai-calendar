@@ -61,6 +61,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           badge: (body.badge as CalendarEvent['badge']) ?? 'routine',
           highlight: true,
           reminders: remindersOf(body.reminders),
+          allDay: body.allDay === true || undefined,
         })
       }
     } else if (op.action === 'update') {
@@ -80,6 +81,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           end: typeof body.end === 'number' ? body.end : e.end,
           badge: (body.badge as CalendarEvent['badge']) ?? e.badge,
           reminders: 'reminders' in body ? remindersOf(body.reminders) : e.reminders,
+          allDay: typeof body.allDay === 'boolean' ? body.allDay || undefined : e.allDay,
         }
       }
     } else {
@@ -186,6 +188,7 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         reminders: input.reminders ?? null,
         repeat: input.repeat,
         repeatUntil: input.repeatUntil,
+        allDay: input.allDay,
       }
     },
 

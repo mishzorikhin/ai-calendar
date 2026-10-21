@@ -43,12 +43,15 @@ export function NativePicker({
 export function ComposerStatus({
   start,
   end,
+  allDay,
   conflicts,
   shift,
   onShift,
 }: {
   start: number
   end: number
+  /** На весь день: время не занимает, пересечений нет. */
+  allDay?: boolean
   conflicts: readonly string[]
   shift: number | null
   onShift: (start: number) => void
@@ -56,7 +59,7 @@ export function ComposerStatus({
   return (
     <AnimatePresence initial={false} mode="popLayout">
       <motion.div
-        key={conflicts.join() || 'free'}
+        key={allDay ? 'all-day' : conflicts.join() || 'free'}
         className={`${styles.status} ${conflicts.length ? styles.warn : styles.ok}`}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -64,10 +67,16 @@ export function ComposerStatus({
         transition={spring}
       >
         <p role="status">
-          <span className="tnum">
-            {formatMinutes(start)}–{formatMinutes(end)}
-          </span>
-          {conflicts.length ? ` пересекается с: ${conflicts.join(', ')}` : ' — время свободно'}
+          {allDay ? (
+            'Весь день — время не занимает'
+          ) : (
+            <>
+              <span className="tnum">
+                {formatMinutes(start)}–{formatMinutes(end)}
+              </span>
+              {conflicts.length ? ` пересекается с: ${conflicts.join(', ')}` : ' — время свободно'}
+            </>
+          )}
         </p>
         {conflicts.length > 0 && shift !== null && (
           <Pressable

@@ -201,6 +201,7 @@ func chatSystemPrompt(now time.Time) string {
 - Приветствия, вопросы и обычный разговор — просто отвечай, инструменты не нужны.
 - Просят что-то запланировать — сначала посмотри день (get_day_schedule или find_free_slots), потом create_event. Если день или время не указаны, выбери разумное свободное окно сам и сообщи, что выбрал; уточняй, только когда совсем непонятно.
 - Просят изменить или перенести событие — update_event с id из get_day_schedule.
+- День рождения, отпуск, «весь день» — create_event с all_day: true, без start и end.
 - «Напомни за час до встречи» — reminders в create_event/update_event (минуты до начала). «Напомни позвонить маме в 18:00» без встречи — create_reminder. Напоминания приходят пуш-уведомлением на устройства, где пользователь включил уведомления в настройках аккаунта.
 - «Каждый вторник», «по будням», «каждый месяц» — repeat в create_event. Правка повторяющегося события меняет всю серию; удалить один день можно только в приложении.
 - Даты в инструментах — ГГГГ-ММ-ДД, время — ЧЧ:ММ.
@@ -249,8 +250,9 @@ var chatTools = []llm.Tool{
 			"properties": map[string]any{
 				"date":     map[string]any{"type": "string", "description": "Дата в формате ГГГГ-ММ-ДД"},
 				"title":    map[string]any{"type": "string", "description": "Короткое название, например «Завтрак с Глебом»"},
-				"start":    map[string]any{"type": "string", "description": "Начало, ЧЧ:ММ"},
-				"end":      map[string]any{"type": "string", "description": "Конец, ЧЧ:ММ"},
+				"start":    map[string]any{"type": "string", "description": "Начало, ЧЧ:ММ (не нужно при all_day)"},
+				"end":      map[string]any{"type": "string", "description": "Конец, ЧЧ:ММ (не нужно при all_day)"},
+				"all_day":  map[string]any{"type": "boolean", "description": "На весь день: день рождения, отпуск, переезд — без времени"},
 				"badge":    map[string]any{"type": "string", "enum": []string{"routine", "work", "food", "sport", "read", "sleep"}, "description": "Тип события"},
 				"subtitle": map[string]any{"type": "string", "description": "Место или детали, необязательно"},
 				"reminders": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 10080}, "maxItems": 3,
@@ -259,7 +261,7 @@ var chatTools = []llm.Tool{
 					"description": "Повтор: daily — каждый день, weekdays — по будням, weekly — каждую неделю в этот день, monthly — каждый месяц, yearly — каждый год"},
 				"repeat_until": map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
 			},
-			"required":             []string{"date", "title", "start", "end"},
+			"required":             []string{"date", "title"},
 			"additionalProperties": false,
 		},
 	}},
@@ -579,10 +581,14 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if title == "" || utf8.RuneCountInString(title) > maxTitle {
 		return fmt.Sprintf(`{"error":"title обязателен и не длиннее %d символов"}`, maxTitle), toolMeta{}
 	}
+	allDay, _ := args["all_day"].(bool)
 	start, okS := parseHM(strArg(args, "start"))
 	end, okE := parseHM(strArg(args, "end"))
+	if allDay {
+		start, end, okS, okE = 0, dayMinutes, true, true
+	}
 	if !okS || !okE || validateRange(start, end) != nil {
-		return `{"error":"start/end должны быть ЧЧ:ММ, конец позже начала"}`, toolMeta{}
+		return `{"error":"start/end должны быть ЧЧ:ММ, конец позже начала (или all_day: true)"}`, toolMeta{}
 	}
 	badge := model.Badge(strArg(args, "badge"))
 	if badge == "" {
@@ -602,12 +608,16 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
 		Start: start, End: end, Badge: badge, Highlight: true, Reminders: reminders,
-		Repeat: repeat, RepeatUntil: until,
+		Repeat: repeat, RepeatUntil: until, AllDay: allDay,
 	})
 	if err != nil {
 		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
 	}
-	meta := toolMeta{detail: fmt.Sprintf("%s · %s–%s", title, hm(start), hm(end)), date: day.Format(time.DateOnly)}
+	when := hm(start) + "–" + hm(end)
+	if allDay {
+		when = "весь день"
+	}
+	meta := toolMeta{detail: title + " · " + when, date: day.Format(time.DateOnly)}
 	return toolJSON(map[string]any{"ok": true, "event": toToolEvent(ev)}), meta
 }
 

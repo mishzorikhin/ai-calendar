@@ -463,9 +463,9 @@ func (s *pgStore) UpdateEvent(ctx context.Context, id string, patch model.EventP
 		return model.Event{}, err
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE events SET date=$3, title=$4, subtitle=$5, start_min=$6, end_min=$7, badge=$8, reminders=$9::jsonb,
-			repeat=$10, repeat_until=$11, exdates=$12::jsonb
+			repeat=$10, repeat_until=$11, exdates=$12::jsonb, all_day=$13
 		WHERE id=$1 AND user_id=$2`,
-		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders, e.Repeat, e.RepeatUntil, exdates)
+		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders, e.Repeat, e.RepeatUntil, exdates, e.AllDay)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("обновление события: %w", err)
 	}

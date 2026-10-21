@@ -208,4 +208,15 @@ describe('local api', () => {
     expect(await api.getAlarms()).toEqual([])
     await expect(api.createAlarm({ text: 'x', at: new Date() })).rejects.toBeInstanceOf(ApiError)
   })
+
+  it('событие на весь день: время 0–1440, можно вернуть время', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const e = await api.createEvent({ title: 'Переезд', date: day, start: 600, end: 660, allDay: true })
+    expect(e).toMatchObject({ allDay: true, start: 0, end: 1440 })
+    expect((await api.getEvents(day)).find((x) => x.id === e.id)?.allDay).toBe(true)
+    const timed = await api.updateEvent(e.id, { allDay: false, start: 540, end: 600 })
+    expect(timed).toMatchObject({ start: 540, end: 600 })
+    expect(timed.allDay).toBeUndefined()
+    expect(await api.updateEvent(e.id, { allDay: true })).toMatchObject({ allDay: true, start: 0, end: 1440 })
+  })
 })
