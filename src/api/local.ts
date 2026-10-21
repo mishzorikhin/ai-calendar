@@ -66,6 +66,11 @@ function notifySettingsError(patch: Partial<NotifySettings>): string | null {
   return null
 }
 
+/** Тихие часы — оба края или ни одного (как на сервере). */
+function quietError(s: NotifySettings): string | null {
+  return s.quietFrom < 0 !== s.quietTo < 0 ? 'У тихих часов нужны и начало, и конец' : null
+}
+
 function emptySnapshot(): Snapshot {
   return { events: [], messages: [GREETING], tasks: [], nextId: 3 }
 }
@@ -110,8 +115,8 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       date: fromISODate(e.date),
     }))
   /** События дня с развёрнутыми повторами — как eventsBetween на сервере. */
-  const eventsOn = (day: string): DatedEvent[] =>
-    events().flatMap((e) => {
+  const eventsOn = (day: string, all: DatedEvent[] = events()): DatedEvent[] =>
+    all.flatMap((e) => {
       const iso = toISODate(e.date)
       if (!e.repeat) return iso === day ? [e] : []
       if (!occursOn({ ...e, date: iso, repeat: e.repeat }, day)) return []
@@ -119,8 +124,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       return [{ ...e, date: fromISODate(day), highlight: e.highlight && iso === day }]
     })
   const monthEvents = (year: number, month: number): DatedEvent[] => {
+    const all = events()
     const days = new Date(year, month + 1, 0).getDate()
-    return Array.from({ length: days }, (_, i) => eventsOn(toISODate(new Date(year, month, i + 1)))).flat()
+    return Array.from({ length: days }, (_, i) => eventsOn(toISODate(new Date(year, month, i + 1)), all)).flat()
   }
   const nextId = (prefix: string) => `${prefix}-${data.nextId++}`
   // Имитируем сеть: ответ асинхронный, как у сервера.
@@ -164,14 +170,21 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const title = patch.title?.trim()
       const subtitle = patch.subtitle?.trim()
       if (patch.skip && !prev.repeat) return invalid('Убрать один день можно только из повторяющегося события')!
-      // Перенос одного вхождения серии сдвигает всю серию.
-      const date =
-        patch.date && patch.occurrence && prev.repeat
-          ? shiftSeries(prev.date, patch.occurrence, patch.date)
-          : patch.date
-            ? toISODate(patch.date)
-            : prev.date
       const repeat = patch.repeat === undefined ? prev.repeat : patch.repeat || undefined
+      // Правка вхождения серии — как seriesPatch на сервере: перенос сдвигает всю серию (с концом
+      // и убранными днями), а снятый повтор оставляет событие в дне вхождения.
+      const occurrence = prev.repeat ? patch.occurrence : undefined
+      const moveTo = patch.date
+      const shift =
+        occurrence && repeat && moveTo ? (d: string) => shiftSeries(d, occurrence, moveTo) : (d: string) => d
+      const date =
+        occurrence && !repeat
+          ? toISODate(moveTo ?? occurrence)
+          : occurrence && moveTo
+            ? shift(prev.date)
+            : moveTo
+              ? toISODate(moveTo)
+              : prev.date
       const skip = patch.skip && toISODate(patch.skip)
       const next = {
         ...prev,
@@ -189,13 +202,13 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         repeatUntil: !repeat
           ? undefined
           : patch.repeatUntil === undefined
-            ? prev.repeatUntil
+            ? prev.repeatUntil && shift(prev.repeatUntil)
             : patch.repeatUntil || undefined,
         exdates: !repeat
           ? undefined
           : skip && !prev.exdates?.includes(skip)
             ? [...(prev.exdates ?? []), skip]
-            : prev.exdates,
+            : prev.exdates?.map(shift),
       }
       const bad =
         invalid(
@@ -307,11 +320,12 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     // Без сервера некому слать уведомления: настройки храним, подписаться нельзя.
     getPush: () => reply({ publicKey: null, settings: data.notify ?? DEFAULT_NOTIFY_SETTINGS, devices: 0 }),
     updateNotifySettings(patch) {
-      const bad = invalid(notifySettingsError(patch))
+      const next = { ...(data.notify ?? DEFAULT_NOTIFY_SETTINGS), ...patch }
+      const bad = invalid(notifySettingsError(patch), quietError(next))
       if (bad) return bad
-      data.notify = { ...(data.notify ?? DEFAULT_NOTIFY_SETTINGS), ...patch }
+      data.notify = next
       save()
-      return reply(data.notify)
+      return reply(next)
     },
     subscribePush: () => Promise.reject(NO_PUSH),
     unsubscribePush: () => reply(undefined),

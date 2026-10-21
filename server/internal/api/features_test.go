@@ -103,6 +103,32 @@ func TestRepeatingEventsAPI(t *testing.T) {
 		t.Fatalf("после сдвига — по средам: %+v", got)
 	}
 
+	// Сдвиг серии двигает и убранные дни, и дату окончания: убранная неделя остаётся убранной.
+	series := decode[model.Event](t, doAs(t, h, token, "POST", "/api/events",
+		`{"date":"2026-10-20","title":"Бассейн","start":600,"end":660,"repeat":"weekly","repeatUntil":"2026-11-24"}`))
+	doAs(t, h, token, "PATCH", "/api/events/"+series.ID, `{"skip":"2026-11-03"}`)
+	moved := decode[model.Event](t, doAs(t, h, token, "PATCH", "/api/events/"+series.ID, `{"occurrence":"2026-11-10","date":"2026-11-11"}`))
+	if moved.Date != "2026-10-21" || moved.RepeatUntil != "2026-11-25" || fmt.Sprint(moved.ExDates) != "[2026-11-04]" {
+		t.Fatalf("сдвиг серии: %+v", moved)
+	}
+	pool := func(d string) int {
+		n := 0
+		for _, e := range day(d) {
+			if e.Title == "Бассейн" {
+				n++
+			}
+		}
+		return n
+	}
+	if pool("2026-11-04") != 0 || pool("2026-11-25") != 1 {
+		t.Fatal("убранный день и последний день серии после сдвига")
+	}
+	// Снять повтор с позднего вхождения — событие остаётся в этом дне, а не в первом дне серии.
+	single := decode[model.Event](t, doAs(t, h, token, "PATCH", "/api/events/"+series.ID, `{"occurrence":"2026-11-18","date":"2026-11-18","repeat":""}`))
+	if single.Date != "2026-11-18" || single.Repeat != "" || single.ExDates != nil {
+		t.Fatalf("снятый повтор: %+v", single)
+	}
+
 	// Проверки: неизвестный повтор, конец раньше начала, «убрать день» у обычного события.
 	for _, body := range []string{
 		`{"date":"2026-10-20","title":"x","start":600,"end":660,"repeat":"hourly"}`,
@@ -393,8 +419,22 @@ func TestChatReminderAndRepeatTools(t *testing.T) {
 	if out, _ := s.toolCreateEvent(ctx, map[string]any{"date": "2026-10-20", "title": "x", "start": "10:00", "end": "10:30", "repeat": "hourly"}); !strings.Contains(out, "error") {
 		t.Fatalf("неверный повтор: %s", out)
 	}
-	if got := s.eventsOn(ctx, time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)); len(got) != 1 || got[0].Title != "Планёрка" {
-		t.Fatalf("пятница: %+v", got)
+	friday := s.eventsOn(ctx, time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC))
+	if len(friday) != 1 || friday[0].Title != "Планёрка" {
+		t.Fatalf("пятница: %+v", friday)
+	}
+	// Перенос вхождения без occurrence отклоняется — иначе сдвиг начала стёр бы прошлые вхождения.
+	id := friday[0].ID
+	if out, _ := s.toolUpdateEvent(ctx, map[string]any{"event_id": id, "date": "2026-10-26"}); !strings.Contains(out, "occurrence") {
+		t.Fatalf("без occurrence: %s", out)
+	}
+	// С occurrence: пятничное вхождение — на понедельник, серия сдвигается на 3 дня.
+	out, _ = s.toolUpdateEvent(ctx, map[string]any{"event_id": id, "occurrence": "2026-10-23", "date": "2026-10-26", "start": "11:00", "end": "11:30"})
+	if !strings.Contains(out, `"ok":true`) {
+		t.Fatalf("с occurrence: %s", out)
+	}
+	if ev, _ := st.Event(ctx, id); ev.Date != "2026-10-23" || ev.Start != 660 {
+		t.Fatalf("серия после переноса: %+v", ev)
 	}
 }
 

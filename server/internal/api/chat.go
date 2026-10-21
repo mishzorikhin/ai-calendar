@@ -265,11 +265,13 @@ var chatTools = []llm.Tool{
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "update_event",
-		Description: "Изменить событие пользователя: название, время, день, тип, напоминания, повтор. id — из get_day_schedule. Напоминания можно менять и у событий read_only. У повторяющегося события правка меняет всю серию, а date переносит начало серии.",
+		Description: "Изменить событие пользователя: название, время, день, тип, напоминания, повтор. id — из get_day_schedule. Напоминания можно менять и у событий read_only. У повторяющегося события правка меняет всю серию; при переносе дня передай occurrence.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"event_id": map[string]any{"type": "string", "description": "id события из get_day_schedule"},
+				"occurrence": map[string]any{"type": "string",
+					"description": "Для повторяющегося события — дата вхождения из get_day_schedule (ГГГГ-ММ-ДД), которое правят: перенос его на date сдвигает всю серию"},
 				"title":    map[string]any{"type": "string", "description": "Новое название"},
 				"date":     map[string]any{"type": "string", "description": "Перенести на дату, ГГГГ-ММ-ДД"},
 				"start":    map[string]any{"type": "string", "description": "Новое начало, ЧЧ:ММ"},
@@ -704,6 +706,17 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 	cur, err := s.store.Event(ctx, id)
 	if err != nil {
 		return `{"error":"событие не найдено"}`, toolMeta{}
+	}
+	if occ := strArg(args, "occurrence"); occ != "" {
+		if _, err := time.Parse(time.DateOnly, occ); err != nil {
+			return `{"error":"occurrence должен быть в формате ГГГГ-ММ-ДД"}`, toolMeta{}
+		}
+		if err := seriesPatch(cur, occ, &patch); err != nil {
+			return toolErr(err, "не удалось перенести серию"), toolMeta{}
+		}
+	} else if cur.Repeat != model.RepeatNone && patch.Date != nil {
+		// Без вхождения непонятно, на сколько сдвигать серию, — а сдвиг начала стёр бы прошлые вхождения.
+		return `{"error":"событие повторяется: передай occurrence — дату вхождения из get_day_schedule"}`, toolMeta{}
 	}
 	merged := cur
 	merged.Apply(patch)

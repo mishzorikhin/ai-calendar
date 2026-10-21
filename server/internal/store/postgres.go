@@ -979,12 +979,13 @@ func (s *pgStore) EventsBetween(ctx context.Context, from, to string) []model.Ev
 	return collectEvents(rows, err)
 }
 
-func (s *pgStore) RepeatingEvents(ctx context.Context, until string) []model.Event {
+func (s *pgStore) RepeatingEvents(ctx context.Context, from, to string) []model.Event {
 	u, err := uid(ctx)
 	if err != nil {
 		return nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events WHERE user_id = $1 AND repeat <> '' AND date <= $2`, u, until)
+	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events
+		WHERE user_id = $1 AND repeat <> '' AND date <= $3 AND (repeat_until = '' OR repeat_until >= $2)`, u, from, to)
 	return collectEvents(rows, err)
 }
 

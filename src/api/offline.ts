@@ -197,7 +197,17 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
       if (patch.date) body.date = toISODate(patch.date)
       if (patch.occurrence) body.occurrence = toISODate(patch.occurrence)
       if (patch.skip) body.skip = toISODate(patch.skip)
-      await enqueue({ entity: 'event', action: 'update', entityId: id, method: 'PATCH', path: '/api/events/:id', body })
+      // Правки серии не склеиваются: второй «убрать день» затёр бы первый, а перенос — свой occurrence.
+      const separate = patch.skip !== undefined || patch.occurrence !== undefined
+      await enqueue({
+        entity: 'event',
+        action: 'update',
+        entityId: id,
+        method: 'PATCH',
+        path: '/api/events/:id',
+        body,
+        separate,
+      })
       // Возврат не используется: оптимистичный кэш уже обновил onMutate в useUpdateEvent.
       return { id, ...patch } as DatedEvent
     },

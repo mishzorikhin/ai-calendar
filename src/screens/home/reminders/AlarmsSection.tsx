@@ -16,6 +16,7 @@ export function AlarmsSection() {
   const remove = useDeleteAlarm()
   const [text, setText] = useState('')
   const [missing, setMissing] = useState(false)
+  const [exact, setExact] = useState('')
   const input = useRef<HTMLInputElement>(null)
   const error = create.error ?? remove.error
 
@@ -26,7 +27,24 @@ export function AlarmsSection() {
       input.current?.focus()
       return
     }
-    create.mutate({ text: value, at }, { onSuccess: () => setText('') })
+    create.mutate(
+      { text: value, at },
+      {
+        onSuccess: () => {
+          setText('')
+          setExact('')
+        },
+      },
+    )
+  }
+
+  /** Точное время: прошедшее сегодня — значит, завтра. */
+  const addExact = () => {
+    const [h, m] = exact.split(':').map(Number)
+    if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m)
+    if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
+    add(at)
   }
 
   return (
@@ -61,21 +79,20 @@ export function AlarmsSection() {
           </Pill>
         ))}
         <label className={styles.alarmTime}>
-          Точное время
+          {exact ? `В ${exact}` : 'Точное время'}
           <input
             type="time"
-            aria-label="Напомнить в точное время"
-            onChange={(e) => {
-              const [h, m] = e.target.value.split(':').map(Number)
-              if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return
-              const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m)
-              // Время, которое сегодня уже прошло, — значит, завтра.
-              if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
-              add(at)
-              e.target.value = ''
-            }}
+            value={exact}
+            aria-label="Точное время напоминания"
+            // Только запоминаем: при наборе с клавиатуры onChange приходит и на недонабранном времени.
+            onChange={(e) => setExact(e.target.value)}
           />
         </label>
+        {exact && (
+          <Pill small tone="dark" className={styles.choice} disabled={create.isPending} onClick={addExact}>
+            Напомнить
+          </Pill>
+        )}
       </div>
 
       {alarms.length > 0 && (

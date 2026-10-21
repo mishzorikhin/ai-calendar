@@ -113,8 +113,9 @@ type Store interface {
 	// EventsBetween — события пользователя с from по to включительно (ГГГГ-ММ-ДД).
 	// Повторяющиеся лежат одной записью на дату начала серии: вхождения разворачивает API.
 	EventsBetween(ctx context.Context, from, to string) []model.Event
-	// RepeatingEvents — повторяющиеся события пользователя, чья серия начинается не позже until.
-	RepeatingEvents(ctx context.Context, until string) []model.Event
+	// RepeatingEvents — повторяющиеся события пользователя, чья серия пересекает [from, to]:
+	// начинается не позже to и не закончилась до from.
+	RepeatingEvents(ctx context.Context, from, to string) []model.Event
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
@@ -1312,7 +1313,7 @@ func (s *fileStore) DeleteSnooze(ctx context.Context, id int64) error {
 	return s.save()
 }
 
-func (s *fileStore) RepeatingEvents(ctx context.Context, until string) []model.Event {
+func (s *fileStore) RepeatingEvents(ctx context.Context, from, to string) []model.Event {
 	uid, err := s.uid(ctx)
 	if err != nil {
 		return nil
@@ -1321,7 +1322,7 @@ func (s *fileStore) RepeatingEvents(ctx context.Context, until string) []model.E
 	defer s.mu.RUnlock()
 	var out []model.Event
 	for _, e := range s.d.Events {
-		if e.UserID == uid && e.Repeat != model.RepeatNone && e.Date <= until {
+		if e.UserID == uid && e.Repeat != model.RepeatNone && e.Date <= to && (e.RepeatUntil == "" || e.RepeatUntil >= from) {
 			out = append(out, e)
 		}
 	}

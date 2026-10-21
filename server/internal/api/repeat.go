@@ -25,7 +25,7 @@ func (s *server) eventsBetween(ctx context.Context, from, to string) []model.Eve
 			out = append(out, e)
 		}
 	}
-	for _, e := range s.store.RepeatingEvents(ctx, to) {
+	for _, e := range s.store.RepeatingEvents(ctx, from, to) {
 		out = append(out, expandRepeat(e, from, to)...)
 	}
 	return out
@@ -140,15 +140,62 @@ func validateRepeat(r model.Repeat, until, date string) error {
 	return nil
 }
 
-// shiftDate — новая дата начала серии, если вхождение occurrence перенесли на date:
-// серия сдвигается на столько же дней.
-func shiftDate(seriesStart, occurrence, date string) (string, bool) {
-	s, err1 := time.Parse(time.DateOnly, seriesStart)
-	o, err2 := time.Parse(time.DateOnly, occurrence)
-	d, err3 := time.Parse(time.DateOnly, date)
-	if err1 != nil || err2 != nil || err3 != nil {
-		return "", false
+// dayShift — на сколько дней вхождение occurrence перенесли на date.
+func dayShift(occurrence, date string) (int, bool) {
+	o, err1 := time.Parse(time.DateOnly, occurrence)
+	d, err2 := time.Parse(time.DateOnly, date)
+	if err1 != nil || err2 != nil {
+		return 0, false
 	}
-	days := int(d.Sub(o).Hours() / 24)
-	return s.AddDate(0, 0, days).Format(time.DateOnly), true
+	return int(d.Sub(o).Hours() / 24), true
+}
+
+// addDays сдвигает дату ГГГГ-ММ-ДД; пустая остаётся пустой.
+func addDays(date string, days int) string {
+	d, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return date
+	}
+	return d.AddDate(0, 0, days).Format(time.DateOnly)
+}
+
+// seriesPatch переводит правку одного вхождения серии в правку всей серии:
+//   - перенос вхождения на date сдвигает на столько же дней начало серии, её конец и убранные дни;
+//   - снятый повтор оставляет событие в дне вхождения (или в date), а не в первом дне серии.
+//
+// Без occurrence (ассистент, старые клиенты) date — новое начало серии, как раньше.
+func seriesPatch(cur model.Event, occurrence string, patch *model.EventPatch) error {
+	if cur.Repeat == model.RepeatNone || occurrence == "" {
+		return nil
+	}
+	if patch.Repeat != nil && *patch.Repeat == model.RepeatNone {
+		if patch.Date == nil {
+			patch.Date = &occurrence
+		}
+		return nil
+	}
+	if patch.Date == nil {
+		return nil
+	}
+	days, ok := dayShift(occurrence, *patch.Date)
+	if !ok {
+		return badRequest("Не удалось перенести серию")
+	}
+	start := addDays(cur.Date, days)
+	patch.Date = &start
+	if days == 0 {
+		return nil
+	}
+	if cur.RepeatUntil != "" && patch.RepeatUntil == nil {
+		until := addDays(cur.RepeatUntil, days)
+		patch.RepeatUntil = &until
+	}
+	if len(cur.ExDates) > 0 {
+		shifted := make([]string, len(cur.ExDates))
+		for i, d := range cur.ExDates {
+			shifted[i] = addDays(d, days)
+		}
+		patch.ExDates = &shifted
+	}
+	return nil
 }

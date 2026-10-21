@@ -52,6 +52,19 @@ describe('outbox enqueue', () => {
     expect(ops[0]?.body).toEqual({ title: 'А', start: 300 })
   })
 
+  it('правки серии (separate) не склеиваются ни между собой, ни с обычными', async () => {
+    const o = await freshOutbox()
+    await o.enqueue(makeOp({ body: { skip: '2026-10-27' }, separate: true }))
+    await o.enqueue(makeOp({ body: { skip: '2026-11-03' }, separate: true }))
+    await o.enqueue(makeOp({ body: { title: 'Йога' } }))
+    await o.enqueue(makeOp({ body: { start: 600 } }))
+    expect(o.list().map((op) => op.body)).toEqual([
+      { skip: '2026-10-27' },
+      { skip: '2026-11-03' },
+      { title: 'Йога', start: 600 },
+    ])
+  })
+
   it('удаление неотправленного create отменяет операцию целиком', async () => {
     const o = await freshOutbox()
     await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))

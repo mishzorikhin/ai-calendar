@@ -84,7 +84,8 @@ export function useCreateEvent() {
   return useMutation({
     mutationFn: (input: NewEvent) => api.createEvent(input),
     onSuccess: (event) => {
-      void qc.invalidateQueries({ queryKey: keys.events(event.date) })
+      // У серии вхождения во многих днях — перечитываем все.
+      void qc.invalidateQueries({ queryKey: event.repeat ? keys.allEvents : keys.events(event.date) })
       void qc.invalidateQueries({ queryKey: keys.allMonths })
     },
   })

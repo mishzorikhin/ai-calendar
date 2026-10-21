@@ -120,11 +120,12 @@ export function snoozedMessage(msg: PushMessage): PushMessage {
 }
 
 /**
- * Показать уведомление внутри открытого приложения вместо системного. Safari считает push без
- * системного уведомления «тихим» и после нескольких таких отзывает подписку, поэтому там
- * системное показываем всегда.
+ * Показать уведомление внутри открытого приложения вместо системного. Без системного push
+ * считается «тихим»: Chromium это допускает, когда окно сайта в фокусе, а Safari (и PWA на iPhone,
+ * у которой в User-Agent нет даже «Safari/») и Firefox за такие отзывают подписку или урезают
+ * квоту. Поэтому плашка — только в Chromium вне iOS (на iOS любой браузер — это WebKit).
  */
 export function showInApp(userAgent: string): boolean {
-  const safari = /Safari\//.test(userAgent) && !/Chrome\/|Chromium\/|CriOS|Android/.test(userAgent)
-  return !safari
+  const ios = /iPhone|iPad|iPod/.test(userAgent)
+  return !ios && /Chrome\/|Chromium\//.test(userAgent)
 }

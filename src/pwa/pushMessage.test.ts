@@ -74,7 +74,7 @@ describe('уведомление из push', () => {
     expect(parsePushMessage({ title: 'x', badge: 1.5 }).badge).toBeUndefined()
   })
 
-  it('в открытом приложении — плашка, кроме Safari', () => {
+  it('в открытом приложении — плашка только в Chromium вне iOS', () => {
     const chromeAndroid =
       'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'
     const safariMac =
@@ -83,8 +83,19 @@ describe('уведомление из push', () => {
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
     const firefox = 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0'
     expect(showInApp(chromeAndroid)).toBe(true)
-    expect(showInApp(firefox)).toBe(true)
+    expect(showInApp(firefox)).toBe(false)
     expect(showInApp(safariMac)).toBe(false)
     expect(showInApp(iphone)).toBe(false)
+    // PWA на экране «Домой»: в User-Agent нет «Safari/».
+    expect(
+      showInApp(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+      ),
+    ).toBe(false)
+    expect(
+      showInApp(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1',
+      ),
+    ).toBe(false)
   })
 })

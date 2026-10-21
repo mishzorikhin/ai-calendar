@@ -216,13 +216,16 @@ func testPush(t *testing.T, s Store) {
 	if ser.Repeat != model.RepeatWeekly || ser.RepeatUntil != "2026-12-31" || fmt.Sprint(ser.ExDates) != "[2026-10-27]" {
 		t.Fatalf("серия: %+v", ser)
 	}
-	if list := s.RepeatingEvents(alice, "2026-10-19"); len(list) != 0 {
+	if list := s.RepeatingEvents(alice, "2026-10-01", "2026-10-19"); len(list) != 0 {
 		t.Fatalf("серия ещё не началась: %+v", list)
 	}
-	if list := s.RepeatingEvents(alice, "2027-01-01"); len(list) != 1 || list[0].ID != rep.ID {
+	if list := s.RepeatingEvents(alice, "2027-01-01", "2027-01-31"); len(list) != 0 {
+		t.Fatalf("серия уже закончилась: %+v", list)
+	}
+	if list := s.RepeatingEvents(alice, "2026-12-01", "2027-01-01"); len(list) != 1 || list[0].ID != rep.ID {
 		t.Fatalf("RepeatingEvents: %+v", list)
 	}
-	if list := s.RepeatingEvents(bctx, "2027-01-01"); len(list) != 0 {
+	if list := s.RepeatingEvents(bctx, "2026-12-01", "2027-01-01"); len(list) != 0 {
 		t.Fatalf("чужие серии: %+v", list)
 	}
 	none := model.RepeatNone
@@ -292,4 +295,27 @@ func TestPostgresPush(t *testing.T) {
 	defer s.(*pgStore).pool.Close()
 	mustWipe(ctx, t, s)
 	testPush(t, s)
+}
+
+// Настройки, сохранённые до тихих часов и вечерней сводки, читаются со значениями по умолчанию,
+// а не с нулями («в 0:00»).
+func TestFileNotifySettingsUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	raw := `{"users":[{"id":1,"username":"alice","name":"Alice","passHash":"h"}],"nextUserId":2,
+		"notifySettings":{"1":{"eventReminder":5,"taskTime":540,"digest":480}}}`
+	if err := os.WriteFile(dir+"/data.json", []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, err := s.NotifySettings(userCtx(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := model.NotifySettings{EventReminder: 5, TaskTime: 540, Digest: 480, Evening: -1, QuietFrom: -1, QuietTo: -1}
+	if !reflect.DeepEqual(ns, want) {
+		t.Fatalf("старые настройки: %+v", ns)
+	}
 }

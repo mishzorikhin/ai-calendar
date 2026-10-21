@@ -348,14 +348,6 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	// Перенос одного вхождения серии сдвигает всю серию на столько же дней.
-	if in.Occurrence != nil && in.Date != nil && current.Repeat != model.RepeatNone {
-		shifted, ok := shiftDate(current.Date, *in.Occurrence, *in.Date)
-		if !ok {
-			return badRequest("Не удалось перенести серию")
-		}
-		in.Date = &shifted
-	}
 	if in.Skip != nil {
 		if current.Repeat == model.RepeatNone {
 			return badRequest("Убрать один день можно только из повторяющегося события")
@@ -368,6 +360,11 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	patch := model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip,
+	}
+	if in.Occurrence != nil {
+		if err := seriesPatch(current, *in.Occurrence, &patch); err != nil {
+			return err
+		}
 	}
 	merged := current
 	merged.Apply(patch)

@@ -2,6 +2,7 @@
 package model
 
 import (
+	"encoding/json"
 	"slices"
 	"time"
 	"unicode/utf8"
@@ -109,10 +110,12 @@ type EventPatch struct {
 	Badge    *Badge
 	// Reminders: указатель на nil — вернуть напоминание по умолчанию.
 	Reminders *[]int
-	// Repeat и RepeatUntil меняют правило повтора; SkipDate убирает один день из серии.
+	// Repeat и RepeatUntil меняют правило повтора; SkipDate убирает один день из серии;
+	// ExDates заменяет убранные дни целиком (при сдвиге серии они сдвигаются вместе с ней).
 	Repeat      *Repeat
 	RepeatUntil *string
 	SkipDate    *string
+	ExDates     *[]string
 }
 
 // Apply применяет патч к событию на месте.
@@ -147,6 +150,9 @@ func (e *Event) Apply(p EventPatch) {
 	if p.RepeatUntil != nil {
 		e.RepeatUntil = *p.RepeatUntil
 	}
+	if p.ExDates != nil && e.Repeat != RepeatNone {
+		e.ExDates = slices.Clone(*p.ExDates)
+	}
 	if p.SkipDate != nil && !slices.Contains(e.ExDates, *p.SkipDate) {
 		e.ExDates = append(slices.Clone(e.ExDates), *p.SkipDate)
 	}
@@ -155,7 +161,7 @@ func (e *Event) Apply(p EventPatch) {
 // OnlyReminders — патч меняет только напоминания: во внешний календарь писать нечего.
 func (p EventPatch) OnlyReminders() bool {
 	return p.Reminders != nil && p.Title == nil && p.Subtitle == nil && p.Date == nil &&
-		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil
+		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil
 }
 
 // TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).
@@ -360,6 +366,18 @@ type NotifySettings struct {
 
 // DefaultNotifySettings — настройки, пока пользователь их не менял.
 var DefaultNotifySettings = NotifySettings{EventReminder: 10, TaskTime: 9 * 60, Digest: -1, Evening: -1, QuietFrom: -1, QuietTo: -1}
+
+// UnmarshalJSON подставляет значения по умолчанию для полей, которых нет в сохранённых
+// настройках: в data.json до тихих часов и вечерней сводки их нет, а ноль там — «в 0:00».
+func (ns *NotifySettings) UnmarshalJSON(b []byte) error {
+	type plain NotifySettings
+	p := plain(DefaultNotifySettings)
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*ns = NotifySettings(p)
+	return nil
+}
 
 // DefaultReminder — напоминание по умолчанию для события такого типа (-1 — не напоминать).
 func (ns NotifySettings) DefaultReminder(b Badge) int {

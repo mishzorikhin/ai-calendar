@@ -155,6 +155,32 @@ describe('local api', () => {
     expect(await on(new Date(2026, 10, 18))).toHaveLength(0)
   })
 
+  it('сдвиг серии двигает конец и убранные дни; снятый повтор остаётся в дне вхождения', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const pool = await api.createEvent({
+      title: 'Бассейн',
+      date: new Date(2026, 9, 20),
+      start: 600,
+      end: 660,
+      repeat: 'weekly',
+      repeatUntil: '2026-11-24',
+    })
+    await api.updateEvent(pool.id, { skip: new Date(2026, 10, 3) })
+    const moved = await api.updateEvent(pool.id, { occurrence: new Date(2026, 10, 10), date: new Date(2026, 10, 11) })
+    expect(moved).toMatchObject({ repeatUntil: '2026-11-25', exdates: ['2026-11-04'] })
+    const on = async (d: Date) => (await api.getEvents(d)).filter((e) => e.title === 'Бассейн')
+    expect(await on(new Date(2026, 10, 4))).toHaveLength(0)
+    expect(await on(new Date(2026, 10, 25))).toHaveLength(1)
+    const single = await api.updateEvent(pool.id, {
+      occurrence: new Date(2026, 10, 18),
+      date: new Date(2026, 10, 18),
+      repeat: '',
+    })
+    expect(single.date).toEqual(new Date(2026, 10, 18))
+    expect(single.repeat).toBeUndefined()
+    await expect(api.updateNotifySettings({ quietFrom: 1380 })).rejects.toMatchObject({ status: 400 })
+  })
+
   it('новые настройки уведомлений проверяются как на сервере', async () => {
     const api = createLocalApi(new MemoryStorage())
     expect(
