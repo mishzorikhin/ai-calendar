@@ -644,6 +644,30 @@ func (s *pgStore) Messages(ctx context.Context) []model.Message {
 	return out
 }
 
+func (s *pgStore) RecentMessages(ctx context.Context, n int) []model.Message {
+	u, err := uid(ctx)
+	if err != nil || n <= 0 {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, role, text, created_at FROM (
+			SELECT id, role, text, created_at FROM messages WHERE user_id = $1 ORDER BY id DESC LIMIT $2
+		) recent ORDER BY id`, u, n)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []model.Message
+	for rows.Next() {
+		m := model.Message{UserID: u}
+		if err := rows.Scan(&m.ID, &m.Role, &m.Text, &m.CreatedAt); err != nil {
+			return nil
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 func (s *pgStore) AddMessage(ctx context.Context, role model.Role, text string) (model.Message, error) {
 	u, err := uid(ctx)
 	if err != nil {
@@ -656,6 +680,14 @@ func (s *pgStore) AddMessage(ctx context.Context, role model.Role, text string) 
 		return model.Message{}, fmt.Errorf("сохранение сообщения: %w", err)
 	}
 	return m, nil
+}
+
+func (s *pgStore) UserCount(ctx context.Context) (int, error) {
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("подсчёт пользователей: %w", err)
+	}
+	return n, nil
 }
 
 func (s *pgStore) CreateUser(ctx context.Context, username, name, passHash string) (model.User, error) {
@@ -755,6 +787,8 @@ func (s *pgStore) UpdateUser(ctx context.Context, name string) (model.User, erro
 }
 
 func (s *pgStore) CreateSession(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+	// Истёкшие сессии иначе копились бы, пока их токен снова не предъявят.
+	_, _ = s.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 	_, err := s.pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
 		tokenHash, userID, expiresAt)
 	return err

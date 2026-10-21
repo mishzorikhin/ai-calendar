@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { formatMinutes, formatTimer, monthGrid, relativeDayLabel, startOfWeek, weekdayIndex } from './dates'
+import {
+  formatMinutes,
+  formatTimer,
+  monthGrid,
+  parseMinutes,
+  relativeDayLabel,
+  startOfWeek,
+  weekdayIndex,
+} from './dates'
 
 describe('dates', () => {
+  it('parseMinutes', () => {
+    expect(parseMinutes('09:30')).toBe(9 * 60 + 30)
+    expect(parseMinutes('23:55')).toBe(23 * 60 + 55)
+    expect(parseMinutes('24:00')).toBeNull()
+    expect(parseMinutes('')).toBeNull()
+  })
+
   it('formatMinutes', () => {
     expect(formatMinutes(9 * 60)).toBe('09:00')
     expect(formatMinutes(10 * 60 + 30)).toBe('10:30')

@@ -82,11 +82,15 @@ type Store interface {
 	// RemoveTaskMember: владелец удаляет любого, участник — только себя.
 	RemoveTaskMember(ctx context.Context, taskID string, memberID int64) (model.Task, error)
 	Messages(ctx context.Context) []model.Message
+	// RecentMessages — последние n реплик пользователя в хронологическом порядке (контекст для модели).
+	RecentMessages(ctx context.Context, n int) []model.Message
 	AddMessage(ctx context.Context, role model.Role, text string) (model.Message, error)
 
 	// CreateUser создаёт аккаунт; ErrConflict, если имя занято. Первый
 	// пользователь получает записи без владельца (данные до аккаунтов).
 	CreateUser(ctx context.Context, username, name, passHash string) (model.User, error)
+	// UserCount — сколько аккаунтов на сервере (закрытая регистрация пускает только первого).
+	UserCount(ctx context.Context) (int, error)
 	// UserByUsername — пользователь с PassHash (для входа).
 	UserByUsername(ctx context.Context, username string) (model.User, error)
 	// SearchUsers — поиск по имени и логину для упоминаний; без PassHash и без самого себя.
@@ -171,6 +175,7 @@ type data struct {
 	Integrations  []model.Integration      `json:"integrations"`
 	NextID        int                      `json:"nextId"`
 	NextUserID    int64                    `json:"nextUserId"`
+	NextMessageID int                      `json:"nextMessageId"`
 }
 
 // fileStore — JSON-файл с атомарной записью (временный файл и rename).
@@ -225,6 +230,17 @@ func (s *fileStore) normalize() {
 	if s.d.NextUserID == 0 {
 		s.d.NextUserID = 1
 	}
+	// Файлы до появления счётчика: продолжаем нумерацию после самого старшего id.
+	for _, m := range s.d.Messages {
+		s.d.NextMessageID = max(s.d.NextMessageID, m.ID+1)
+	}
+}
+
+// nextMessageID — id новой реплики (общий счётчик для всех пользователей).
+func (s *fileStore) nextMessageID() int {
+	id := s.d.NextMessageID
+	s.d.NextMessageID++
+	return id
 }
 
 // save вызывается под блокировкой на запись. Если файл записать не удалось, состояние в памяти
@@ -587,6 +603,24 @@ func (s *fileStore) Messages(ctx context.Context) []model.Message {
 	return out
 }
 
+func (s *fileStore) RecentMessages(ctx context.Context, n int) []model.Message {
+	uid, err := s.uid(ctx)
+	if err != nil || n <= 0 {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// Идём с конца: старая история не перебирается целиком ради последних n.
+	var out []model.Message
+	for i := len(s.d.Messages) - 1; i >= 0 && len(out) < n; i-- {
+		if m := s.d.Messages[i]; m.UserID == uid {
+			out = append(out, m)
+		}
+	}
+	slices.Reverse(out)
+	return out
+}
+
 func (s *fileStore) AddMessage(ctx context.Context, role model.Role, text string) (model.Message, error) {
 	uid, err := s.uid(ctx)
 	if err != nil {
@@ -594,11 +628,7 @@ func (s *fileStore) AddMessage(ctx context.Context, role model.Role, text string
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := 0
-	for _, m := range s.d.Messages {
-		id = max(id, m.ID+1)
-	}
-	m := model.Message{ID: id, UserID: uid, Role: role, Text: text, CreatedAt: s.now()}
+	m := model.Message{ID: s.nextMessageID(), UserID: uid, Role: role, Text: text, CreatedAt: s.now()}
 	s.d.Messages = append(s.d.Messages, m)
 	return m, s.save()
 }
@@ -637,13 +667,15 @@ func (s *fileStore) CreateUser(ctx context.Context, username, name, passHash str
 	// Приветствие ассистента — первое сообщение в истории нового пользователя.
 	hasGreeting := slices.ContainsFunc(s.d.Messages, func(m model.Message) bool { return m.UserID == su.ID })
 	if !hasGreeting {
-		id := 0
-		for _, m := range s.d.Messages {
-			id = max(id, m.ID+1)
-		}
-		s.d.Messages = append(s.d.Messages, model.Message{ID: id, UserID: su.ID, Role: model.RoleAI, Text: "Чем могу помочь?", CreatedAt: s.now()})
+		s.d.Messages = append(s.d.Messages, model.Message{ID: s.nextMessageID(), UserID: su.ID, Role: model.RoleAI, Text: "Чем могу помочь?", CreatedAt: s.now()})
 	}
 	return su.public(), s.save()
+}
+
+func (s *fileStore) UserCount(context.Context) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.d.Users), nil
 }
 
 func (s *fileStore) UserByUsername(_ context.Context, username string) (model.User, error) {
@@ -704,6 +736,13 @@ func (s *fileStore) UpdateUser(ctx context.Context, name string) (model.User, er
 func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Заодно убираем истёкшие сессии: сами они пропадают, только если токен снова предъявят.
+	now := s.now()
+	for h, sess := range s.d.Sessions {
+		if now.After(sess.ExpiresAt) {
+			delete(s.d.Sessions, h)
+		}
+	}
 	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt}
 	return s.save()
 }

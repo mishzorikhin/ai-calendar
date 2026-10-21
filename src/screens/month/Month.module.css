@@ -137,7 +137,7 @@
 }
 
 .today {
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .today::before {
@@ -149,7 +149,7 @@
   height: 56px;
   margin-left: -20px;
   border-radius: 20px;
-  background: #0f0f12;
+  background: var(--surface-ink);
   box-shadow: 0 6px 16px rgba(15, 15, 18, 0.25);
 }
 
@@ -236,7 +236,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--ink-inverse);
   background: rgba(150, 110, 120, 0.42);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(10px);

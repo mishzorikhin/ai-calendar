@@ -92,7 +92,7 @@
   width: min(270px, calc(100% - 24px));
   padding: 14px 16px;
   border-radius: 20px 20px 20px 6px;
-  background: #15141a;
+  background: var(--surface-dark);
   color: rgba(255, 255, 255, 0.78);
   font-size: 13.5px;
   line-height: 1.4;
@@ -100,22 +100,32 @@
   transform-origin: 20px 100%;
 }
 
+/* iPhone SE и другие низкие экраны: подсказка компактнее и меньше закрывает главный экран. */
+@media (max-height: 700px) {
+  .hint {
+    width: min(250px, calc(100% - 24px));
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+}
+
 .hint b {
   display: block;
   margin-bottom: 2px;
-  color: #fff;
+  color: var(--ink-inverse);
   font-size: 15px;
   font-weight: 600;
 }
 
 .hint .hintBtn {
   display: flex;
+  align-items: center;
   width: fit-content;
   margin-top: 10px;
-  height: 36px;
-  padding: 0 14px;
+  height: 40px;
+  padding: 0 16px;
   border-radius: 999px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 14px;
   font-weight: 500;

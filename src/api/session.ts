@@ -11,7 +11,7 @@ const listeners = new Set<() => void>()
 
 // Уже открытая сессия тоже сразу уходит в очередь — иначе service worker
 // останется без токена до первой смены сессии.
-if (current) persistToken(current.token)
+if (current) persistToken(current, true)
 
 function load(): Session | null {
   try {
@@ -29,6 +29,7 @@ export function getSession(): Session | null {
 }
 
 export function setSession(s: Session | null) {
+  const previous = current
   current = s
   try {
     if (s) window.localStorage.setItem(KEY, JSON.stringify(s))
@@ -36,16 +37,34 @@ export function setSession(s: Session | null) {
   } catch {
     /* хранилище недоступно — сессия проживёт до перезагрузки вкладки */
   }
-  persistToken(s?.token ?? null)
+  persistToken(s)
+  if (previous?.user.id !== s?.user.id) void clearApiCache()
   for (const fn of listeners) fn()
 }
 
 // Токен дублируем в IndexedDB очереди: service worker не видит localStorage,
 // а для replay офлайн-мутаций по Background Sync токен нужен и без открытой страницы.
-function persistToken(token: string | null) {
+// Владелец очереди — чтобы правки одного аккаунта не уехали на сервер от имени другого.
+// adopt — запуск с уже открытой сессией: операции старой версии без владельца — её.
+function persistToken(s: Session | null, adopt = false) {
   void getOutbox()
-    .then((o) => o.setAuthToken(token))
+    .then(async (o) => {
+      await o.setOwner(s ? String(s.user.id) : null, adopt)
+      await o.setAuthToken(s?.token ?? null)
+    })
     .catch(() => {})
+}
+
+/**
+ * Ответы API в кэше service worker (cacheName 'api' в sw.ts) хранятся по адресу, без учёта
+ * пользователя: после выхода или смены аккаунта их нельзя показывать офлайн следующему.
+ */
+async function clearApiCache(): Promise<void> {
+  try {
+    if (typeof caches !== 'undefined') await caches.delete('api')
+  } catch {
+    /* Cache Storage недоступен (не https, приватный режим) — кэшировать было и нечего */
+  }
 }
 
 function subscribe(fn: () => void): () => void {
@@ -57,8 +76,10 @@ function subscribe(fn: () => void): () => void {
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === KEY || e.key === null) {
+      const previous = current
       current = load()
-      persistToken(current?.token ?? null)
+      persistToken(current)
+      if (previous?.user.id !== current?.user.id) void clearApiCache()
       for (const fn of listeners) fn()
     }
   })

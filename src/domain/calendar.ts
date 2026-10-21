@@ -14,8 +14,26 @@ export function partOf(mins: number): DayPartId {
 const DAY_START = 8 * 60
 const DAY_END = 21 * 60
 
-/** Варианты времени для ручного выбора: каждые полчаса с 6:00 до 23:30 — весь «разумный» день. */
-export const TIME_OPTIONS: readonly number[] = Array.from({ length: 36 }, (_, i) => 6 * 60 + i * 30)
+/** Варианты времени для ручного выбора: каждые полчаса, круглые сутки — ночные смены и поздние звонки тоже бывают. */
+export const TIME_OPTIONS: readonly number[] = Array.from({ length: 48 }, (_, i) => i * 30)
+
+const MORNING = 6 * 60
+
+/** Длительность, которая помещается до конца суток: событие не переходит через полночь. */
+export function fitDuration(start: number, duration: number): number {
+  return Math.max(Math.min(duration, 24 * 60 - start), 1)
+}
+
+/**
+ * Ближайшее время позже `after`, когда событие длиной `duration` встаёт без пересечений и до полуночи.
+ * Кандидаты — получасовая сетка и концы событий: «сразу после встречи» удобнее, чем «на ближайшие :30».
+ */
+export function nextFreeTime(events: readonly CalendarEvent[], after: number, duration: number): number | null {
+  const candidates = [...new Set([...TIME_OPTIONS, ...events.map((e) => e.end)])]
+    .filter((t) => t > after && t + duration <= 24 * 60)
+    .sort((a, b) => a - b)
+  return candidates.find((t) => slotAt(events, t, duration).conflicts.length === 0) ?? null
+}
 
 /** Слот заданной длины с соседними делами и пересечениями. */
 export function slotAt(events: readonly CalendarEvent[], start: number, duration = 90): Slot {
@@ -56,5 +74,7 @@ export function nearestTimeOption(mins: number): number {
 export function firstFreeTime(events: readonly CalendarEvent[], from: number, duration = 60): number {
   const free = (t: number) => slotAt(events, t, duration).conflicts.length === 0
   const floor = Math.max(from, DAY_START)
-  return TIME_OPTIONS.find((t) => t >= floor && free(t)) ?? TIME_OPTIONS.find(free) ?? DAY_START
+  return (
+    TIME_OPTIONS.find((t) => t >= floor && free(t)) ?? TIME_OPTIONS.find((t) => t >= MORNING && free(t)) ?? DAY_START
+  )
 }

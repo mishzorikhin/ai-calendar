@@ -10,6 +10,10 @@
   --ink-soft: #85858d;
   --ink-3: var(--ink-soft);
   --ink-inverse: #ffffff;
+  /* Тёмные плашки: подсказки, тосты, нижняя капсула */
+  --surface-dark: #15141a;
+  /* Почти чёрные кнопки и выбранные дни */
+  --surface-ink: #0f0f12;
   --line: rgba(15, 15, 30, 0.06);
   --weekend: #e5484d;
   --red: #ff3b4f;

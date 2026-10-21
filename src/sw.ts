@@ -38,9 +38,14 @@ cleanupOutdatedCaches()
 // SPA-навигация на index.html; API живёт своей жизнью.
 registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//] }))
 
-// Данные API: свежие из сети, офлайн — последний ответ из кэша.
+// Не кэшируем: health, разовые ответы входа через Google/Microsoft и ленту .ics (секрет в адресе).
+const NO_CACHE = [/^\/api\/health$/, /^\/api\/integrations\/oauth\//, /^\/api\/feed\/./]
+
+// Данные API: свежие из сети, офлайн — последний ответ из кэша. Кэш общий для аккаунтов,
+// поэтому приложение стирает его при выходе и смене пользователя (api/session.ts).
 registerRoute(
-  ({ url, request }) => url.pathname.startsWith('/api/') && url.pathname !== '/api/health' && request.method === 'GET',
+  ({ url, request }) =>
+    url.pathname.startsWith('/api/') && !NO_CACHE.some((re) => re.test(url.pathname)) && request.method === 'GET',
   new NetworkFirst({
     cacheName: 'api',
     networkTimeoutSeconds: 4,
@@ -68,6 +73,8 @@ sw.addEventListener('message', (e) => {
 /** Повтор очереди и уведомление открытых вкладок — они перечитают данные и очередь. */
 async function flushAndNotify(): Promise<void> {
   const outbox = await getOutbox()
+  // Очередь в памяти worker-а могла устареть: страница добавляла операции или стёрла чужие.
+  await outbox.reload()
   const result = await outbox.flush('')
   if (result.synced + result.dropped === 0) return
   for (const client of await sw.clients.matchAll()) {

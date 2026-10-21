@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 )
@@ -56,6 +57,63 @@ func TestPersistence(t *testing.T) {
 	}
 	if got := s2.Messages(ctx2); len(got) != 2 || got[1].ID != 1 {
 		t.Fatalf("сообщения после перезапуска: %+v", got)
+	}
+}
+
+// checkRecentMessages — последние реплики идут по порядку и не смешиваются с чужими.
+func checkRecentMessages(t *testing.T, s Store) {
+	t.Helper()
+	ctx := userCtx(t, s)
+	other, err := s.CreateUser(context.Background(), "recent-other", "Other", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	octx := WithUser(context.Background(), other)
+	for _, text := range []string{"раз", "два", "три"} {
+		if _, err := s.AddMessage(ctx, model.RoleUser, text); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.AddMessage(octx, model.RoleUser, "чужое "+text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := s.RecentMessages(ctx, 2)
+	if len(got) != 2 || got[0].Text != "два" || got[1].Text != "три" || got[0].ID >= got[1].ID {
+		t.Fatalf("последние реплики: %+v", got)
+	}
+	if all := s.RecentMessages(ctx, 100); len(all) != len(s.Messages(ctx)) {
+		t.Fatalf("n больше истории: %d из %d", len(all), len(s.Messages(ctx)))
+	}
+	if n, err := s.UserCount(context.Background()); err != nil || n < 2 {
+		t.Fatal("UserCount не видит аккаунты")
+	}
+}
+
+func TestRecentMessages(t *testing.T) {
+	s, _ := Open("")
+	if n, _ := s.UserCount(context.Background()); n != 0 {
+		t.Fatal("пустое хранилище без аккаунтов")
+	}
+	checkRecentMessages(t, s)
+}
+
+func TestExpiredSessionsPruned(t *testing.T) {
+	st, _ := Open("")
+	fs := st.(*fileStore)
+	ctx := userCtx(t, st)
+	u, _ := UserFrom(ctx)
+	past := time.Now().Add(-time.Hour)
+	if err := st.CreateSession(ctx, u.ID, "old", past); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSession(ctx, u.ID, "new", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fs.d.Sessions["old"]; ok {
+		t.Fatal("истёкшая сессия не убрана")
+	}
+	if _, ok := fs.d.Sessions["new"]; !ok {
+		t.Fatal("новая сессия пропала")
 	}
 }
 

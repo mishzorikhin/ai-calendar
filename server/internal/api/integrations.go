@@ -381,7 +381,8 @@ func (s *server) oauthCallback(w http.ResponseWriter, r *http.Request) error {
 		if e == "access_denied" {
 			return back("error", "Доступ к календарю не выдан")
 		}
-		return back("error", "Сервис отказал во входе: "+e)
+		// Текст из адреса не показываем: ссылку с любым «сообщением» мог прислать кто угодно.
+		return back("error", "Сервис отказал во входе — попробуйте ещё раз")
 	}
 	st, ok := s.parseState(q.Get("state"))
 	cookie, cerr := r.Cookie(oauthCookie)

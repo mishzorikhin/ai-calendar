@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { apiErrorText } from '../../api/api'
 import {
   useIntegrations,
@@ -50,11 +50,11 @@ export function AccountSheet({ onClose, onCalendars }: { onClose: () => void; on
     if (editing) nameField.current?.focus()
   }, [editing])
 
-  // Открыли шторку — прочитали уведомления.
-  useEffect(() => {
+  // Открыли шторку — прочитали уведомления (один раз, по состоянию на момент открытия).
+  const readOnOpen = useEffectEvent(() => {
     if (unread > 0) markRead.mutate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  })
+  useEffect(() => readOnOpen(), [])
 
   const saveName = () => {
     const v = name.trim()

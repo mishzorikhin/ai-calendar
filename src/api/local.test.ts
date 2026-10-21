@@ -46,11 +46,11 @@ describe('local api', () => {
     const storage = new MemoryStorage()
     const first = createLocalApi(storage)
     await first.createEvent({ title: 'Звонок маме', date: day, start: 600, end: 660 })
-    await first.addMessage('user', 'Привет')
+    await first.sendChat('Привет', () => {})
 
     const second = createLocalApi(storage)
     expect((await second.getEvents(day)).some((e) => e.title === 'Звонок маме')).toBe(true)
-    expect((await second.getMessages()).at(-1)?.text).toBe('Привет')
+    expect((await second.getMessages()).at(-2)?.text).toBe('Привет')
   })
 
   it('чат без сервера отвечает заглушкой и сохраняет реплики', async () => {
@@ -78,8 +78,7 @@ describe('local api', () => {
     await expect(api.updateEvent(created.id, { title: '  ' })).rejects.toMatchObject({ status: 400 })
     await expect(api.updateEvent(created.id, { end: 2000 })).rejects.toMatchObject({ status: 400 })
 
-    await expect(api.addMessage('user', '   ')).rejects.toMatchObject({ status: 400 })
-    await expect(api.addMessage('user', 'я'.repeat(2001))).rejects.toMatchObject({ status: 400 })
+    await expect(api.sendChat('   ', () => {})).rejects.toMatchObject({ status: 400 })
     await expect(api.sendChat('я'.repeat(2001), () => {})).rejects.toMatchObject({ status: 400 })
   })
 

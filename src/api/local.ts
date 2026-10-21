@@ -179,14 +179,6 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       return reply(undefined)
     },
     getMessages: () => reply([...data.messages]),
-    addMessage(role, text) {
-      const bad = invalid(messageError(text.trim()))
-      if (bad) return bad
-      const message: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role, text: text.trim() }
-      data = { ...data, messages: [...data.messages, message] }
-      save()
-      return reply(message)
-    },
     // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
     async sendChat(text, onEvent) {
       const bad = invalid(messageError(text.trim()))
@@ -196,6 +188,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const ai: ChatMessage = { id: user.id + 1, role: 'ai', text: answer }
       data = { ...data, messages: [...data.messages, user, ai] }
       save()
+      onEvent({ type: 'open' })
       onEvent({ type: 'delta', text: answer })
       onEvent({ type: 'done' })
     },

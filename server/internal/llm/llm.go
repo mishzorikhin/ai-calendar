@@ -25,14 +25,16 @@ type Config struct {
 
 // Client — клиент чат-комплитов. Готов к работе, если заданы ключ и модель.
 type Client struct {
-	cfg    Config
-	http   *http.Client // обычные запросы — с общим таймаутом
-	stream *http.Client // стриминг — без него, бюджет задаёт контекст вызова
+	cfg  Config
+	http *http.Client
+	// timeout — бюджет одного захода в модель (стрим или обычный ответ) внутри агентского цикла.
+	timeout time.Duration
 }
 
-// New собирает клиента; timeout — бюджет одного нестримингового запроса.
+// New собирает клиента; timeout — бюджет одного захода в модель.
+// У http.Client таймаута нет: стрим может идти долго, бюджет задаёт контекст вызова.
 func New(cfg Config, timeout time.Duration) *Client {
-	return &Client{cfg: cfg, http: &http.Client{Timeout: timeout}, stream: &http.Client{}}
+	return &Client{cfg: cfg, http: &http.Client{}, timeout: timeout}
 }
 
 // Ready сообщает, настроен ли клиент.
@@ -57,7 +59,14 @@ type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"` // всегда "function"
 	Function FunctionCall `json:"function"`
-	Index    int          `json:"-"` // позиция в потоке дельт; в запросы не уходит
+}
+
+// toolCallDelta — кусок вызова инструмента в потоке. Index — позиция вызова в ответе:
+// при параллельных вызовах куски разных инструментов приходят вперемешку.
+type toolCallDelta struct {
+	Index    int          `json:"index"`
+	ID       string       `json:"id"`
+	Function FunctionCall `json:"function"`
 }
 
 // FunctionSpec — описание инструмента для модели.
@@ -88,8 +97,17 @@ func (e *httpError) Error() string {
 	return fmt.Sprintf("LLM вернула статус %d", e.status)
 }
 
-// roundTimeout — бюджет одного захода в модель внутри агентского цикла.
-const roundTimeout = 90 * time.Second
+// streamUnsupported — ответы, которыми провайдер может отказать именно в stream:true.
+// На 401, 429 и 5xx повтор без стрима ничего не даст, только удвоит запросы.
+func streamUnsupported(status int) bool {
+	switch status {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusMethodNotAllowed,
+		http.StatusNotAcceptable, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity,
+		http.StatusNotImplemented:
+		return true
+	}
+	return false
+}
 
 // Chat — один заход в модель: текст ответа идёт в onDelta по мере генерации,
 // возвращается собранное сообщение с полным текстом и вызовами инструментов.
@@ -97,12 +115,12 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool, onD
 	if !c.Ready() {
 		return Message{}, errors.New("LLM не настроена")
 	}
-	ctx, cancel := context.WithTimeout(ctx, roundTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	body := chatRequest{Model: c.cfg.Model, Messages: messages, Tools: tools, Temperature: 0.4, Stream: true}
 	msg, err := c.streamRound(ctx, body, onDelta)
 	var he *httpError
-	if errors.As(err, &he) {
+	if errors.As(err, &he) && streamUnsupported(he.status) {
 		// Провайдер мог не принять stream — повторяем обычным ответом.
 		body.Stream = false
 		return c.round(ctx, body, onDelta)
@@ -110,7 +128,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool, onD
 	return msg, err
 }
 
-func (c *Client) do(ctx context.Context, body chatRequest, client *http.Client) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, body chatRequest) (*http.Response, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -125,7 +143,7 @@ func (c *Client) do(ctx context.Context, body chatRequest, client *http.Client) 
 	if body.Stream {
 		req.Header.Set("Accept", "text/event-stream")
 	}
-	res, err := client.Do(req)
+	res, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("запрос к LLM: %w", err)
 	}
@@ -138,7 +156,7 @@ func (c *Client) do(ctx context.Context, body chatRequest, client *http.Client) 
 
 // streamRound читает SSE-поток: контент уходит в onDelta, tool calls копятся по индексу.
 func (c *Client) streamRound(ctx context.Context, body chatRequest, onDelta func(string)) (Message, error) {
-	res, err := c.do(ctx, body, c.stream)
+	res, err := c.do(ctx, body)
 	if err != nil {
 		return Message{}, err
 	}
@@ -160,8 +178,8 @@ func (c *Client) streamRound(ctx context.Context, body chatRequest, onDelta func
 			var chunk struct {
 				Choices []struct {
 					Delta struct {
-						Content   string     `json:"content"`
-						ToolCalls []ToolCall `json:"tool_calls"`
+						Content   string          `json:"content"`
+						ToolCalls []toolCallDelta `json:"tool_calls"`
 					} `json:"delta"`
 				} `json:"choices"`
 				Error *struct {
@@ -207,7 +225,7 @@ func (c *Client) streamRound(ctx context.Context, body chatRequest, onDelta func
 
 // round — нестриминговый заход: весь ответ приходит одним JSON.
 func (c *Client) round(ctx context.Context, body chatRequest, onDelta func(string)) (Message, error) {
-	res, err := c.do(ctx, body, c.http)
+	res, err := c.do(ctx, body)
 	if err != nil {
 		return Message{}, err
 	}

@@ -78,6 +78,15 @@ export function formatMinutes(mins: number): string {
   return `${pad2(Math.floor(mins / 60) % 24)}:${pad2(mins % 60)}`
 }
 
+/** «09:30» (как отдаёт `<input type="time">`) → минуты от полуночи; null, если строка не время. */
+export function parseMinutes(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(s)
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  return h < 24 && min < 60 ? h * 60 + min : null
+}
+
 export function formatTimer(seconds: number): string {
   return `${pad2(Math.floor(seconds / 60))}:${pad2(seconds % 60)}`
 }
