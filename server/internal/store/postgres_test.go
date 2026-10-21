@@ -223,6 +223,21 @@ func writeDataJSON(t *testing.T, dir string) {
 	}
 }
 
+func TestPostgresRecentMessages(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL не задан")
+	}
+	ctx := context.Background()
+	s, err := OpenPostgres(ctx, dsn, "")
+	if err != nil {
+		t.Fatalf("подключение: %v", err)
+	}
+	defer s.(*pgStore).pool.Close()
+	mustWipe(ctx, t, s)
+	checkRecentMessages(t, s)
+}
+
 func TestPostgresIntegrations(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {

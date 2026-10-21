@@ -72,9 +72,51 @@ func TestChatStream(t *testing.T) {
 	if call.ID != "call-1" || call.Function.Name != "create_event" || call.Function.Arguments != `{"date":"2026-10-21"}` {
 		t.Fatalf("вызов: %+v", call)
 	}
-	// Index — служебное поле, в запросы сериализоваться не должно.
+	// Index — поле потока дельт, в историю диалога сериализоваться не должно.
 	if raw, _ := json.Marshal(call); strings.Contains(string(raw), `"index"`) {
 		t.Fatalf("index утёк в JSON: %s", raw)
+	}
+}
+
+func TestChatStreamParallelTools(t *testing.T) {
+	// Два вызова в одном ответе: куски приходят вперемешку и собираются по index.
+	frames := []string{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"get_day_schedule","arguments":"{\"date\":"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"b","type":"function","function":{"name":"find_free_slots","arguments":"{\"date\":"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"2026-10-21\"}"}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"2026-10-22\"}"}}]}}]}`,
+	}
+	c := fakeAPI(t, 0, frames, "", nil)
+	msg, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.ToolCalls) != 2 {
+		t.Fatalf("вызовы: %+v", msg.ToolCalls)
+	}
+	a, b := msg.ToolCalls[0], msg.ToolCalls[1]
+	if a.ID != "a" || a.Function.Name != "get_day_schedule" || a.Function.Arguments != `{"date":"2026-10-21"}` {
+		t.Fatalf("первый вызов: %+v", a)
+	}
+	if b.ID != "b" || b.Function.Name != "find_free_slots" || b.Function.Arguments != `{"date":"2026-10-22"}` {
+		t.Fatalf("второй вызов: %+v", b)
+	}
+}
+
+func TestChatNoPlainRetryOnRateLimit(t *testing.T) {
+	// 429 — не «stream не поддержан»: повтор без стрима только удвоил бы нагрузку.
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Config{BaseURL: srv.URL, APIKey: "key", Model: "test"}, 5*time.Second)
+	if _, err := c.Chat(context.Background(), []Message{{Role: "user", Content: "x"}}, nil, func(string) {}); err == nil {
+		t.Fatal("429 должен вернуться ошибкой")
+	}
+	if calls != 1 {
+		t.Fatalf("запросов: %d, ожидали 1", calls)
 	}
 }
 

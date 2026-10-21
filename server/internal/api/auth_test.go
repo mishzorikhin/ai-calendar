@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -478,5 +479,44 @@ func TestMentionsEdgeCases(t *testing.T) {
 	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино с @bob"}`))
 	if len(got.Members) != 1 {
 		t.Fatalf("новое приглашение после выхода: %+v", got.Members)
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	h, _ := newAuthedServer(t)
+	var last *httptest.ResponseRecorder
+	// Перебор пароля одного аккаунта упирается в лимит, даже с верным паролем в конце.
+	for range 10 {
+		do(t, h, "POST", "/api/auth/login", `{"username":"alice","password":"wrong1"}`)
+	}
+	last = do(t, h, "POST", "/api/auth/login", `{"username":"alice","password":"secret1"}`)
+	if last.Code != http.StatusTooManyRequests || last.Header().Get("Retry-After") == "" {
+		t.Fatalf("11-я попытка: %d %v", last.Code, last.Header())
+	}
+	// Другой аккаунт с того же адреса пока пускают.
+	if rec := do(t, h, "POST", "/api/auth/login", `{"username":"bob","password":"x12345"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("чужой аккаунт: %d", rec.Code)
+	}
+}
+
+func TestClosedRegistration(t *testing.T) {
+	st, _ := store.Open("")
+	h := New(Options{Store: st, ClosedRegistration: true})
+	// Первый аккаунт — владелец сервера — создаётся и при закрытой регистрации.
+	register(t, h, "owner")
+	if rec := do(t, h, "POST", "/api/auth/register", `{"username":"guest","password":"secret1"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("второй аккаунт: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "10.0.0.5:4321"
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.7")
+	if got := clientIP(r, false); got != "10.0.0.5" {
+		t.Fatalf("без прокси: %s", got)
+	}
+	if got := clientIP(r, true); got != "203.0.113.7" {
+		t.Fatalf("за прокси берём адрес, дописанный прокси: %s", got)
 	}
 }

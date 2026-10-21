@@ -6,11 +6,13 @@
 //	DATABASE_URL  подключение к PostgreSQL; если задано, данные в БД
 //	DATA_DIR      каталог с data.json (по умолчанию ./data; пусто — хранить в памяти;
 //	              с DATABASE_URL — источник однократного импорта в базу)
-//	LLM_API_KEY   ключ OpenAI-совместимого API для разбора запросов ассистента
+//	LLM_API_KEY   ключ OpenAI-совместимого API для ассистента
 //	LLM_BASE_URL  адрес API (по умолчанию https://api.neuraldeep.ru/v1)
 //	LLM_MODEL     модель (по умолчанию qwen3.6-unlim-noreason)
 //	STATIC_DIR    раздавать фронтенд с диска вместо встроенного (для разработки)
 //	CORS_ORIGINS  источники через запятую, которым разрешён доступ к API
+//	REGISTRATION  closed — новые аккаунты не создаются (первый, владелец, — можно); по умолчанию open
+//	TRUST_PROXY   1 — сервер за своим прокси: адрес клиента для лимитов берём из X-Forwarded-For
 //
 // Внешние календари:
 //
@@ -93,6 +95,9 @@ func run(port string) error {
 			CORSOrigins: splitList(os.Getenv("CORS_ORIGINS")),
 			Version:     version,
 			Calendars:   calOpts,
+
+			ClosedRegistration: os.Getenv("REGISTRATION") == "closed",
+			TrustProxy:         os.Getenv("TRUST_PROXY") == "1",
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -131,7 +136,7 @@ func newLLM() *llm.Client {
 		BaseURL: env("LLM_BASE_URL", "https://api.neuraldeep.ru/v1"),
 		APIKey:  key,
 		Model:   env("LLM_MODEL", "qwen3.6-unlim-noreason"),
-	}, 20*time.Second)
+	}, 90*time.Second)
 }
 
 // calendarOptions — настройки внешних календарей из окружения.

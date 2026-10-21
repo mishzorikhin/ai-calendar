@@ -139,8 +139,7 @@ func (n *Net) Do(ctx context.Context, method, rawURL string, header http.Header,
 			if err != nil {
 				return resp, data, nil
 			}
-			// Переход на другой хост не должен уносить пароль.
-			if loc.Host != req.URL.Host {
+			if !keepAuth(req.URL, loc) {
 				header = header.Clone()
 				header.Del("Authorization")
 			}
@@ -153,6 +152,11 @@ func (n *Net) Do(ctx context.Context, method, rawURL string, header http.Header,
 		return resp, data, nil
 	}
 	return nil, nil, errors.New("слишком много перенаправлений")
+}
+
+// keepAuth — можно ли нести пароль по редиректу: только на тот же хост и без перехода с https на http.
+func keepAuth(from, to *url.URL) bool {
+	return to.Host == from.Host && (from.Scheme != "https" || to.Scheme == "https")
 }
 
 func unwrapNetErr(err error) error {

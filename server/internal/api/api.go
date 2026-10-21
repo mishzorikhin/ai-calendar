@@ -37,6 +37,10 @@ type Options struct {
 	Version     string
 	// Calendars — подключение внешних календарей (Google, Outlook, CalDAV, .ics).
 	Calendars CalendarOptions
+	// ClosedRegistration — новые аккаунты не создаются; первый (владелец сервера) — можно.
+	ClosedRegistration bool
+	// TrustProxy — сервер стоит за своим прокси: адрес клиента берём из X-Forwarded-For.
+	TrustProxy bool
 }
 
 type server struct {
@@ -44,12 +48,22 @@ type server struct {
 	llm     *llm.Client
 	cal     *calendars
 	version string
+	limits  *limits
+	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
+	confirms *confirmations
+
+	closedRegistration bool
+	trustProxy         bool
 }
 
 // New собирает обработчик: /api/* — JSON API, остальное — SPA.
 // Публичны только health и вход/регистрация; данные — за Bearer-токеном.
 func New(opts Options) http.Handler {
-	s := &server{store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version}
+	s := &server{
+		store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version,
+		limits: newLimits(), confirms: newConfirmations(),
+		closedRegistration: opts.ClosedRegistration, trustProxy: opts.TrustProxy,
+	}
 	if bg := opts.Calendars.Background; bg != nil && opts.Calendars.SyncInterval > 0 {
 		go s.runSyncLoop(bg, opts.Calendars.SyncInterval)
 	}
@@ -487,8 +501,9 @@ func (s *server) createMessage(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(w, r, &in); err != nil {
 		return err
 	}
-	if in.Role != model.RoleUser && in.Role != model.RoleAI {
-		return badRequest("role должен быть user или ai")
+	// Реплики ассистента пишет только сервер: подделанная история ушла бы модели как её собственные слова.
+	if in.Role != model.RoleUser {
+		return badRequest("role должен быть user")
 	}
 	in.Text = strings.TrimSpace(in.Text)
 	if in.Text == "" || utf8.RuneCountInString(in.Text) > maxMessage {
