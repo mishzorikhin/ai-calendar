@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useCalendarName } from '../../api/queries'
-import { BADGE_ICON } from '../../components/Icons'
+import { BADGE_ICON, RepeatIcon } from '../../components/Icons'
 import type { CalendarEvent } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
@@ -45,11 +45,14 @@ export function EventCard({
       initial={{ opacity: 0, y: 14, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ ...spring, delay: 0.15 + index * 0.06 }}
-      aria-label={`${formatMinutes(event.start)}–${formatMinutes(event.end)}, ${event.title}${calendar ? `, календарь «${calendar}»` : ''}`}
+      aria-label={`${formatMinutes(event.start)}–${formatMinutes(event.end)}, ${event.title}${event.repeat ? ', повторяется' : ''}${calendar ? `, календарь «${calendar}»` : ''}`}
       onClick={() => onOpen(event)}
       whileTap={{ scale: 0.97 }}
     >
-      <span className={styles.eventTitle}>{event.title}</span>
+      <span className={styles.eventTitle}>
+        {event.repeat && <RepeatIcon size={12} strokeWidth={2.2} className={styles.repeatMark} />}
+        {event.title}
+      </span>
       <EventSub event={event} calendar={calendar} />
       <i className={styles.badge} style={{ background: BADGE_COLOR[event.badge] }}>
         <BadgeIcon size={10} strokeWidth={2.4} />

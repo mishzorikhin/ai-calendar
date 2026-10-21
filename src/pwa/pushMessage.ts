@@ -3,7 +3,7 @@
  * Чистые функции: их использует service worker, тесты гоняются в Node.
  */
 
-export type PushKind = 'event' | 'task' | 'digest' | 'share' | 'test'
+export type PushKind = 'event' | 'task' | 'digest' | 'share' | 'test' | 'reminder'
 
 export type PushMessage = {
   kind: PushKind
@@ -15,12 +15,21 @@ export type PushMessage = {
   tag?: string
   /** Для кнопки «Готово» у задачи. */
   taskId?: string
+  /** Сколько встреч и задач осталось сегодня — число на иконке приложения. */
+  badge?: number
 }
 
-const KINDS: readonly PushKind[] = ['event', 'task', 'digest', 'share', 'test']
+const KINDS: readonly PushKind[] = ['event', 'task', 'digest', 'share', 'test', 'reminder']
 
 /** На сколько откладывает кнопка «Позже»: встречу — на 10 минут, задачу — на час. */
-export const SNOOZE_MINUTES: Record<PushKind, number> = { event: 10, task: 60, digest: 60, share: 60, test: 10 }
+export const SNOOZE_MINUTES: Record<PushKind, number> = {
+  event: 10,
+  task: 60,
+  digest: 60,
+  share: 60,
+  test: 10,
+  reminder: 10,
+}
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined)
 
@@ -37,6 +46,7 @@ export function parsePushMessage(raw: unknown): PushMessage {
     url: url && url.startsWith('/') && !url.startsWith('//') ? url : '/',
     tag: str(o.tag),
     taskId: str(o.taskId),
+    badge: typeof o.badge === 'number' && Number.isInteger(o.badge) && o.badge >= 0 ? o.badge : undefined,
   }
 }
 
@@ -60,6 +70,7 @@ export const VIBRATION: Record<PushKind, number[]> = {
   digest: [120],
   share: [120, 80, 120],
   test: [200, 100, 200],
+  reminder: [200, 100, 200, 100, 200],
 }
 
 /** Параметры showNotification: иконки берутся из сборки рядом с service worker. */
@@ -74,8 +85,8 @@ export function notificationOptions(msg: PushMessage): ShowOptions {
     vibrate: VIBRATION[msg.kind],
     // Новое уведомление с тем же тегом (отложенное, перенос встречи) вибрирует снова, а не заменяет старое молча.
     renotify: msg.tag !== undefined,
-    // Встреча «сейчас» висит на экране компьютера, пока её не закроют.
-    requireInteraction: msg.kind === 'event' && msg.body?.startsWith('Сейчас') === true,
+    // Встреча «сейчас» и своё напоминание висят на экране компьютера, пока их не закроют.
+    requireInteraction: msg.kind === 'reminder' || (msg.kind === 'event' && msg.body?.startsWith('Сейчас') === true),
   }
 }
 
@@ -83,6 +94,7 @@ export function notificationOptions(msg: PushMessage): ShowOptions {
 export function notificationActions(msg: PushMessage): { action: string; title: string }[] {
   switch (msg.kind) {
     case 'event':
+    case 'reminder':
       return [{ action: 'snooze', title: 'Через 10 минут' }]
     case 'task':
       return msg.taskId
@@ -105,4 +117,14 @@ export function snoozedMessage(msg: PushMessage): PushMessage {
   const parts = msg.body.split(' · ')
   const rest = /^(Через|Сейчас)/.test(parts[0] ?? '') ? parts.slice(1) : parts
   return { ...msg, body: ['Отложенное напоминание', ...rest].join(' · ') }
+}
+
+/**
+ * Показать уведомление внутри открытого приложения вместо системного. Safari считает push без
+ * системного уведомления «тихим» и после нескольких таких отзывает подписку, поэтому там
+ * системное показываем всегда.
+ */
+export function showInApp(userAgent: string): boolean {
+  const safari = /Safari\//.test(userAgent) && !/Chrome\/|Chromium\/|CriOS|Android/.test(userAgent)
+  return !safari
 }

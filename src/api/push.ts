@@ -151,3 +151,11 @@ export async function syncPush(api: CalendarApi, publicKey: string, userId: numb
   await api.subscribePush(sub.toJSON() as PushSubscriptionData)
   return true
 }
+
+/** id этого устройства в списке: начало sha256 адреса подписки, как deviceID на сервере. */
+export async function currentDeviceId(): Promise<string | null> {
+  const sub = await currentSubscription()
+  if (!sub || typeof crypto === 'undefined' || !crypto.subtle) return null
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sub.endpoint))
+  return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}

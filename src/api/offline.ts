@@ -66,8 +66,8 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
     } else if (op.action === 'update') {
       const i = findIdx(op.entityId)
       if (i >= 0) {
-        // Правка перенесла событие в другой день — из списка этого дня оно уходит.
-        if (typeof body.date === 'string' && body.date !== iso) {
+        // Правка перенесла событие в другой день или убрала этот день из серии — из списка оно уходит.
+        if ((typeof body.date === 'string' && body.date !== iso && !list[i]?.repeat) || body.skip === iso) {
           list.splice(i, 1)
           continue
         }
@@ -195,6 +195,8 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
       }
       const body: Record<string, unknown> = { ...patch }
       if (patch.date) body.date = toISODate(patch.date)
+      if (patch.occurrence) body.occurrence = toISODate(patch.occurrence)
+      if (patch.skip) body.skip = toISODate(patch.skip)
       await enqueue({ entity: 'event', action: 'update', entityId: id, method: 'PATCH', path: '/api/events/:id', body })
       // Возврат не используется: оптимистичный кэш уже обновил onMutate в useUpdateEvent.
       return { id, ...patch } as DatedEvent

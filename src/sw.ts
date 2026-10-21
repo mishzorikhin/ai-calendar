@@ -15,6 +15,7 @@ import {
   notificationOptions,
   parsePushMessage,
   SNOOZE_MINUTES,
+  showInApp,
   snoozedMessage,
   type PushMessage,
   type ShowOptions,
@@ -30,6 +31,8 @@ interface ClientLike {
 }
 interface WindowClientLike extends ClientLike {
   url: string
+  focused: boolean
+  visibilityState: DocumentVisibilityState
   focus(): Promise<WindowClientLike>
 }
 interface PushEventLike {
@@ -59,6 +62,7 @@ declare global {
 interface SwScope {
   skipWaiting(): void
   location: { origin: string }
+  navigator: Navigator & { setAppBadge?(n?: number): Promise<void>; clearAppBadge?(): Promise<void> }
   registration: {
     showNotification(
       title: string,
@@ -141,15 +145,35 @@ sw.addEventListener('push', (e) => {
   } catch {
     raw = { title: e.data?.text() }
   }
-  const msg = parsePushMessage(raw)
-  // Показываем всегда: «тихий» push браузеры наказывают (Safari отзывает подписку).
-  e.waitUntil(
-    sw.registration.showNotification(msg.title, {
-      ...notificationOptions(msg),
-      actions: notificationActions(msg),
-    }),
-  )
+  e.waitUntil(showPush(parsePushMessage(raw)))
 })
+
+/** Число на иконке приложения: сервер присылает, сколько встреч и задач осталось сегодня. */
+async function updateBadge(count: number | undefined): Promise<void> {
+  if (count === undefined) return
+  try {
+    if (count > 0) await sw.navigator.setAppBadge?.(count)
+    else await sw.navigator.clearAppBadge?.()
+  } catch {
+    /* Badging API нет или не разрешён — не страшно */
+  }
+}
+
+async function showPush(msg: PushMessage): Promise<void> {
+  await updateBadge(msg.badge)
+  // Приложение открыто и в фокусе — показываем плашку в нём, без системного уведомления.
+  const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const focused = windows.find((w) => w.focused && w.visibilityState === 'visible')
+  if (focused && showInApp(sw.navigator.userAgent)) {
+    focused.postMessage({ type: 'push:show', message: msg })
+    return
+  }
+  // Иначе — системное: «тихий» push браузеры наказывают (Safari отзывает подписку).
+  await sw.registration.showNotification(msg.title, {
+    ...notificationOptions(msg),
+    actions: notificationActions(msg),
+  })
+}
 
 /** Запрос к API от имени пользователя: токен — из метаданных офлайн-очереди. */
 async function apiFetch(path: string, method: string, body: unknown): Promise<boolean> {

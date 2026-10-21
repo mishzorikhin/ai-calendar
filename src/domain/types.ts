@@ -20,7 +20,18 @@ export type CalendarEvent = {
    * настройках уведомлений, [] — не напоминать.
    */
   reminders?: number[] | null
+  /**
+   * Повтор своего события. Вхождения приходят с тем же id и своей датой; правка по id меняет
+   * всю серию, «только этот день» — `EventPatch.skip`.
+   */
+  repeat?: Repeat
+  /** Последний день серии, ГГГГ-ММ-ДД; нет — бессрочно. */
+  repeatUntil?: string
+  /** Дни, убранные из серии (ГГГГ-ММ-ДД). */
+  exdates?: string[]
 }
+
+export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
 
 /** Событие, созданное пользователем вручную, привязано к дате. */
 export type DatedEvent = CalendarEvent & { date: Date }
@@ -50,6 +61,8 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   badge?: Badge
   /** Нет поля — напоминание по умолчанию из настроек, [] — не напоминать. */
   reminders?: number[]
+  repeat?: Repeat
+  repeatUntil?: string
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -62,6 +75,13 @@ export type EventPatch = {
   badge?: Badge
   /** null — вернуть напоминание по умолчанию, [] — не напоминать. */
   reminders?: number[] | null
+  /** '' — убрать повтор; repeatUntil: '' — бессрочно. */
+  repeat?: Repeat | ''
+  repeatUntil?: string
+  /** Какое вхождение серии правят: перенос его на `date` сдвигает всю серию. */
+  occurrence?: Date
+  /** Убрать из серии один день. */
+  skip?: Date
 }
 
 /** Значки событий по числам месяца. */
@@ -179,6 +199,13 @@ export type NotifySettings = {
   taskTime: number
   /** Во сколько присылать сводку дня. */
   digest: number
+  /** Во сколько присылать план на завтра. */
+  evening: number
+  /** Тихие часы: в это время приходят только явно заданные напоминания. Оба −1 — выключены. */
+  quietFrom: number
+  quietTo: number
+  /** Своё «по умолчанию» для типа события (минуты, −1 — не напоминать). */
+  badgeReminders?: Partial<Record<Badge, number>>
 }
 
 /** Уведомления аккаунта: ключ для подписки браузера, настройки и число подписанных устройств. */
@@ -194,4 +221,20 @@ export type PushSubscriptionData = {
   endpoint: string
   expirationTime?: number | null
   keys: { p256dh: string; auth: string }
+}
+
+/** Своё напоминание без события («позвонить маме в 18:00») или отложенное из уведомления. */
+export type Alarm = {
+  id: number
+  /** ISO-время, когда придёт. */
+  at: string
+  text: string
+  kind: 'reminder' | 'event' | 'task' | 'digest' | 'share' | 'test'
+}
+
+/** Устройство, на котором включены уведомления. id — начало sha256 адреса подписки. */
+export type PushDevice = {
+  id: string
+  label: string
+  createdAt: string
 }

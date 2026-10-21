@@ -34,7 +34,8 @@ internal/api/     http.go (ошибки, JSON, middleware), api.go (маршру
                   ratelimit.go (лимиты входа, регистрации и чата, адрес клиента), calendars.go (провайдеры, синхронизация, запись
                   событий во внешние календари, фоновый цикл), integrations.go (маршруты календарей,
                   OAuth, лента .ics с VALARM), push.go (ключ VAPID, подписки, настройки, проверка, «отложить»,
-                  pushTo), reminders.go (фоновый цикл напоминаний, чистая planReminders), spa.go (раздача UI)
+                  pushTo, устройства), reminders.go (фоновый цикл напоминаний, чистая planReminders), alarms.go (свои
+                  напоминания без события поверх отложенных), repeat.go (развёртка повторов eventsBetween), spa.go (раздача UI)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 
@@ -96,6 +97,17 @@ web/              embed.go + dist/ (собранный UI, в git только R
   правка только напоминаний (`EventPatch.OnlyReminders`) разрешена у `ReadOnly` и не уходит во внешний календарь.
 - Содержимое push — `model.PushMessage` (поля ↔ `src/pwa/pushMessage.ts`). `URL` — только путь приложения
   (`validPushMessage` для «отложить»).
+- Тихие часы (`NotifySettings.Quiet`) глушат только неявное: напоминания по умолчанию, о задачах, сводки и push о совместных
+  задачах (`pushToUser`). Явные (`Event.Reminders != nil`, свои напоминания и отложенные) приходят всегда.
+- Свои напоминания (`alarms.go`) — это `store.Snooze` с видом `reminder`; общий предел `MaxSnoozes` на пользователя.
+
+## Повторяющиеся события (`api/repeat.go`)
+
+- Всё чтение событий для ответов, ассистента, напоминаний и ленты — через `s.eventsBetween`/`s.eventsOn`, а не напрямую
+  `store.EventsOn/EventsBetween`: иначе серии пропадут (в хранилище серия лежит одной записью на дату начала).
+- Развёртка — чистая `expandRepeat` (покрыта `TestExpandRepeat`); правила должны совпадать с `src/domain/repeat.ts`.
+- Повтор только у своих событий: `createEventSynced` не отправляет серию во внешний календарь, `updateEventSynced`
+  отклоняет повтор и `skip` у событий с `Source`.
 
 ## Ассистент (`internal/llm`)
 

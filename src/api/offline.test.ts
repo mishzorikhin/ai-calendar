@@ -74,6 +74,22 @@ describe('withOfflineQueue: мутации офлайн', () => {
     expect(outbox.list()[1]?.body).toMatchObject({ reminders: null })
   })
 
+  it('«только этот день» офлайн: вхождение пропадает из своего дня', async () => {
+    netDown()
+    const a = api()
+    await a.updateEvent('evt-9', { skip: new Date(2026, 9, 27) })
+    expect(outbox.list()[0]?.body).toMatchObject({ skip: '2026-10-27' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json([
+          { id: 'evt-9', title: 'Йога', start: 60, end: 90, badge: 'sport', date: '2026-10-27', repeat: 'weekly' },
+        ]),
+      ),
+    )
+    expect(await a.getEvents(new Date(2026, 9, 27))).toHaveLength(0)
+  })
+
   it('серверная ошибка 400 не складывается в очередь — пробрасывается', async () => {
     vi.stubGlobal(
       'fetch',

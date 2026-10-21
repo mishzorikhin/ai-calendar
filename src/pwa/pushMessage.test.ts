@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { notificationActions, notificationOptions, parsePushMessage, snoozedMessage } from './pushMessage'
+import { notificationActions, notificationOptions, parsePushMessage, showInApp, snoozedMessage } from './pushMessage'
 
 describe('уведомление из push', () => {
   it('разбирает сообщение сервера', () => {
@@ -62,5 +62,29 @@ describe('уведомление из push', () => {
     expect(snoozedMessage(msg).body).toBe('Отложенное напоминание · 10:00–11:00 · Zoom')
     const task = parsePushMessage({ kind: 'task', title: 'Отчёт', body: 'Срок сегодня' })
     expect(snoozedMessage(task)).toBe(task)
+  })
+
+  it('своё напоминание и число на иконке', () => {
+    const msg = parsePushMessage({ kind: 'reminder', title: 'Позвонить маме', badge: 3, tag: 'reminder:ab' })
+    expect(msg.kind).toBe('reminder')
+    expect(msg.badge).toBe(3)
+    expect(notificationActions(msg).map((a) => a.action)).toEqual(['snooze'])
+    expect(notificationOptions(msg).requireInteraction).toBe(true)
+    expect(parsePushMessage({ title: 'x', badge: -1 }).badge).toBeUndefined()
+    expect(parsePushMessage({ title: 'x', badge: 1.5 }).badge).toBeUndefined()
+  })
+
+  it('в открытом приложении — плашка, кроме Safari', () => {
+    const chromeAndroid =
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'
+    const safariMac =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+    const iphone =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+    const firefox = 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0'
+    expect(showInApp(chromeAndroid)).toBe(true)
+    expect(showInApp(firefox)).toBe(true)
+    expect(showInApp(safariMac)).toBe(false)
+    expect(showInApp(iphone)).toBe(false)
   })
 })

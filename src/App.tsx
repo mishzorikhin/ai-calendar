@@ -14,7 +14,9 @@ import { VoiceOverlay } from './components/VoiceOverlay'
 import { fromISODate, toISODate } from './lib/dates'
 import { screenVariants } from './lib/motion'
 import { OfflineBadge } from './pwa/OfflineBadge'
+import { PushToast } from './pwa/PushToast'
 import { UpdatePrompt } from './pwa/UpdatePrompt'
+import { useAppBadge } from './pwa/useAppBadge'
 import { useLaunchAction } from './pwa/useLaunchAction'
 import { usePushEvents } from './pwa/usePushEvents'
 import { Chat } from './screens/chat/Chat'
@@ -60,6 +62,7 @@ function Screens() {
   useLaunchAction()
   useSyncTimeZone()
   usePushEvents()
+  useAppBadge()
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>
@@ -93,6 +96,7 @@ export function App({ api }: { api: CalendarApi }) {
             </SessionGate>
             <OfflineBadge />
             <UpdatePrompt />
+            <PushToast />
           </Device>
         </AppProviders>
       </ApiProvider>

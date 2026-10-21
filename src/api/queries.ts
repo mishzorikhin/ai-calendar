@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  Alarm,
   AppNotification,
   CalDavCredentials,
   CalendarEvent,
@@ -39,6 +40,10 @@ export const keys = {
   push: ['push'] as const,
   /** Подписка этого браузера (зависит от того, кто вошёл). */
   pushDevice: (userId: number | undefined) => ['push-device', userId] as const,
+  devices: ['push-devices'] as const,
+  /** id подписки этого браузера — чтобы отметить его в списке устройств. */
+  pushDeviceId: ['push-device-id'] as const,
+  alarms: ['alarms'] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -85,6 +90,11 @@ export function useCreateEvent() {
   })
 }
 
+/** Поля события из патча: occurrence/skip — указания серверу, а '' у повтора — «без повтора». */
+function eventFields({ occurrence: _o, skip: _s, repeat, ...fields }: EventPatch): Partial<DatedEvent> {
+  return repeat === undefined ? fields : { ...fields, repeat: repeat || undefined }
+}
+
 /** Оптимистичное изменение события; при смене дня переносим между кэшами дней. */
 export function useUpdateEvent() {
   const api = useApi()
@@ -94,7 +104,12 @@ export function useUpdateEvent() {
     onMutate: async ({ event, patch }) => {
       await qc.cancelQueries({ queryKey: keys.allEvents })
       const previous = qc.getQueriesData<CalendarEvent[]>({ queryKey: keys.allEvents })
-      const merged: DatedEvent = { ...event, ...patch }
+      const merged: DatedEvent = { ...event, ...eventFields(patch) }
+      if (patch.skip) {
+        qc.setQueryData<CalendarEvent[]>(keys.events(patch.skip), (list = []) => list.filter((e) => e.id !== event.id))
+        return { previous }
+      }
+      // Остальные дни серии обновит перечитывание после ответа (onSettled).
       const moved = patch.date && !isSameDay(patch.date, event.date)
       const byStart = (a: CalendarEvent, b: CalendarEvent) => a.start - b.start
       qc.setQueryData<CalendarEvent[]>(keys.events(event.date), (list = []) =>
@@ -617,4 +632,56 @@ export function useUpdateNotifySettings() {
 export function useTestPush() {
   const api = useApi()
   return useMutation({ mutationFn: () => api.testPush() })
+}
+
+/** Свои напоминания без события и отложенные из уведомлений. */
+export function useAlarms() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.alarms, queryFn: () => api.getAlarms(), enabled: api.mode === 'server' })
+  return { ...query, alarms: query.data ?? NO_ALARMS }
+}
+
+const NO_ALARMS: Alarm[] = []
+
+export function useCreateAlarm() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { text: string; at: Date }) => api.createAlarm(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.alarms }),
+  })
+}
+
+export function useDeleteAlarm() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteAlarm(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.alarms })
+      const previous = qc.getQueryData<Alarm[]>(keys.alarms)
+      qc.setQueryData<Alarm[]>(keys.alarms, (list = []) => list.filter((a) => a.id !== id))
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => qc.setQueryData(keys.alarms, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.alarms }),
+  })
+}
+
+/** Устройства с уведомлениями. */
+export function useDevices() {
+  const api = useApi()
+  return useQuery({ queryKey: keys.devices, queryFn: () => api.getDevices(), enabled: api.mode === 'server' })
+}
+
+export function useDeleteDevice() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteDevice(id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.devices })
+      void qc.invalidateQueries({ queryKey: keys.push })
+    },
+  })
 }

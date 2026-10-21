@@ -28,12 +28,14 @@ import {
 } from '../lib/dates'
 import { BADGE_OPTIONS } from '../lib/badges'
 import { BADGE_ICON } from './Icons'
-import type { Badge } from '../domain/types'
+import { repeatLabel } from '../domain/repeat'
+import type { Badge, Repeat } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
-import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, RepeatIcon, TrashIcon } from './Icons'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
+import { RepeatPicker } from './RepeatPicker'
 import { CircleButton, Pill, Pressable } from './ui'
 import styles from './EventComposer.module.css'
 
@@ -114,7 +116,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   // Напоминание: null — не трогали (у нового события сработает настройка по умолчанию), −1 — не напоминать.
   const [reminder, setReminder] = useState<number | null>(null)
   const remindersOn = useApi().mode === 'server'
-  const defaultReminder = useDefaultReminder()
+  const defaultReminder = useDefaultReminder(badge)
+  // Повтор — только у своих событий: у подключённых календарей он задаётся там.
+  const [repeat, setRepeat] = useState<Repeat | ''>(editing?.repeat ?? '')
+  const series = editing?.repeat
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
   const titleInput = useRef<HTMLInputElement>(null)
@@ -188,6 +193,9 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             end,
             badge,
             ...reminders,
+            ...(repeat !== (editing.repeat ?? '') && { repeat }),
+            // Вхождение серии: перенос дня сдвигает всю серию, а не ставит её начало на этот день.
+            ...(series && { occurrence: editing.date }),
           },
         },
         { onSuccess: onClose },
@@ -195,7 +203,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       return
     }
     createEvent.mutate(
-      { title: name, subtitle: subtitle.trim(), start, end, date, badge, ...reminders },
+      { title: name, subtitle: subtitle.trim(), start, end, date, badge, ...reminders, ...(repeat && { repeat }) },
       {
         onSuccess: () => {
           setSelectedDate(date)
@@ -213,6 +221,11 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       return
     }
     deleteEvent.mutate(editing, { onSuccess: onClose })
+  }
+
+  /** Убрать из серии только этот день. */
+  const skipDay = () => {
+    if (editing) updateEvent.mutate({ event: editing, patch: { skip: editing.date } }, { onSuccess: onClose })
   }
 
   const delegate = () => {
@@ -233,16 +246,27 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
               {apiErrorText(error)}
             </p>
           )}
-          {editing && (
-            <Pressable
-              className={`${styles.delete} ${confirmDelete ? styles.deleteSure : ''}`}
-              onClick={remove}
-              disabled={pending}
-              aria-label={confirmDelete ? 'Подтвердить удаление' : 'Удалить событие'}
-            >
-              <TrashIcon size={17} />
-              {confirmDelete ? 'Точно удалить?' : 'Удалить'}
-            </Pressable>
+          {editing && series && confirmDelete ? (
+            <div className={styles.deleteChoice} role="group" aria-label="Что удалить">
+              <Pressable className={`${styles.delete} ${styles.deleteSure}`} onClick={skipDay} disabled={pending}>
+                Только этот день
+              </Pressable>
+              <Pressable className={`${styles.delete} ${styles.deleteSure}`} onClick={remove} disabled={pending}>
+                Всю серию
+              </Pressable>
+            </div>
+          ) : (
+            editing && (
+              <Pressable
+                className={`${styles.delete} ${confirmDelete ? styles.deleteSure : ''}`}
+                onClick={remove}
+                disabled={pending}
+                aria-label={confirmDelete ? 'Подтвердить удаление' : 'Удалить событие'}
+              >
+                <TrashIcon size={17} />
+                {confirmDelete ? 'Точно удалить?' : 'Удалить'}
+              </Pressable>
+            )
           )}
           <Pill tone="dark" type="submit" form={FORM_ID} className={styles.create} disabled={pending}>
             {pending ? 'Сохраняю…' : editing ? 'Сохранить' : 'Создать событие'}
@@ -270,10 +294,16 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           </CircleButton>
         </div>
 
-        {syncTarget && (
+        {syncTarget && !repeat && (
           <p className={styles.syncNote}>
             <CalendarIcon size={14} />
             {editing ? `Изменения уйдут в «${syncTarget}»` : `Сохранится и в «${syncTarget}»`}
+          </p>
+        )}
+        {series && (
+          <p className={styles.syncNote}>
+            <RepeatIcon size={14} />
+            {repeatLabel(series)} — изменения для всей серии
           </p>
         )}
 
@@ -405,6 +435,8 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             )
           })}
         </div>
+
+        {!editing?.source && <RepeatPicker value={repeat} onChange={setRepeat} />}
 
         {remindersOn && (
           <ReminderPicker
