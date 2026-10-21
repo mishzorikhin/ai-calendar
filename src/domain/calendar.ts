@@ -24,6 +24,17 @@ export function fitDuration(start: number, duration: number): number {
   return Math.max(Math.min(duration, 24 * 60 - start), 1)
 }
 
+/**
+ * Ближайшее время позже `after`, когда событие длиной `duration` встаёт без пересечений и до полуночи.
+ * Кандидаты — получасовая сетка и концы событий: «сразу после встречи» удобнее, чем «на ближайшие :30».
+ */
+export function nextFreeTime(events: readonly CalendarEvent[], after: number, duration: number): number | null {
+  const candidates = [...new Set([...TIME_OPTIONS, ...events.map((e) => e.end)])]
+    .filter((t) => t > after && t + duration <= 24 * 60)
+    .sort((a, b) => a - b)
+  return candidates.find((t) => slotAt(events, t, duration).conflicts.length === 0) ?? null
+}
+
 /** Слот заданной длины с соседними делами и пересечениями. */
 export function slotAt(events: readonly CalendarEvent[], start: number, duration = 90): Slot {
   const end = start + duration

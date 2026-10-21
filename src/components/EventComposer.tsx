@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../api/api'
 import {
   useCalendarName,
@@ -13,15 +13,24 @@ import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
 import { useNavigation } from '../app/navigation'
-import { TIME_OPTIONS, firstFreeTime, fitDuration, nearestTimeOption, slotAt } from '../domain/calendar'
-import { minutesOf } from '../lib/hooks'
-import { addDays, formatMinutes, fromISODate, isSameDay, relativeDayLabel, startOfDay, toISODate } from '../lib/dates'
+import { TIME_OPTIONS, firstFreeTime, fitDuration, nearestTimeOption, nextFreeTime, slotAt } from '../domain/calendar'
+import { minutesOf, useNow } from '../lib/hooks'
+import {
+  addDays,
+  formatMinutes,
+  fromISODate,
+  isSameDay,
+  parseMinutes,
+  relativeDayLabel,
+  startOfDay,
+  toISODate,
+} from '../lib/dates'
 import { BADGE_OPTIONS } from '../lib/badges'
-import { spring } from '../lib/motion'
 import { BADGE_ICON } from './Icons'
 import type { Badge } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
-import { CalendarIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { CircleButton, Pill, Pressable } from './ui'
 import styles from './EventComposer.module.css'
@@ -63,6 +72,16 @@ function withExtra(list: readonly number[], value?: number | null): number[] {
   return [...list, value].sort((a, b) => a - b)
 }
 
+/** Плавно (или сразу, при открытии) ставит выбранную пилюлю ленты в центр. */
+function centerActive(row: HTMLElement | null, smooth: boolean) {
+  const active = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
+  if (!row || !active) return
+  const a = active.getBoundingClientRect()
+  const r = row.getBoundingClientRect()
+  const left = row.scrollLeft + a.left - r.left - r.width / 2 + a.width / 2
+  row.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' })
+}
+
 function durationLabel(mins: number): string {
   if (mins % 60 === 0) return `${mins / 60} ч`
   if (mins % 30 === 0) return `${mins / 60}`.replace('.', ',') + ' ч'
@@ -91,49 +110,70 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const [duration, setDuration] = useState<number>(editing ? editing.end - editing.start : 60)
   const [badge, setBadge] = useState<Badge>(editing?.badge ?? 'routine')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [titleMissing, setTitleMissing] = useState(false)
+  const titleInput = useRef<HTMLInputElement>(null)
+  const days = useRef<HTMLDivElement>(null)
   const times = useRef<HTMLDivElement>(null)
+  const mounted = useRef(false)
 
   const { events } = useDayEvents(date, { keepPrevious: false })
-  const now = new Date()
+  const now = useNow()
+  // Сколько минут сегодняшнего дня уже прошло; для других дней — ничего.
+  const passed = isSameDay(date, now) ? minutesOf(now) : -1
   // Другие события дня — для подсчёта свободного времени (себя при правке не считаем).
   const others = events.filter((e) => e.id !== editing?.id)
-  const start = pickedStart ?? firstFreeTime(others, isSameDay(date, now) ? minutesOf(now) : 0)
+  const start = pickedStart ?? firstFreeTime(others, Math.max(passed, 0))
   // Поздний старт + длинное событие не должны вылезать за полночь — укорачиваем до 24:00.
   const length = fitDuration(start, duration)
   const end = start + length
 
-  const today = startOfDay(new Date())
+  const today = startOfDay(now)
   const dates = Array.from({ length: DAY_CHOICES }, (_, i) => addDays(today, i))
   if (!dates.some((d) => isSameDay(d, date))) {
     dates.push(date)
     dates.sort((a, b) => a.getTime() - b.getTime())
   }
 
-  const startOptions = withExtra(TIME_OPTIONS, editing?.start)
+  // Точное время из системного выбора или «сдвига» встаёт в ленту отдельной пилюлей.
+  const startOptions = withExtra(withExtra(TIME_OPTIONS, editing?.start), start)
   const durations = withExtra(
     DURATIONS.map((d) => d.value),
     editing ? editing.end - editing.start : null,
   )
 
   const conflicts = slotAt(others, start, length).conflicts
+  const shift = conflicts.length ? nextFreeTime(others, start, length) : null
 
-  // Прокручиваем ленту времени к выбранному варианту до первой отрисовки.
-  useLayoutEffect(() => {
-    const el = times.current
-    const active = el?.querySelector<HTMLElement>('[aria-pressed="true"]')
-    if (el && active) el.scrollLeft = active.offsetLeft - el.clientWidth / 2 + active.clientWidth / 2
+  // Выбранные день и время всегда на виду: при открытии ленты сразу стоят на них,
+  // а после выбора (в том числе из системного календаря) плавно доезжают.
+  useLayoutEffect(() => centerActive(days.current, mounted.current), [date])
+  useLayoutEffect(() => centerActive(times.current, mounted.current), [start])
+  useEffect(() => {
+    mounted.current = true
   }, [])
+
+  // Новое событие начинается с названия. При правке фокус не трогаем — там чаще двигают время.
+  useEffect(() => {
+    if (!editing) titleInput.current?.focus({ preventScroll: true })
+  }, [editing])
 
   const pending = createEvent.isPending || updateEvent.isPending || deleteEvent.isPending
   const error = createEvent.error ?? updateEvent.error ?? deleteEvent.error
 
   const save = () => {
+    const name = title.trim()
+    // Безымянное событие в календаре потом не опознать — просим название, а не подставляем заглушку.
+    if (!name && !editing) {
+      setTitleMissing(true)
+      titleInput.current?.focus()
+      return
+    }
     if (editing) {
       updateEvent.mutate(
         {
           event: editing,
           patch: {
-            title: title.trim() || editing.title,
+            title: name || editing.title,
             subtitle: subtitle.trim(),
             date,
             start,
@@ -146,7 +186,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       return
     }
     createEvent.mutate(
-      { title: title.trim() || 'Новое событие', subtitle: subtitle.trim(), start, end, date, badge },
+      { title: name, subtitle: subtitle.trim(), start, end, date, badge },
       {
         onSuccess: () => {
           setSelectedDate(date)
@@ -178,6 +218,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       onClose={onClose}
       footer={
         <div className={styles.actions}>
+          <ComposerStatus start={start} end={end} conflicts={conflicts} shift={shift} onShift={setStart} />
           {error && (
             <p className={styles.error} role="alert">
               {apiErrorText(error)}
@@ -228,14 +269,25 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
         )}
 
         <input
+          ref={titleInput}
           id="event-title"
           className={styles.title}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value)
+            setTitleMissing(false)
+          }}
           placeholder="Название, например «Звонок маме»"
           aria-label="Название"
+          aria-invalid={titleMissing || undefined}
+          aria-describedby={titleMissing ? 'event-title-hint' : undefined}
           enterKeyHint="done"
         />
+        {titleMissing && (
+          <p id="event-title-hint" className={styles.hint} role="alert">
+            Как назвать событие?
+          </p>
+        )}
         <input
           className={styles.subtitle}
           value={subtitle}
@@ -245,10 +297,22 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           enterKeyHint="done"
         />
 
-        <p className={styles.label} id="composer-day">
-          День
-        </p>
-        <div className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-day">
+        <div className={styles.labelRow}>
+          <p className={styles.label} id="composer-day">
+            День
+          </p>
+          {/* Любая дата — через системный выбор: на телефоне это привычный календарь. */}
+          <NativePicker
+            type="date"
+            value={toISODate(date)}
+            label="Выбрать дату в календаре"
+            icon={<CalendarIcon size={14} />}
+            onPick={(v) => setDate(fromISODate(v))}
+          >
+            Выбрать дату
+          </NativePicker>
+        </div>
+        <div ref={days} className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-day">
           {dates.map((d) => (
             <Pill
               key={d.toDateString()}
@@ -260,25 +324,25 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
               {relativeDayLabel(d, today)}
             </Pill>
           ))}
-          {/* Любая дата — через системный выбор: на телефоне это привычный календарь. */}
-          <label className={styles.otherDate}>
-            <CalendarIcon size={14} />
-            Другая дата
-            <input
-              type="date"
-              className={styles.dateInput}
-              value={toISODate(date)}
-              aria-label="Выбрать другую дату"
-              onChange={(e) => {
-                if (e.target.value) setDate(fromISODate(e.target.value))
-              }}
-            />
-          </label>
         </div>
 
-        <p className={styles.label} id="composer-start">
-          Начало
-        </p>
+        <div className={styles.labelRow}>
+          <p className={styles.label} id="composer-start">
+            Начало
+          </p>
+          <NativePicker
+            type="time"
+            value={formatMinutes(start)}
+            label="Указать точное время"
+            icon={<ClockIcon size={14} />}
+            onPick={(v) => {
+              const mins = parseMinutes(v)
+              if (mins !== null) setStart(mins)
+            }}
+          >
+            Точное время
+          </NativePicker>
+        </div>
         <div ref={times} className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-start">
           {startOptions.map((t) => (
             <Pill
@@ -287,7 +351,8 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
               tone={t === start ? 'dark' : 'ghost'}
               aria-pressed={t === start}
               onClick={() => setStart(t)}
-              className="tnum"
+              // Прошедшее сегодня приглушаем, но не запрещаем: задним числом записать тоже бывает нужно.
+              className={`tnum ${t !== start && t + 30 <= passed ? styles.past : ''}`}
             >
               {formatMinutes(t)}
             </Pill>
@@ -331,23 +396,6 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             )
           })}
         </div>
-
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.p
-            key={conflicts.join() || 'free'}
-            className={`${styles.status} ${conflicts.length ? styles.warn : styles.ok}`}
-            role="status"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={spring}
-          >
-            <span className="tnum">
-              {formatMinutes(start)}–{formatMinutes(end)}
-            </span>
-            {conflicts.length ? ` пересекается с: ${conflicts.join(', ')}` : ' — время свободно'}
-          </motion.p>
-        </AnimatePresence>
       </form>
     </BottomSheet>
   )

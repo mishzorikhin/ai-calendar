@@ -32,6 +32,58 @@
   color: var(--ink-2);
 }
 
+/* Подпись ленты с действием справа («Выбрать дату», «Точное время»). */
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 4px 8px;
+}
+
+.labelRow .label {
+  margin: 0;
+}
+
+/* Зона нажатия 40 px, но в раскладке кнопка занимает высоту подписи — отрицательные поля. */
+.pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 40px;
+  margin: -12px -10px;
+  padding: 0 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pick:has(:focus-visible) {
+  outline: 2px solid var(--ink);
+  outline-offset: -4px;
+}
+
+.pickInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.hint {
+  margin: 6px 4px 0;
+  font-size: 13px;
+  color: #b42318;
+}
+
+/* Сегодняшнее прошедшее время: доступно, но визуально уходит на второй план. */
+.row .past {
+  color: var(--ink-soft);
+}
+
 .row {
   display: flex;
   gap: 6px;
@@ -43,35 +95,24 @@
   flex-shrink: 0;
 }
 
-/* Пилюля «Другая дата»: невидимый input поверх ловит тап и открывает системный выбор даты. */
-.otherDate {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 20px;
-  background: var(--surface-2);
-  font-size: 14.5px;
-  white-space: nowrap;
-}
-
-.dateInput {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-
+/* Итог выбора закреплён над кнопкой «Создать», чтобы пересечение не пряталось под сгибом. */
 .status {
-  margin: 16px 4px 0;
-  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 8px;
+  padding: 4px 4px 4px 14px;
   border-radius: 14px;
   font-size: 13.5px;
   line-height: 1.35;
+}
+
+.status p {
+  min-width: 0;
+  padding: 6px 0;
 }
 
 .ok {
@@ -81,6 +122,18 @@
 
 .warn {
   background: rgba(240, 139, 61, 0.14);
+  color: #8a4210;
+}
+
+/* «Сдвинуть на 11:00» — выход из пересечения в один тап. */
+.shift {
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13.5px;
+  font-weight: 600;
   color: #8a4210;
 }
 
