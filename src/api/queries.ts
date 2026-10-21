@@ -276,7 +276,12 @@ const NO_TASKS: Task[] = []
 
 export function useTasks() {
   const api = useApi()
-  const query = useQuery({ queryKey: keys.tasks, queryFn: () => api.getTasks() })
+  // С сервера задачи могут прийти от других (@упоминание) — проверяем раз в минуту, как уведомления.
+  const query = useQuery({
+    queryKey: keys.tasks,
+    queryFn: () => api.getTasks(),
+    refetchInterval: api.mode === 'server' ? 60_000 : false,
+  })
   return { ...query, tasks: query.data ?? NO_TASKS }
 }
 

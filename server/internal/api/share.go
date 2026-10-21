@@ -2,6 +2,10 @@
 // Правила как у Todoist/GitHub: владелец и участники видят и правят задачу;
 // @username в названии или заметке добавляет человека участником и шлёт ему
 // уведомление; владелец удаляет задачу у всех, участник выходит из неё.
+//
+// Делит задачу только *новое* упоминание — которого не было в тексте до правки.
+// Иначе каждое сохранение возвращало бы того, кто вышел или кого убрал владелец,
+// и слало бы повторные уведомления.
 package api
 
 import (
@@ -10,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
@@ -17,9 +22,10 @@ import (
 )
 
 // mentionRe — @логин в тексте задачи: латиница, начинается с буквы (как при регистрации).
-var mentionRe = regexp.MustCompile(`@([a-zA-Z][a-zA-Z0-9_.-]{1,23})`)
+// Перед @ — начало строки или не часть слова: в «misha@bob.ru» упоминания нет.
+var mentionRe = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_.@-])@([a-zA-Z][a-zA-Z0-9_.-]{1,23})`)
 
-// mentionUsernames — уникальные логины из title+subtitle (без повторов).
+// mentionUsernames — уникальные логины из title+subtitle (без повторов, в нижнем регистре).
 func mentionUsernames(t model.Task) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -29,6 +35,34 @@ func mentionUsernames(t model.Task) []string {
 			seen[name] = true
 			out = append(out, name)
 		}
+	}
+	return out
+}
+
+// newMentions — пользователи, упомянутые в after, но не в before. Знак препинания
+// в конце («с @bob.») к логину не относится, если такого логина нет.
+func (s *server) newMentions(ctx context.Context, before, after model.Task) []model.User {
+	old := map[string]bool{}
+	for _, name := range mentionUsernames(before) {
+		old[name] = true
+		old[strings.TrimRight(name, "._-")] = true
+	}
+	var out []model.User
+	for _, name := range mentionUsernames(after) {
+		if old[name] {
+			continue
+		}
+		u, err := s.store.UserByUsername(ctx, name)
+		if err != nil {
+			trimmed := strings.TrimRight(name, "._-")
+			if trimmed == name || old[trimmed] {
+				continue
+			}
+			if u, err = s.store.UserByUsername(ctx, trimmed); err != nil {
+				continue // неизвестное @имя — просто текст
+			}
+		}
+		out = append(out, u)
 	}
 	return out
 }
@@ -64,17 +98,21 @@ func (s *server) notifyShare(ctx context.Context, to model.User, task model.Task
 	})
 }
 
-// shareTaskWith добавляет участников и шлёт им уведомления.
+// shareTaskWith добавляет участников и шлёт уведомления только тем, кого добавили.
+// Себя, владельца и уже участвующих пропускает молча: участник может упомянуть
+// владельца в заметке, и это не ошибка.
 func (s *server) shareTaskWith(ctx context.Context, taskID string, users []model.User) (model.Task, error) {
-	var task model.Task
-	var err error
+	task, err := s.store.Task(ctx, taskID)
+	if err != nil {
+		return task, err
+	}
+	me, _ := store.UserFrom(ctx)
 	for _, u := range users {
-		me, _ := store.UserFrom(ctx)
-		if u.ID == me.ID {
-			continue // себя не добавляем
+		already := slices.ContainsFunc(task.Members, func(m model.User) bool { return m.ID == u.ID })
+		if u.ID == me.ID || u.ID == task.OwnerID || already {
+			continue
 		}
-		task, err = s.store.AddTaskMember(ctx, taskID, u.ID)
-		if err != nil {
+		if task, err = s.store.AddTaskMember(ctx, taskID, u.ID); err != nil {
 			var me *store.MemberError
 			if errors.As(err, &me) {
 				return task, badRequest("%s", me.Msg)
