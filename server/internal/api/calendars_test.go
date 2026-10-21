@@ -330,6 +330,8 @@ func TestFeedExport(t *testing.T) {
 	h, tok := newCalServer(t, CalendarOptions{})
 	date, _ := tomorrow(0)
 	doAs(t, h, tok, "POST", "/api/events", fmt.Sprintf(`{"date":%q,"title":"Встреча, важная","start":600,"end":660}`, date))
+	doAs(t, h, tok, "POST", "/api/events", fmt.Sprintf(`{"date":%q,"title":"Обед","start":780,"end":840,"reminders":[60,0]}`, date))
+	doAs(t, h, tok, "POST", "/api/events", fmt.Sprintf(`{"date":%q,"title":"Тихо","start":900,"end":960,"reminders":[]}`, date))
 	if path := decode[map[string]string](t, doAs(t, h, tok, "GET", "/api/feed", ""))["path"]; path != "" {
 		t.Fatalf("лента выключена по умолчанию: %q", path)
 	}
@@ -345,6 +347,15 @@ func TestFeedExport(t *testing.T) {
 	_, start := tomorrow(10)
 	if !strings.Contains(body, `SUMMARY:Встреча\, важная`) || !strings.Contains(body, "DTSTART:"+start.UTC().Format("20060102T150405Z")) {
 		t.Fatalf("содержимое ленты:\n%s", body)
+	}
+	// Напоминания — VALARM: по умолчанию за 10 минут, свои — как заданы, «не напоминать» — без них.
+	for _, want := range []string{"TRIGGER:-PT10M", "TRIGGER:-PT60M", "TRIGGER:PT0S", "ACTION:DISPLAY"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("в ленте нет %s:\n%s", want, body)
+		}
+	}
+	if n := strings.Count(body, "BEGIN:VALARM"); n != 3 {
+		t.Fatalf("напоминаний в ленте: %d\n%s", n, body)
 	}
 	newPath := decode[map[string]string](t, doAs(t, h, tok, "POST", "/api/feed", ""))["path"]
 	if newPath == path || do(t, h, "GET", path, "").Code != 404 {

@@ -19,6 +19,7 @@ import { pluralize } from '../../lib/plural'
 import { InstallBanner } from '../../pwa/InstallBanner'
 import { AccountSheet, userColor, userInitials } from './AccountSheet'
 import { CalendarsSheet } from './calendars/CalendarsSheet'
+import { RemindersSheet } from './reminders/RemindersSheet'
 import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
@@ -37,7 +38,7 @@ export function Home() {
   const [taskSheet, setTaskSheet] = useState<Task | 'new' | null>(null)
   // Вернулись со страницы входа Google/Microsoft — сразу открываем «Календари» с результатом.
   const [oauthReturn] = useState(readOAuthReturn)
-  const [sheet, setSheet] = useState<'account' | 'calendars' | null>(oauthReturn ? 'calendars' : null)
+  const [sheet, setSheet] = useState<'account' | 'calendars' | 'reminders' | null>(oauthReturn ? 'calendars' : null)
   useEffect(clearOAuthReturn, [])
   const user = me.data ?? session?.user
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.
@@ -156,8 +157,14 @@ export function Home() {
           />
         )}
         {sheet === 'account' && (
-          <AccountSheet key="account-sheet" onClose={() => setSheet(null)} onCalendars={() => setSheet('calendars')} />
+          <AccountSheet
+            key="account-sheet"
+            onClose={() => setSheet(null)}
+            onCalendars={() => setSheet('calendars')}
+            onReminders={() => setSheet('reminders')}
+          />
         )}
+        {sheet === 'reminders' && <RemindersSheet key="reminders-sheet" onClose={() => setSheet(null)} />}
         {sheet === 'calendars' && (
           <CalendarsSheet key="calendars-sheet" notice={oauthReturn} onClose={() => setSheet(null)} />
         )}

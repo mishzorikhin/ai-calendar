@@ -1,14 +1,28 @@
-import { useCalendarName } from '../api/queries'
+import { useState } from 'react'
+import { apiErrorText } from '../api/api'
+import { useApi } from '../api/provider'
+import { useCalendarName, useUpdateEvent } from '../api/queries'
 import type { DatedEvent } from '../domain/types'
 import { formatMinutes, relativeDayLabel } from '../lib/dates'
 import { BottomSheet } from './BottomSheet'
 import { CloseIcon, LockIcon } from './Icons'
+import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
 import { CircleButton, Pill } from './ui'
 import styles from './EventComposer.module.css'
 
 /** Событие из подключённого календаря, которое здесь не изменить: подписка, повтор серии, на весь день. */
 export function ReadOnlyEvent({ event, onClose }: { event: DatedEvent; onClose: () => void }) {
   const calendar = useCalendarName(event.source)
+  const update = useUpdateEvent()
+  // Напоминание — настройка приложения: его можно задать и событию, которое здесь не изменить.
+  const remindersOn = useApi().mode === 'server' && !event.allDay
+  const defaultReminder = useDefaultReminder()
+  const [reminders, setReminders] = useState(event.reminders)
+  const pickReminder = (minutes: number) => {
+    const next = minutes < 0 ? [] : [minutes]
+    setReminders(next)
+    update.mutate({ event, patch: { reminders: next } }, { onError: () => setReminders(event.reminders) })
+  }
   const when = event.allDay
     ? `${relativeDayLabel(event.date)}, весь день`
     : `${relativeDayLabel(event.date)}, ${formatMinutes(event.start)}–${formatMinutes(event.end)}`
@@ -39,6 +53,18 @@ export function ReadOnlyEvent({ event, onClose }: { event: DatedEvent; onClose: 
           изменения появятся сами.
         </span>
       </p>
+      {remindersOn && (
+        <ReminderPicker
+          value={reminderValue(reminders, defaultReminder)}
+          isDefault={reminders == null}
+          onChange={pickReminder}
+        />
+      )}
+      {update.error && (
+        <p className={styles.error} role="alert">
+          {apiErrorText(update.error)}
+        </p>
+      )}
     </BottomSheet>
   )
 }

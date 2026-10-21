@@ -189,6 +189,13 @@ export const CalendarIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const BellIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z" />
+    <path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
+  </Svg>
+)
+
 export const PhoneDownIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3.5 13.2c4.8-4.3 12.2-4.3 17 0 .6.6.6 1.5 0 2.1l-1.6 1.5c-.5.5-1.3.5-1.8.1l-1.9-1.5c-.4-.3-.6-.8-.5-1.3l.2-1.4a10.6 10.6 0 0 0-6.8 0l.2 1.4c.1.5-.1 1-.5 1.3l-1.9 1.5c-.5.4-1.3.4-1.8-.1l-1.6-1.5c-.6-.6-.6-1.5 0-2.1Z" />

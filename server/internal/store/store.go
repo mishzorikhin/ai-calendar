@@ -138,7 +138,44 @@ type Store interface {
 	UserByFeedToken(ctx context.Context, token string) (model.User, error)
 	// UserByID — пользователь без пароля (фоновая синхронизация, вход через OAuth).
 	UserByID(ctx context.Context, id int64) (model.User, error)
+
+	// SavePushSubscription запоминает подписку браузера за текущим пользователем. Адрес
+	// уникален: устройство, вошедшее под другим аккаунтом, переходит к нему. У пользователя
+	// не больше MaxPushSubscriptions подписок — самые старые забываются.
+	SavePushSubscription(ctx context.Context, sub model.PushSubscription) error
+	// DeletePushSubscription забывает подписку текущего пользователя; если её нет — не ошибка.
+	DeletePushSubscription(ctx context.Context, endpoint string) error
+	// PushSubscriptions — подписки текущего пользователя.
+	PushSubscriptions(ctx context.Context) []model.PushSubscription
+	// PushUserIDs — пользователи, у которых есть подписки (для планировщика напоминаний).
+	PushUserIDs(ctx context.Context) []int64
+	// NotifySettings — настройки напоминаний текущего пользователя (по умолчанию — DefaultNotifySettings).
+	NotifySettings(ctx context.Context) (model.NotifySettings, error)
+	SetNotifySettings(ctx context.Context, ns model.NotifySettings) error
+	// ClaimReminder отмечает напоминание key текущего пользователя отправленным в момент now.
+	// false — его уже отправляли. Отметки старше ReminderMemory забываются.
+	ClaimReminder(ctx context.Context, key string, now time.Time) (bool, error)
+	// AddSnooze откладывает уведомление текущего пользователя до at;
+	// ErrLimit — отложенных уже MaxSnoozes.
+	AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) error
+	// TakeDueSnoozes забирает отложенные уведомления всех пользователей со сроком не позже now.
+	TakeDueSnoozes(ctx context.Context, now time.Time) []model.Snooze
+	// ServerKey — значение name из хранилища; если его ещё нет — сохраняет gen() и
+	// возвращает его (при гонке двух процессов оба получат одно значение).
+	ServerKey(ctx context.Context, name string, gen func() (string, error)) (string, error)
 }
+
+// ErrLimit — превышен предел записей.
+var ErrLimit = errors.New("limit")
+
+const (
+	// MaxPushSubscriptions — устройств с уведомлениями на пользователя.
+	MaxPushSubscriptions = 10
+	// MaxSnoozes — отложенных уведомлений на пользователя.
+	MaxSnoozes = 50
+	// ReminderMemory — сколько помнить отправленные напоминания (дольше, чем самое раннее напоминание).
+	ReminderMemory = 8 * 24 * time.Hour
+)
 
 // SyncStats — итог синхронизации источника.
 type SyncStats struct {
@@ -173,9 +210,18 @@ type data struct {
 	Sessions      map[string]storedSession `json:"sessions"`
 	Notifications []model.Notification     `json:"notifications"`
 	Integrations  []model.Integration      `json:"integrations"`
-	NextID        int                      `json:"nextId"`
-	NextUserID    int64                    `json:"nextUserId"`
-	NextMessageID int                      `json:"nextMessageId"`
+	// Web Push: подписки устройств, настройки напоминаний (по id пользователя),
+	// отметки отправленных напоминаний («id|ключ» → когда) и отложенные уведомления.
+	PushSubscriptions []model.PushSubscription       `json:"pushSubscriptions,omitempty"`
+	NotifySettings    map[int64]model.NotifySettings `json:"notifySettings,omitempty"`
+	SentReminders     map[string]time.Time           `json:"sentReminders,omitempty"`
+	Snoozes           []model.Snooze                 `json:"snoozes,omitempty"`
+	NextSnoozeID      int64                          `json:"nextSnoozeId,omitempty"`
+	// ServerKeys — ключи сервера, созданные им самим (закрытый ключ VAPID).
+	ServerKeys    map[string]string `json:"serverKeys,omitempty"`
+	NextID        int               `json:"nextId"`
+	NextUserID    int64             `json:"nextUserId"`
+	NextMessageID int               `json:"nextMessageId"`
 }
 
 // fileStore — JSON-файл с атомарной записью (временный файл и rename).
@@ -901,11 +947,14 @@ func (s *fileStore) SyncEvents(ctx context.Context, source string, events []mode
 
 // mergeSynced переносит в событие поля из внешнего календаря; true — что-то изменилось.
 func mergeSynced(e *model.Event, in model.Event) bool {
-	before := *e
+	changed := e.Date != in.Date || e.Title != in.Title || e.Subtitle != in.Subtitle ||
+		e.Start != in.Start || e.End != in.End || e.Badge != in.Badge ||
+		e.ETag != in.ETag || e.ReadOnly != in.ReadOnly || e.AllDay != in.AllDay
 	e.Date, e.Title, e.Subtitle = in.Date, in.Title, in.Subtitle
 	e.Start, e.End, e.Badge = in.Start, in.End, in.Badge
 	e.ETag, e.ReadOnly, e.AllDay = in.ETag, in.ReadOnly, in.AllDay
-	return before != *e
+	// Напоминания — настройка пользователя в приложении, синхронизация их не трогает.
+	return changed
 }
 
 func (s *fileStore) SetEventETag(ctx context.Context, id, etag string) error {
@@ -1074,4 +1123,190 @@ func (s *fileStore) UserByID(_ context.Context, id int64) (model.User, error) {
 		return u, nil
 	}
 	return model.User{}, ErrNotFound
+}
+
+// --- Web Push ------------------------------------------------------------------
+
+func (s *fileStore) SavePushSubscription(ctx context.Context, sub model.PushSubscription) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub.UserID = uid
+	sub.CreatedAt = s.now()
+	subs := slices.DeleteFunc(s.d.PushSubscriptions, func(p model.PushSubscription) bool { return p.Endpoint == sub.Endpoint })
+	subs = append(subs, sub)
+	// Лишние подписки пользователя — самые старые, они в начале списка.
+	mine := 0
+	for _, p := range subs {
+		if p.UserID == uid {
+			mine++
+		}
+	}
+	subs = slices.DeleteFunc(subs, func(p model.PushSubscription) bool {
+		if p.UserID == uid && mine > MaxPushSubscriptions {
+			mine--
+			return true
+		}
+		return false
+	})
+	s.d.PushSubscriptions = subs
+	return s.save()
+}
+
+func (s *fileStore) DeletePushSubscription(ctx context.Context, endpoint string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := len(s.d.PushSubscriptions)
+	s.d.PushSubscriptions = slices.DeleteFunc(s.d.PushSubscriptions, func(p model.PushSubscription) bool {
+		return p.UserID == uid && p.Endpoint == endpoint
+	})
+	if len(s.d.PushSubscriptions) == before {
+		return nil
+	}
+	return s.save()
+}
+
+func (s *fileStore) PushSubscriptions(ctx context.Context) []model.PushSubscription {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.PushSubscription
+	for _, p := range s.d.PushSubscriptions {
+		if p.UserID == uid {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) PushUserIDs(context.Context) []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []int64
+	for _, p := range s.d.PushSubscriptions {
+		if !slices.Contains(out, p.UserID) {
+			out = append(out, p.UserID)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) NotifySettings(ctx context.Context) (model.NotifySettings, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.NotifySettings{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if ns, ok := s.d.NotifySettings[uid]; ok {
+		return ns, nil
+	}
+	return model.DefaultNotifySettings, nil
+}
+
+func (s *fileStore) SetNotifySettings(ctx context.Context, ns model.NotifySettings) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.NotifySettings == nil {
+		s.d.NotifySettings = map[int64]model.NotifySettings{}
+	}
+	s.d.NotifySettings[uid] = ns
+	return s.save()
+}
+
+func (s *fileStore) ClaimReminder(ctx context.Context, key string, now time.Time) (bool, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.SentReminders == nil {
+		s.d.SentReminders = map[string]time.Time{}
+	}
+	k := fmt.Sprintf("%d|%s", uid, key)
+	if _, sent := s.d.SentReminders[k]; sent {
+		return false, nil
+	}
+	for old, at := range s.d.SentReminders {
+		if now.Sub(at) > ReminderMemory {
+			delete(s.d.SentReminders, old)
+		}
+	}
+	s.d.SentReminders[k] = now
+	return true, s.save()
+}
+
+func (s *fileStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, z := range s.d.Snoozes {
+		if z.UserID == uid {
+			n++
+		}
+	}
+	if n >= MaxSnoozes {
+		return ErrLimit
+	}
+	s.d.NextSnoozeID++
+	s.d.Snoozes = append(s.d.Snoozes, model.Snooze{ID: s.d.NextSnoozeID, UserID: uid, At: at, Message: msg})
+	return s.save()
+}
+
+func (s *fileStore) TakeDueSnoozes(_ context.Context, now time.Time) []model.Snooze {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var due []model.Snooze
+	kept := s.d.Snoozes[:0]
+	for _, z := range s.d.Snoozes {
+		if z.At.After(now) {
+			kept = append(kept, z)
+		} else {
+			due = append(due, z)
+		}
+	}
+	if len(due) == 0 {
+		return nil
+	}
+	s.d.Snoozes = kept
+	if err := s.save(); err != nil {
+		return nil
+	}
+	return due
+}
+
+func (s *fileStore) ServerKey(_ context.Context, name string, gen func() (string, error)) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.d.ServerKeys[name]; ok {
+		return v, nil
+	}
+	v, err := gen()
+	if err != nil {
+		return "", err
+	}
+	if s.d.ServerKeys == nil {
+		s.d.ServerKeys = map[string]string{}
+	}
+	s.d.ServerKeys[name] = v
+	return v, s.save()
 }

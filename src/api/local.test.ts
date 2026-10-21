@@ -89,4 +89,33 @@ describe('local api', () => {
     await expect(api.createIntegration({ kind: 'ics', url: 'https://x/a.ics' })).rejects.toBeInstanceOf(ApiError)
     await expect(api.startOAuth('google')).rejects.toBeInstanceOf(ApiError)
   })
+
+  it('напоминания события: проверка, порядок, null — по умолчанию', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const e = await api.createEvent({ title: 'Врач', date: day, start: 900, end: 960, reminders: [10, 60, 10] })
+    expect(e.reminders).toEqual([60, 10])
+    expect((await api.createEvent({ title: 'Обед', date: day, start: 720, end: 780 })).reminders).toBeNull()
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 600, end: 660, reminders: [-5] }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect((await api.updateEvent(e.id, { reminders: [] })).reminders).toEqual([])
+    expect((await api.updateEvent(e.id, { title: 'Стоматолог' })).reminders).toEqual([])
+    expect((await api.updateEvent(e.id, { reminders: null })).reminders).toBeNull()
+    await expect(api.updateEvent(e.id, { reminders: [1, 2, 3, 4] })).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('уведомления: настройки хранятся, подписаться без сервера нельзя', async () => {
+    const storage = new MemoryStorage()
+    const api = createLocalApi(storage)
+    const info = await api.getPush()
+    expect(info).toEqual({ publicKey: null, settings: { eventReminder: 10, taskTime: 540, digest: -1 }, devices: 0 })
+    expect(await api.updateNotifySettings({ digest: 480 })).toMatchObject({ digest: 480, eventReminder: 10 })
+    await expect(api.updateNotifySettings({ taskTime: 1440 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.updateNotifySettings({ eventReminder: -2 })).rejects.toMatchObject({ status: 400 })
+    expect((await createLocalApi(storage).getPush()).settings.digest).toBe(480)
+    await expect(api.testPush()).rejects.toBeInstanceOf(ApiError)
+    await expect(
+      api.subscribePush({ endpoint: 'https://push.example/1', keys: { p256dh: 'x', auth: 'y' } }),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
 })

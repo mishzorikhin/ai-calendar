@@ -203,6 +203,8 @@ export interface Outbox {
   reload(): Promise<void>
   /** Сохранить токен сессии для повторов из service worker (localStorage ему недоступен). */
   setAuthToken(token: string | null): Promise<void>
+  /** Сохранённый токен сессии — для запросов из service worker (кнопки в уведомлениях). */
+  authToken(): Promise<string | null>
   /**
    * Чья это очередь. Вошёл другой пользователь — операции прошлого стираются: иначе
    * они уехали бы на сервер с его токеном, в чужой календарь. Выход (null) очередь
@@ -302,6 +304,7 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
     },
 
     setAuthToken: (token) => backend.setMeta(META_TOKEN, token),
+    authToken: () => backend.getMeta(META_TOKEN),
 
     async setOwner(userId, adopt = false) {
       if (userId === null || userId === owner) return

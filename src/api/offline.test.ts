@@ -43,6 +43,37 @@ describe('withOfflineQueue: мутации офлайн', () => {
     expect(ops[0]?.body).toMatchObject({ title: 'Новое', start: 600 })
   })
 
+  it('напоминания доезжают в очереди и видны офлайн; null — вернуть по умолчанию', async () => {
+    netDown()
+    const a = api()
+    const created = await a.createEvent({
+      title: 'Врач',
+      date: new Date(2026, 9, 21),
+      start: 900,
+      end: 960,
+      reminders: [60],
+    })
+    expect(created.reminders).toEqual([60])
+    await a.updateEvent('evt-1', { reminders: [] })
+    expect(outbox.list()[0]?.body).toMatchObject({ reminders: [60] })
+    expect(outbox.list()[1]?.body).toMatchObject({ reminders: [] })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json([
+          { id: 'evt-1', title: 'Звонок', start: 60, end: 90, badge: 'work', date: '2026-10-21', reminders: [10] },
+        ]),
+      ),
+    )
+    const events = await a.getEvents(new Date(2026, 9, 21))
+    expect(events.find((e) => e.id === 'evt-1')?.reminders).toEqual([])
+    expect(events.find((e) => e.title === 'Врач')?.reminders).toEqual([60])
+
+    netDown()
+    await a.updateEvent('evt-1', { reminders: null })
+    expect(outbox.list()[1]?.body).toMatchObject({ reminders: null })
+  })
+
   it('серверная ошибка 400 не складывается в очередь — пробрасывается', async () => {
     vi.stubGlobal(
       'fetch',

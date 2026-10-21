@@ -6,12 +6,14 @@ import {
   useMarkNotificationsRead,
   useMe,
   useNotifications,
+  usePush,
   useUpdateMe,
 } from '../../api/queries'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
-import { ArrowRightIcon, CalendarIcon, CloseIcon, UsersIcon } from '../../components/Icons'
+import { ArrowRightIcon, BellIcon, CalendarIcon, CloseIcon, UsersIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pressable } from '../../components/ui'
+import { reminderLabel } from '../../domain/reminders'
 import type { AppNotification } from '../../domain/types'
 import styles from './Home.module.css'
 
@@ -29,7 +31,15 @@ export function userInitials(user: { username: string; name: string }): string {
 }
 
 /** Шторка аккаунта: профиль, подключённые календари, уведомления о совместных задачах, выход. */
-export function AccountSheet({ onClose, onCalendars }: { onClose: () => void; onCalendars: () => void }) {
+export function AccountSheet({
+  onClose,
+  onCalendars,
+  onReminders,
+}: {
+  onClose: () => void
+  onCalendars: () => void
+  onReminders: () => void
+}) {
   const { data: me } = useMe()
   const session = useSession()
   const user = me ?? session?.user
@@ -40,6 +50,12 @@ export function AccountSheet({ onClose, onCalendars }: { onClose: () => void; on
   const { info } = useIntegrations()
   const calendarsSub =
     info.items.length > 0 ? info.items.map((i) => i.name).join(', ') : 'Google, Яндекс, iCloud, ссылка .ics'
+  const { data: push } = usePush()
+  const remindersSub = !push
+    ? 'Встречи, сроки задач, план на день'
+    : push.devices === 0
+      ? 'Выключены — включите на этом устройстве'
+      : `О встречах: ${reminderLabel(push.settings.eventReminder).toLowerCase()}`
 
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(user?.name ?? '')
@@ -119,6 +135,17 @@ export function AccountSheet({ onClose, onCalendars }: { onClose: () => void; on
         <span className={styles.settingsText}>
           <span className={styles.settingsTitle}>Календари</span>
           <span className={styles.settingsSub}>{calendarsSub}</span>
+        </span>
+        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+      </Pressable>
+
+      <Pressable className={styles.settingsRow} scale={0.98} onClick={onReminders}>
+        <span className={styles.settingsIcon}>
+          <BellIcon size={19} />
+        </span>
+        <span className={styles.settingsText}>
+          <span className={styles.settingsTitle}>Напоминания</span>
+          <span className={styles.settingsSub}>{remindersSub}</span>
         </span>
         <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
       </Pressable>

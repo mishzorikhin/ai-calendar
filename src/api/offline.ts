@@ -40,6 +40,10 @@ function eventBody(op: PendingOp): Record<string, unknown> {
   return op.body ?? {}
 }
 
+/** Напоминания из тела операции: список минут или null (по умолчанию). */
+const remindersOf = (v: unknown): number[] | null =>
+  Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : null
+
 function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: string): CalendarEvent[] {
   const list = base.map((e) => ({ ...e }))
   const findIdx = (id: string) => list.findIndex((e) => e.id === id)
@@ -56,6 +60,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           end: Number(body.end ?? 0),
           badge: (body.badge as CalendarEvent['badge']) ?? 'routine',
           highlight: true,
+          reminders: remindersOf(body.reminders),
         })
       }
     } else if (op.action === 'update') {
@@ -74,6 +79,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           start: typeof body.start === 'number' ? body.start : e.start,
           end: typeof body.end === 'number' ? body.end : e.end,
           badge: (body.badge as CalendarEvent['badge']) ?? e.badge,
+          reminders: 'reminders' in body ? remindersOf(body.reminders) : e.reminders,
         }
       }
     } else {
@@ -177,6 +183,7 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         badge: input.badge ?? 'routine',
         highlight: true,
         date: input.date,
+        reminders: input.reminders ?? null,
       }
     },
 

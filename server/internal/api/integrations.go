@@ -505,6 +505,10 @@ func (s *server) serveFeed(w http.ResponseWriter, r *http.Request) error {
 	now := s.cal.now()
 	from := now.In(loc).AddDate(0, 0, -feedPastDays).Format(time.DateOnly)
 	to := now.In(loc).AddDate(0, 0, syncFutureDays).Format(time.DateOnly)
+	ns, err := s.store.NotifySettings(ctx)
+	if err != nil {
+		return err
+	}
 	var comps []*calsync.Component
 	for _, e := range s.store.EventsBetween(ctx, from, to) {
 		if e.Source != "" {
@@ -518,7 +522,15 @@ func (s *server) serveFeed(w http.ResponseWriter, r *http.Request) error {
 		if stamp.IsZero() {
 			stamp = now
 		}
-		comps = append(comps, calsync.NewEventComponent(e.ID+"@ai-calendar", it, stamp))
+		ev := calsync.NewEventComponent(e.ID+"@ai-calendar", it, stamp)
+		reminders := e.Reminders
+		if reminders == nil && ns.EventReminder >= 0 {
+			reminders = []int{ns.EventReminder}
+		}
+		for _, m := range reminders {
+			ev.Children = append(ev.Children, calsync.NewAlarm(m, e.Title))
+		}
+		comps = append(comps, ev)
 	}
 	name := "AI Календарь"
 	if u.Name != "" {

@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -41,12 +42,15 @@ type Options struct {
 	ClosedRegistration bool
 	// Proxy — откуда брать адрес клиента для лимитов (TRUST_PROXY).
 	Proxy ProxyMode
+	// Push — уведомления Web Push и напоминания.
+	Push PushOptions
 }
 
 type server struct {
 	store   store.Store
 	llm     *llm.Client
 	cal     *calendars
+	push    *pushService
 	version string
 	limits  *limits
 	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
@@ -59,14 +63,27 @@ type server struct {
 // New собирает обработчик: /api/* — JSON API, остальное — SPA.
 // Публичны только health и вход/регистрация; данные — за Bearer-токеном.
 func New(opts Options) http.Handler {
+	return newServer(opts).handler(opts)
+}
+
+// newServer собирает сервер и запускает фоновые циклы (синхронизация календарей, напоминания).
+func newServer(opts Options) *server {
 	s := &server{
 		store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version,
 		limits: newLimits(), confirms: newConfirmations(),
 		closedRegistration: opts.ClosedRegistration, proxy: opts.Proxy,
 	}
+	s.push = newPushService(opts.Push, s.cal)
 	if bg := opts.Calendars.Background; bg != nil && opts.Calendars.SyncInterval > 0 {
 		go s.runSyncLoop(bg, opts.Calendars.SyncInterval)
 	}
+	if bg := opts.Push.Background; bg != nil && opts.Push.Interval > 0 {
+		go s.runPushLoop(bg, opts.Push.Interval)
+	}
+	return s
+}
+
+func (s *server) handler(opts Options) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /api/health", handlerFunc(s.health))
@@ -89,6 +106,12 @@ func New(opts Options) http.Handler {
 	mux.Handle("DELETE /api/tasks/{id}/members/{username}", s.authed(s.removeTaskMember))
 	mux.Handle("GET /api/notifications", s.authed(s.listNotifications))
 	mux.Handle("POST /api/notifications/read", s.authed(s.readNotifications))
+	mux.Handle("GET /api/push", s.authed(s.getPush))
+	mux.Handle("PATCH /api/push/settings", s.authed(s.updateNotifySettings))
+	mux.Handle("POST /api/push/subscriptions", s.authed(s.subscribePush))
+	mux.Handle("DELETE /api/push/subscriptions", s.authed(s.unsubscribePush))
+	mux.Handle("POST /api/push/test", s.authed(s.testPush))
+	mux.Handle("POST /api/push/snooze", s.authed(s.snoozePush))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
@@ -156,6 +179,28 @@ type eventInput struct {
 	Start    int         `json:"start"`
 	End      int         `json:"end"`
 	Badge    model.Badge `json:"badge"`
+	// Reminders — за сколько минут напомнить; нет поля или null — как в настройках, [] — не напоминать.
+	Reminders []int `json:"reminders"`
+}
+
+// validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
+func validateReminders(r []int) ([]int, error) {
+	if r == nil {
+		return nil, nil
+	}
+	out := slices.Clone(r)
+	slices.Sort(out)
+	out = slices.Compact(out)
+	if len(out) > model.MaxReminders {
+		return nil, badRequest("Не больше %d напоминаний у события", model.MaxReminders)
+	}
+	for _, m := range out {
+		if m < 0 || m > model.MaxReminderMinutes {
+			return nil, badRequest("Напоминание — от 0 до %d минут до начала", model.MaxReminderMinutes)
+		}
+	}
+	slices.Reverse(out)
+	return out, nil
 }
 
 func validateSubtitle(v string) error {
@@ -197,8 +242,13 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if !in.Badge.Valid() {
 		return badRequest("Неизвестный тип события: %q", in.Badge)
 	}
+	reminders, err := validateReminders(in.Reminders)
+	if err != nil {
+		return err
+	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
+		Reminders: reminders,
 	})
 	if err != nil {
 		return err
@@ -215,6 +265,24 @@ type eventPatchInput struct {
 	Start    *int         `json:"start"`
 	End      *int         `json:"end"`
 	Badge    *model.Badge `json:"badge"`
+	// Reminders: null — вернуть напоминание по умолчанию, [] — не напоминать.
+	Reminders json.RawMessage `json:"reminders"`
+}
+
+// remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
+func remindersPatch(raw json.RawMessage) (*[]int, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var r []int
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, badRequest("reminders — список минут до начала")
+	}
+	r, err := validateReminders(r)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
@@ -242,6 +310,10 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if in.Badge != nil && !in.Badge.Valid() {
 		return badRequest("Неизвестный тип события: %q", *in.Badge)
 	}
+	reminders, err := remindersPatch(in.Reminders)
+	if err != nil {
+		return err
+	}
 	id := r.PathValue("id")
 	current, err := s.store.Event(r.Context(), id)
 	if err != nil {
@@ -258,6 +330,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	}
 	patched, err := s.updateEventSynced(r.Context(), current, model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
+		Reminders: reminders,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {

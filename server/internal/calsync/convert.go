@@ -1,6 +1,7 @@
 package calsync
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -168,6 +169,20 @@ func applyItem(ev *Component, it Item, now time.Time) {
 	ev.Set(Prop{Name: "DTEND", Value: it.End.UTC().Format(icalUTC)})
 	ev.Set(Prop{Name: "DTSTAMP", Value: now.UTC().Format(icalUTC)})
 	ev.Set(Prop{Name: "LAST-MODIFIED", Value: now.UTC().Format(icalUTC)})
+}
+
+// NewAlarm — напоминание VALARM за minutes минут до начала: календарь телефона,
+// подписанный на ленту, может напомнить сам, без уведомлений приложения.
+func NewAlarm(minutes int, title string) *Component {
+	trigger := "PT0S"
+	if minutes > 0 {
+		trigger = fmt.Sprintf("-PT%dM", minutes)
+	}
+	return &Component{Name: "VALARM", Props: []Prop{
+		{Name: "ACTION", Value: "DISPLAY"},
+		{Name: "TRIGGER", Value: trigger},
+		{Name: "DESCRIPTION", Value: EscapeText(title)},
+	}}
 }
 
 // NewCalendar оборачивает события в VCALENDAR.

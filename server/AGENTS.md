@@ -26,13 +26,15 @@ internal/calsync/ внешние календари: ical.go (разбор/за�
                   с запретом внутренней сети), ics.go, caldav.go, oauth.go, google.go, outlook.go;
                   fakecal/ — поддельные CalDAV и Google/Graph для тестов
 internal/secret/  AES-GCM для паролей и токенов, HMAC-подпись OAuth state, ключ из SECRET_KEY или файла
+internal/webpush/ Web Push на stdlib: VAPID (ES256 JWT, RFC 8292), шифрование aes128gcm (RFC 8291), отправка через Doer
 internal/api/     http.go (ошибки, JSON, middleware), api.go (маршруты, события, задачи, лимиты),
                   auth.go (регистрация, вход, сессии, пояс), share.go (участники задач, @упоминания, уведомления),
                   chat.go (история, системный промпт, инструменты, их цикл, POST /api/chat,
                   подтверждение удалений ассистента согласием пользователя),
                   ratelimit.go (лимиты входа, регистрации и чата, адрес клиента), calendars.go (провайдеры, синхронизация, запись
                   событий во внешние календари, фоновый цикл), integrations.go (маршруты календарей,
-                  OAuth, лента .ics), spa.go (раздача UI)
+                  OAuth, лента .ics с VALARM), push.go (ключ VAPID, подписки, настройки, проверка, «отложить»,
+                  pushTo), reminders.go (фоновый цикл напоминаний, чистая planReminders), spa.go (раздача UI)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 
@@ -79,10 +81,26 @@ web/              embed.go + dist/ (собранный UI, в git только R
   отдельно проверяйте их конкурентное выполнение.
 - Тесты провайдеров и API — на `calsync/fakecal` (без сети); развёртку повторов покрывайте в `expand_test.go`.
 
+## Уведомления (`internal/webpush`, `api/push.go`, `api/reminders.go`)
+
+- Внешних аккаунтов нет: ключ VAPID — `VAPID_PRIVATE_KEY` или `store.ServerKey("vapid", webpush.GenerateKey)` (создаётся
+  один раз и хранится в хранилище). Не меняйте имя ключа и формат: новый ключ отключает все подписки.
+- Отправка — только через `s.pushTo` (все устройства пользователя из контекста) или `s.pushToUser` (другому, в фоне).
+  Ответ 404/410 сервиса доставки удаляет подписку; прочие ошибки — в лог **без адреса подписки** (только хост,
+  `hostOnly`). Запросы идут через `calsync.Net` (запрет внутренней сети); адрес подписки — только https
+  (http — лишь с `CALENDAR_ALLOW_PRIVATE`, для тестов). Ключи подписки проверяет `Subscription.Validate`.
+- Напоминания вычисляет чистая `planReminders(loc, settings, events, tasks, from, to)`: окно `(now−10 мин, now]`,
+  ключ отметки включает дату, время и смещение — перенос события даёт новое напоминание. Правила (что и когда шлём)
+  меняйте там и покрывайте `TestPlanReminders`; доставку — `TestRemindAll` с поддельным сервисом (`fakeDevice`).
+- `Event.Reminders`: `nil` — по настройкам, `[]` — без напоминаний; синхронизация календарей их не трогает (`mergeSynced`),
+  правка только напоминаний (`EventPatch.OnlyReminders`) разрешена у `ReadOnly` и не уходит во внешний календарь.
+- Содержимое push — `model.PushMessage` (поля ↔ `src/pwa/pushMessage.ts`). `URL` — только путь приложения
+  (`validPushMessage` для «отложить»).
+
 ## Ассистент (`internal/llm`)
 
 - Инструменты описаны и исполняются в `internal/api/chat.go`: `get_day_schedule`, `find_free_slots`, `create_event`, `update_event`, `delete_event`,
-  `list_tasks`, `create_task`, `update_task`, `delete_task`, `list_users`. Они вызывают то же хранилище
+  `list_tasks`, `create_task`, `update_task`, `delete_task`, `list_users`. У `create_event`/`update_event` есть `reminders`. Они вызывают то же хранилище
   с тем же контекстом пользователя, что и обычные хендлеры, и обязаны проходить ту же валидацию;
   `internal/llm` отвечает за HTTP-клиент и один раунд модели; цикл инструментов — в `api/chat.go`.
 - Удаления требуют явного подтверждения по системному промпту; не ослабляйте это требование.
@@ -121,7 +139,7 @@ web/              embed.go + dist/ (собранный UI, в git только R
 - Файловое: все изменения под `s.mu.Lock()`, затем `s.save()` (при ошибке записи — `rollback`); чтения под
   `RLock` и возвращают копии (`slices.Clone`).
 - PostgreSQL: таблицы `users`, `sessions`, `events`, `messages`, `tasks`, `task_members`, `notifications`,
-  `integrations` создаёт миграция при старте; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
+  `integrations`, `push_subscriptions`, `notify_settings`, `sent_reminders`, `snoozes`, `server_keys` создаёт миграция при старте; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
   Тест — `TEST_DATABASE_URL=… go test -race ./internal/store -run TestPostgres -count=1`
   (без переменной пропускается). `mustWipe` выполняет `TRUNCATE … RESTART IDENTITY`: только отдельная
   одноразовая тестовая БД, никогда рабочая. Не подставляйте продакшен `DATABASE_URL` в тестовую переменную.

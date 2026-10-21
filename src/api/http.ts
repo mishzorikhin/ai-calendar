@@ -7,6 +7,8 @@ import type {
   DatedEvent,
   Integration,
   IntegrationsInfo,
+  NotifySettings,
+  PushInfo,
   Task,
   User,
 } from '../domain/types'
@@ -200,6 +202,16 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
       return absolute(baseUrl, (await post<{ path: string }>('/api/feed', {})).path)
     },
     disableFeed: () => request<void>('/api/feed', { method: 'DELETE' }),
+
+    getPush: () => request<PushInfo>('/api/push'),
+    updateNotifySettings: (patch) =>
+      request<NotifySettings>('/api/push/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
+    subscribePush: (sub) => post<void>('/api/push/subscriptions', sub),
+    unsubscribePush: (endpoint) =>
+      request<void>('/api/push/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
+    async testPush() {
+      return (await post<{ sent: number }>('/api/push/test', {})).sent
+    },
   }
 }
 

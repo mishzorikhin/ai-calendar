@@ -199,7 +199,8 @@ func mustWipe(ctx context.Context, t *testing.T, s Store) {
 	t.Helper()
 	pg := s.(*pgStore)
 	for _, stmt := range []string{
-		`TRUNCATE events, messages, tasks, task_members, users, sessions, notifications, integrations RESTART IDENTITY`,
+		`TRUNCATE events, messages, tasks, task_members, users, sessions, notifications, integrations,
+			push_subscriptions, notify_settings, sent_reminders, snoozes, server_keys RESTART IDENTITY`,
 		`SELECT setval('event_id_seq', 1, FALSE)`,
 		`SELECT setval('task_id_seq', 1, FALSE)`,
 		`SELECT setval('integration_id_seq', 1, FALSE)`,
