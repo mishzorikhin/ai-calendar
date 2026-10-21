@@ -22,6 +22,20 @@ describe('уведомление из push', () => {
     expect(notificationOptions(msg)).toMatchObject({ body: 'Срок сегодня', tag: 'task:tsk-1', data: msg })
   })
 
+  it('вибрация и повторный сигнал', () => {
+    const now = notificationOptions(
+      parsePushMessage({ kind: 'event', title: 'x', body: 'Сейчас · 10:00–11:00', tag: 'event:1' }),
+    )
+    expect(now).toMatchObject({ vibrate: [200, 100, 200, 100, 200], renotify: true, requireInteraction: true })
+    const soon = notificationOptions(
+      parsePushMessage({ kind: 'event', title: 'x', body: 'Через 10 минут', tag: 'event:1' }),
+    )
+    expect(soon.requireInteraction).toBe(false)
+    // Без тега renotify браузер не принимает.
+    const untagged = notificationOptions(parsePushMessage({ kind: 'digest', title: 'x' }))
+    expect(untagged).toMatchObject({ vibrate: [120], renotify: false })
+  })
+
   it('битое сообщение всё равно показывается, чужие адреса не открываются', () => {
     expect(parsePushMessage(null)).toEqual({ kind: 'test', title: 'AI Календарь', url: '/' })
     expect(parsePushMessage({ kind: 'spam', title: 5, url: 'https://evil.example' })).toMatchObject({

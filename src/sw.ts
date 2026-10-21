@@ -17,6 +17,7 @@ import {
   SNOOZE_MINUTES,
   snoozedMessage,
   type PushMessage,
+  type ShowOptions,
 } from './pwa/pushMessage'
 
 // В tsconfig нет lib WebWorker (конфликтовал бы с DOM) — описываем нужный минимум сами.
@@ -61,7 +62,7 @@ interface SwScope {
   registration: {
     showNotification(
       title: string,
-      options?: NotificationOptions & { actions?: { action: string; title: string }[] },
+      options?: ShowOptions & { actions?: { action: string; title: string }[] },
     ): Promise<void>
     pushManager: PushManager
   }

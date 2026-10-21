@@ -40,8 +40,30 @@ export function parsePushMessage(raw: unknown): PushMessage {
   }
 }
 
+/**
+ * Параметры showNotification сверх стандартных типов TS: вибрация, повторный сигнал
+ * и «не убирать само» есть в браузерах, но не в lib.dom.
+ */
+export type ShowOptions = NotificationOptions & {
+  vibrate?: number[]
+  renotify?: boolean
+  requireInteraction?: boolean
+}
+
+/**
+ * Рисунок вибрации (мс: вибрация, пауза, вибрация…). Встреча — заметнее, остальное — коротко.
+ * Работает на Android; iPhone вибрирует по системным настройкам звуков и не даёт задать рисунок.
+ */
+export const VIBRATION: Record<PushKind, number[]> = {
+  event: [200, 100, 200, 100, 200],
+  task: [200, 100, 200],
+  digest: [120],
+  share: [120, 80, 120],
+  test: [200, 100, 200],
+}
+
 /** Параметры showNotification: иконки берутся из сборки рядом с service worker. */
-export function notificationOptions(msg: PushMessage): NotificationOptions {
+export function notificationOptions(msg: PushMessage): ShowOptions {
   return {
     body: msg.body,
     tag: msg.tag,
@@ -49,6 +71,11 @@ export function notificationOptions(msg: PushMessage): NotificationOptions {
     icon: 'icon-192.png',
     badge: 'icon-192.png',
     lang: 'ru',
+    vibrate: VIBRATION[msg.kind],
+    // Новое уведомление с тем же тегом (отложенное, перенос встречи) вибрирует снова, а не заменяет старое молча.
+    renotify: msg.tag !== undefined,
+    // Встреча «сейчас» висит на экране компьютера, пока её не закроют.
+    requireInteraction: msg.kind === 'event' && msg.body?.startsWith('Сейчас') === true,
   }
 }
 
