@@ -14,7 +14,7 @@ if [[ ! -d node_modules || package-lock.json -nt node_modules/.package-lock.json
   npm ci --no-audit --no-fund --loglevel=error >&2
 fi
 
-# Go-модули (сейчас зависимостей нет, команда быстрая и безопасна при их появлении).
+# Go-модули бэкенда, включая pgx/v5 для PostgreSQL (см. server/go.mod).
 if command -v go >/dev/null 2>&1; then
   (cd server && go mod download) >&2
 fi
