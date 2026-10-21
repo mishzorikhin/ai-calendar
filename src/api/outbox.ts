@@ -30,6 +30,8 @@ export type PendingOp = {
    */
   dedupe?: { path: string; match: readonly string[] }
   at: number
+  /** id пользователя, сделавшего правку: повтор идёт только от его имени. Нет — операция старой версии. */
+  owner?: string
 }
 
 /** Хранилище очереди: IndexedDB в браузере/worker, память — в тестах. */
@@ -45,6 +47,8 @@ export interface OutboxBackend {
   /** Мелкие метаданные очереди (токен сессии): общие для страницы и service worker. */
   getMeta(key: string): Promise<string | null>
   setMeta(key: string, value: string | null): Promise<void>
+  /** Стереть операции и привязки id (метаданные остаются). */
+  clear(): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +80,11 @@ export function createMemoryBackend(): OutboxBackend {
     resolveId: (id) => Promise.resolve(idmap.get(id) ?? id),
     getMeta: (k) => Promise.resolve(meta.get(k) ?? null),
     setMeta: (k, v) => (v === null ? meta.delete(k) : meta.set(k, v), Promise.resolve()),
+    clear() {
+      ops.splice(0)
+      idmap.clear()
+      return Promise.resolve()
+    },
   }
 }
 
@@ -167,6 +176,12 @@ export function createIdbBackend(dbName = DB_NAME): OutboxBackend {
       else tx.objectStore(META_STORE).put({ k: key, v: value })
       await txDone(tx)
     },
+    async clear() {
+      const tx = (await db()).transaction([OPS_STORE, IDS_STORE], 'readwrite')
+      tx.objectStore(OPS_STORE).clear()
+      tx.objectStore(IDS_STORE).clear()
+      await txDone(tx)
+    },
   }
 }
 
@@ -188,6 +203,14 @@ export interface Outbox {
   reload(): Promise<void>
   /** Сохранить токен сессии для повторов из service worker (localStorage ему недоступен). */
   setAuthToken(token: string | null): Promise<void>
+  /**
+   * Чья это очередь. Вошёл другой пользователь — операции прошлого стираются: иначе
+   * они уехали бы на сервер с его токеном, в чужой календарь. Выход (null) очередь
+   * не трогает — тот же человек войдёт снова и доиграет свои правки.
+   * adopt — операции без владельца (от версии до этой правки) достаются ему, а не стираются:
+   * так делают только при запуске с уже открытой сессией — правки почти наверняка её.
+   */
+  setOwner(userId: string | null, adopt?: boolean): Promise<void>
   subscribe(fn: () => void): () => void
 }
 
@@ -196,7 +219,10 @@ class DropOp extends Error {}
 
 export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
   let ops = await backend.list()
+  let owner = await backend.getMeta(META_OWNER)
   let flushing = false
+  /** Операция, которая сейчас летит на сервер: дописывать в неё и снимать её нельзя. */
+  let inFlight: PendingOp | null = null
   const listeners = new Set<() => void>()
   const emit = () => listeners.forEach((fn) => fn())
 
@@ -219,7 +245,7 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
     async enqueue(op) {
       // Правка неотправленного create или прошлой правки — дописываем поля в её тело.
       if (op.action === 'update' && op.body) {
-        const target = ops.find((o) => o.action !== 'delete' && sameTarget(o, op.entity, op.entityId))
+        const target = ops.find((o) => o !== inFlight && o.action !== 'delete' && sameTarget(o, op.entity, op.entityId))
         if (target) {
           await mergeUpdate(target, op.body)
           emit()
@@ -227,15 +253,16 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
         }
       }
       // Удаление снимает правки; если сущность ещё не уезжала на сервер — отменяет и создание.
+      // Летящий create остаётся: он дойдёт до сервера, и удаление должно пойти следом.
       if (op.action === 'delete') {
-        const pending = ops.filter((o) => sameTarget(o, op.entity, op.entityId))
+        const pending = ops.filter((o) => o !== inFlight && sameTarget(o, op.entity, op.entityId))
         for (const p of pending) await removeOp(p)
         if (pending.some((o) => o.action === 'create')) {
           emit()
           return
         }
       }
-      const stored = await backend.add(op)
+      const stored = await backend.add({ ...op, owner: op.owner ?? owner ?? undefined })
       ops = [...ops, stored]
       emit()
     },
@@ -244,13 +271,18 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
       if (flushing) return { synced: 0, dropped: 0, remaining: ops.length }
       flushing = true
       const result: FlushResult = { synced: 0, dropped: 0, remaining: 0 }
-      // Токен на весь обход: живой getter страницы или сохранённый в метаданных (service worker).
-      const token = (await getToken?.()) ?? (await backend.getMeta(META_TOKEN))
+      // Сессия на весь обход: живая со страницы или сохранённая в метаданных (service worker).
+      const live = await getCredentials?.()
+      const token = live?.token ?? (await backend.getMeta(META_TOKEN))
+      const user = live?.userId ?? (await backend.getMeta(META_OWNER))
       try {
         for (;;) {
           const op = ops[0]
           if (!op) break
-          const outcome = await replay(op, backend, baseUrl, token)
+          // Чужая операция (вход сменился, а setOwner ещё не стёр очередь) с этим токеном не уходит.
+          if (user !== null && (op.owner ?? owner) !== user) break
+          inFlight = op
+          const outcome = await replay(op, backend, baseUrl, token).finally(() => (inFlight = null))
           if (outcome === 'retry') break
           await removeOp(op)
           if (outcome === 'done') result.synced++
@@ -271,6 +303,21 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
 
     setAuthToken: (token) => backend.setMeta(META_TOKEN, token),
 
+    async setOwner(userId, adopt = false) {
+      if (userId === null || userId === owner) return
+      // Источник правды — IndexedDB: её делят вкладки, и другая могла уже сменить владельца.
+      const stored = await backend.getMeta(META_OWNER)
+      owner = userId
+      if (stored === userId) {
+        ops = await backend.list()
+      } else if (!(stored === null && adopt)) {
+        ops = []
+        await backend.clear()
+      }
+      emit()
+      if (stored !== userId) await backend.setMeta(META_OWNER, userId)
+    },
+
     subscribe(fn) {
       listeners.add(fn)
       return () => listeners.delete(fn)
@@ -288,11 +335,14 @@ type Outcome = 'done' | 'drop' | 'retry'
 // а для service worker сессия дополнительно пишется в метаданные очереди —
 // localStorage в worker-контексте недоступен, IndexedDB у них общий.
 const META_TOKEN = 'authToken'
-let getToken: (() => string | null | undefined | Promise<string | null | undefined>) | null = null
+/** id пользователя, чьи операции лежат в очереди. */
+const META_OWNER = 'owner'
+type Credentials = { token: string; userId: string } | null | undefined
+let getCredentials: (() => Credentials | Promise<Credentials>) | null = null
 
-/** Подключить источник токена — вызывает приложение один раз при старте. */
-export function setAuthTokenGetter(fn: () => string | null | undefined | Promise<string | null | undefined>): void {
-  getToken = fn
+/** Подключить источник сессии (токен и id пользователя) — вызывает приложение один раз при старте. */
+export function setCredentialsGetter(fn: () => Credentials | Promise<Credentials>): void {
+  getCredentials = fn
 }
 
 async function send(

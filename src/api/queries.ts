@@ -357,29 +357,6 @@ export function useMessages() {
   return query.data ?? NO_MESSAGES
 }
 
-/** Сообщение сразу появляется в чате (оптимистично), затем заменяется ответом сервера. */
-export function useAddMessage() {
-  const api = useApi()
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ role, text }: Pick<ChatMessage, 'role' | 'text'>) => api.addMessage(role, text),
-    onMutate: async ({ role, text }) => {
-      await qc.cancelQueries({ queryKey: keys.messages })
-      const previous = qc.getQueryData<ChatMessage[]>(keys.messages)
-      qc.setQueryData<ChatMessage[]>(keys.messages, (list = []) => [
-        ...list,
-        { id: (list.at(-1)?.id ?? 0) + 1, role, text },
-      ])
-      return { previous }
-    },
-    // Если кэша до отправки не было, откатывать нечего: onSettled всё равно перечитает историю с сервера.
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(keys.messages, ctx.previous)
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.messages }),
-  })
-}
-
 /** Вызов инструмента в ходе ответа ассистента. date — день, к которому он относится. */
 export type ChatToolRun = { name: string; done: boolean; detail?: string; date?: string }
 
@@ -392,8 +369,11 @@ export type ChatStream = {
   error: string | null
 }
 
-/** Сообщение, которое не ушло до сервера: живёт локально, пока его не повторят или не сотрут. */
-export type FailedMessage = { id: number; text: string; error: string }
+/**
+ * Сообщение, на которое не пришёл ответ: живёт локально, пока его не повторят или не сотрут.
+ * delivered — сервер реплику получил (она уже в истории), оборвался только ответ.
+ */
+export type FailedMessage = { id: number; text: string; error: string; delivered: boolean }
 
 /**
  * Отправка сообщения ассистенту. Пузырь пользователя добавляем оптимистично —
@@ -401,17 +381,24 @@ export type FailedMessage = { id: number; text: string; error: string }
  * по завершении история и календарь обновляются с сервера.
  * При ошибке пузырь не пропадает молча: он переезжает в `failed` —
  * заметный, с текстом ошибки и возможностью отправить заново.
+ * Пока ответ идёт, новая отправка игнорируется; уход из чата прерывает чтение ответа
+ * (сервер всё равно доведёт и сохранит его).
  */
 export function useSendChat() {
   const api = useApi()
   const qc = useQueryClient()
   const [stream, setStream] = useState<ChatStream | null>(null)
   const [failed, setFailed] = useState<FailedMessage[]>([])
+  const active = useRef<AbortController | null>(null)
+
+  useEffect(() => () => active.current?.abort(), [])
 
   const send = useCallback(
     async (text: string) => {
       const value = text.trim()
-      if (!value) return
+      if (!value || active.current) return
+      const ctl = new AbortController()
+      active.current = ctl
       setFailed((list) => list.filter((m) => m.text !== value))
       qc.setQueryData<ChatMessage[]>(keys.messages, (list = []) => [
         ...list,
@@ -419,44 +406,57 @@ export function useSendChat() {
       ])
       setStream({ text: '', tools: [], done: false, error: null })
       let error: string | null = null
+      let delivered = false
       try {
-        await api.sendChat(value, (e) => {
-          if (e.type === 'delta') {
-            setStream((s) => s && { ...s, text: s.text + e.text })
-          } else if (e.type === 'tool') {
-            setStream((s) => {
-              if (!s) return s
-              if (e.status === 'run') return { ...s, tools: [...s.tools, { name: e.name, done: false }] }
-              // done закрывает последний ещё идущий вызов с этим именем.
-              const tools = [...s.tools]
-              for (let i = tools.length - 1; i >= 0; i--) {
-                const t = tools[i]
-                if (t && !t.done && t.name === e.name) {
-                  tools[i] = { ...t, done: true, detail: e.detail, date: e.date }
-                  break
+        await api.sendChat(
+          value,
+          (e) => {
+            if (e.type === 'open') {
+              delivered = true
+            } else if (e.type === 'delta') {
+              setStream((s) => s && { ...s, text: s.text + e.text })
+            } else if (e.type === 'tool') {
+              setStream((s) => {
+                if (!s) return s
+                if (e.status === 'run') return { ...s, tools: [...s.tools, { name: e.name, done: false }] }
+                // done закрывает последний ещё идущий вызов с этим именем.
+                const tools = [...s.tools]
+                for (let i = tools.length - 1; i >= 0; i--) {
+                  const t = tools[i]
+                  if (t && !t.done && t.name === e.name) {
+                    tools[i] = { ...t, done: true, detail: e.detail, date: e.date }
+                    break
+                  }
                 }
-              }
-              return { ...s, tools }
-            })
-          } else if (e.type === 'error') {
-            error = e.message
-            setStream((s) => s && { ...s, done: true, error: e.message })
-          }
-        })
+                return { ...s, tools }
+              })
+            } else if (e.type === 'error') {
+              error = e.message
+              setStream((s) => s && { ...s, done: true, error: e.message })
+            }
+          },
+          ctl.signal,
+        )
       } catch (err) {
         error = apiErrorText(err)
       }
       // На сервере уже лежат сохранённые реплики и изменения инструментов.
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: keys.messages }),
-        qc.invalidateQueries({ queryKey: keys.allEvents }),
-        qc.invalidateQueries({ queryKey: keys.allMonths }),
-        qc.invalidateQueries({ queryKey: keys.tasks }),
-      ])
+      // Отправка занята до конца: пока история не перечитана, новый поток стёр бы этот.
+      try {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: keys.messages }),
+          qc.invalidateQueries({ queryKey: keys.allEvents }),
+          qc.invalidateQueries({ queryKey: keys.allMonths }),
+          qc.invalidateQueries({ queryKey: keys.tasks }),
+        ])
+      } finally {
+        active.current = null
+      }
+      if (ctl.signal.aborted) return
       setStream(null)
       if (error) {
         const message = error
-        setFailed((list) => [...list, { id: Date.now(), text: value, error: message }])
+        setFailed((list) => [...list, { id: Date.now(), text: value, error: message, delivered }])
       }
     },
     [api, qc],
@@ -466,7 +466,9 @@ export function useSendChat() {
     setFailed((list) => list.filter((m) => m.id !== id))
   }, [])
 
-  return { stream, send, failed, dismissFailed }
+  /** Ответ ещё идёт или история перечитывается — отправлять новое нельзя. */
+  const busy = stream !== null
+  return { stream, busy, send, failed, dismissFailed }
 }
 
 // --- Внешние календари ------------------------------------------------------

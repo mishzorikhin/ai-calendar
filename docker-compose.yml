@@ -16,6 +16,10 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.neuraldeep.ru/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.6-unlim-noreason}
+      # closed — регистрация только для первого аккаунта. TRUST_PROXY: пусто — X-Forwarded-For
+      # от прокси из своей сети, 1 — всегда (прокси снаружи), 0 — никогда.
+      REGISTRATION: ${REGISTRATION:-open}
+      TRUST_PROXY: ${TRUST_PROXY:-}
       # Внешние календари (см. README, «Внешние календари»). Ключ шифрования по умолчанию
       # лежит в томе data (secret.key) и переживает пересборку.
       SECRET_KEY: ${SECRET_KEY:-}

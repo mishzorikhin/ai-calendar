@@ -277,13 +277,18 @@ function MembersField({
           </span>
         ))}
       </div>
-      <div className={styles.memberInputWrap}>
+      {/* Подсказки открыты, пока фокус внутри поля или списка: уход Tab-ом к варианту их не закрывает. */}
+      <div
+        className={styles.memberInputWrap}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) setFocused(false)
+        }}
+      >
         <input
           className={styles.tagInput}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
           onKeyDown={(e) => {
             const first = suggestions[0]
             if (e.key === 'Enter' && first) {
@@ -300,7 +305,8 @@ function MembersField({
           enterKeyHint="done"
         />
         {focused && suggestions.length > 0 && (
-          <ul className={styles.memberDrop} role="listbox">
+          // mousedown не забирает фокус у поля (Safari не фокусирует кнопки по клику) — выбор успевает сработать.
+          <ul className={styles.memberDrop} role="listbox" onMouseDown={(e) => e.preventDefault()}>
             {suggestions.map((u) => (
               <li key={u.id}>
                 <Pressable className={styles.memberOption} onClick={() => add(u)} role="option" aria-selected="false">

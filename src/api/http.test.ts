@@ -43,9 +43,40 @@ describe('http api', () => {
     vi.stubGlobal('fetch', fetch)
     const events: ChatEvent[] = []
     await createHttpApi().sendChat('привет', (e) => events.push(e))
-    expect(events.map((e) => e.type)).toEqual(['delta', 'tool', 'delta', 'done'])
+    expect(events.map((e) => e.type)).toEqual(['open', 'delta', 'tool', 'delta', 'done'])
     expect(events.flatMap((e) => (e.type === 'delta' ? [e.text] : [])).join('')).toBe('Привет')
     expect(fetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('обрыв потока после приёма — ошибка «связь оборвалась», а не «не отправлено»', async () => {
+    let reads = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (reads++ === 0) c.enqueue(new TextEncoder().encode('data: {"type":"delta","text":"Нач"}\n\n'))
+        else c.error(new TypeError('network'))
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status: 200 })),
+    )
+    const events: ChatEvent[] = []
+    await expect(createHttpApi().sendChat('x', (e) => events.push(e))).rejects.toEqual(
+      new ApiError(0, 'Связь оборвалась во время ответа'),
+    )
+    expect(events.map((e) => e.type)).toEqual(['open', 'delta'])
+  })
+
+  it('отмена чтения чата (ушли с экрана) — без ошибки', async () => {
+    const ctl = new AbortController()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        ctl.abort()
+        throw new DOMException('aborted', 'AbortError')
+      }),
+    )
+    await expect(createHttpApi().sendChat('x', () => {}, ctl.signal)).resolves.toBeUndefined()
   })
 
   it('ошибка чата приходит как ApiError', async () => {

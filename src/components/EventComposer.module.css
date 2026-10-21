@@ -159,7 +159,7 @@
 .error {
   margin: 0 0 8px;
   font-size: 13px;
-  color: #b42318;
+  color: var(--danger-ink);
 }
 
 .subtitle {
@@ -190,7 +190,7 @@
   height: 44px;
   padding: 0 16px;
   font-size: 14.5px;
-  color: #b42318;
+  color: var(--danger-ink);
 }
 
 .deleteSure {

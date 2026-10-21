@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +97,7 @@ func TestAuthRequired(t *testing.T) {
 		}
 	}
 	for _, p := range [][2]string{
-		{"POST", "/api/events"}, {"POST", "/api/tasks"}, {"POST", "/api/messages"}, {"POST", "/api/chat"},
+		{"POST", "/api/events"}, {"POST", "/api/tasks"}, {"POST", "/api/chat"},
 	} {
 		if rec := do(t, h, p[0], p[1], `{}`); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s без токена: %d, ждали 401", p[0], p[1], rec.Code)
@@ -118,7 +120,7 @@ func TestDataIsolation(t *testing.T) {
 	// Алиса создала событие, задачу и сообщение — у Боба всё пусто.
 	doAs(t, h, alice, "POST", "/api/events", `{"date":"2026-10-20","title":"Встреча","start":600,"end":660}`)
 	doAs(t, h, alice, "POST", "/api/tasks", `{"title":"Личное"}`)
-	doAs(t, h, alice, "POST", "/api/messages", `{"role":"user","text":"только моё"}`)
+	doAs(t, h, alice, "POST", "/api/chat", `{"text":"только моё"}`)
 
 	if got := decode[[]model.Event](t, doAs(t, h, bob, "GET", "/api/events?date=2026-10-20", "")); len(got) != 0 {
 		t.Fatalf("чужие события у Боба: %+v", got)
@@ -478,5 +480,89 @@ func TestMentionsEdgeCases(t *testing.T) {
 	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино с @bob"}`))
 	if len(got.Members) != 1 {
 		t.Fatalf("новое приглашение после выхода: %+v", got.Members)
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	h, _ := newAuthedServer(t)
+	var last *httptest.ResponseRecorder
+	// Перебор пароля одного аккаунта упирается в лимит, даже с верным паролем в конце.
+	for range 10 {
+		do(t, h, "POST", "/api/auth/login", `{"username":"alice","password":"wrong1"}`)
+	}
+	last = do(t, h, "POST", "/api/auth/login", `{"username":"alice","password":"secret1"}`)
+	if last.Code != http.StatusTooManyRequests || last.Header().Get("Retry-After") == "" {
+		t.Fatalf("11-я попытка: %d %v", last.Code, last.Header())
+	}
+	// Другой аккаунт с того же адреса пока пускают.
+	if rec := do(t, h, "POST", "/api/auth/login", `{"username":"bob","password":"x12345"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("чужой аккаунт: %d", rec.Code)
+	}
+}
+
+func TestClosedRegistration(t *testing.T) {
+	st, _ := store.Open("")
+	h := New(Options{Store: st, ClosedRegistration: true})
+	// Первый аккаунт — владелец сервера — создаётся и при закрытой регистрации.
+	register(t, h, "owner")
+	if rec := do(t, h, "POST", "/api/auth/register", `{"username":"guest","password":"secret1"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("второй аккаунт: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	req := func(remote string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.7")
+		return r
+	}
+	for _, c := range []struct {
+		remote string
+		mode   ProxyMode
+		want   string
+	}{
+		// Сосед из внутренней сети — свой прокси: берём адрес, который дописал он (последний).
+		{"10.0.0.5:4321", ProxyAuto, "203.0.113.7"},
+		{"127.0.0.1:4321", ProxyAuto, "203.0.113.7"},
+		// Напрямую из интернета заголовок подделывается — не верим.
+		{"198.51.100.9:4321", ProxyAuto, "198.51.100.9"},
+		{"198.51.100.9:4321", ProxyTrust, "203.0.113.7"},
+		{"10.0.0.5:4321", ProxyNone, "10.0.0.5"},
+	} {
+		if got := clientIP(req(c.remote), c.mode); got != c.want {
+			t.Errorf("%s режим %d: %s, ждали %s", c.remote, c.mode, got, c.want)
+		}
+	}
+}
+
+func TestLoginLimitDoesNotLockOutOwner(t *testing.T) {
+	h, _ := newAuthedServer(t)
+	login := func(remote, password string) int {
+		r := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"username":"alice","password":"`+password+`"}`))
+		r.RemoteAddr = remote
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec.Code
+	}
+	for range 15 {
+		login("198.51.100.66:1000", "wrong12")
+	}
+	if code := login("198.51.100.66:1000", "secret1"); code != http.StatusTooManyRequests {
+		t.Fatalf("перебор с одного адреса: %d", code)
+	}
+	// Хозяйка аккаунта с другого адреса входит, как будто атаки нет.
+	if code := login("203.0.113.5:2000", "secret1"); code != http.StatusOK {
+		t.Fatalf("вход хозяйки с её адреса: %d", code)
+	}
+}
+
+func TestLimiterPruneBounded(t *testing.T) {
+	l := newLimiter(2, time.Hour)
+	for i := range limiterMaxKeys + 500 {
+		l.allow(strconv.Itoa(i))
+	}
+	if n := len(l.buckets); n > limiterMaxKeys {
+		t.Fatalf("вёдер: %d, предел %d", n, limiterMaxKeys)
 	}
 }

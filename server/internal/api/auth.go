@@ -174,6 +174,18 @@ func (s *server) issueSession(r *http.Request, u model.User) (map[string]any, er
 	return map[string]any{"user": publicUser(u), "token": token}, nil
 }
 
+// withHashSlot ограничивает число одновременных PBKDF2 — поток входов не займёт весь CPU.
+func (s *server) withHashSlot(r *http.Request, fn func()) error {
+	select {
+	case s.limits.hashing <- struct{}{}:
+		defer func() { <-s.limits.hashing }()
+		fn()
+		return nil
+	case <-r.Context().Done():
+		return r.Context().Err()
+	}
+}
+
 func (s *server) register(w http.ResponseWriter, r *http.Request) error {
 	var in authInput
 	if err := readJSON(w, r, &in); err != nil {
@@ -182,7 +194,24 @@ func (s *server) register(w http.ResponseWriter, r *http.Request) error {
 	if err := in.validate(true); err != nil {
 		return err
 	}
-	hash, err := hashPassword(in.Password)
+	if s.closedRegistration {
+		// Ошибка подсчёта — тоже отказ: закрытая регистрация не должна открываться от сбоя базы.
+		n, err := s.store.UserCount(r.Context())
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return &apiError{Status: http.StatusForbidden, Message: "Регистрация на этом сервере закрыта"}
+		}
+	}
+	if ok, wait := s.limits.register.allow(s.clientIP(r)); !ok {
+		return tooMany(w, wait)
+	}
+	var hash string
+	var err error
+	if slotErr := s.withHashSlot(r, func() { hash, err = hashPassword(in.Password) }); slotErr != nil {
+		return slotErr
+	}
 	if err != nil {
 		return err
 	}
@@ -207,13 +236,30 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in.Username = strings.ToLower(strings.TrimSpace(in.Username))
-	u, err := s.store.UserByUsername(r.Context(), in.Username)
-	if err != nil {
-		// Гоним PBKDF2 и для несуществующего логина: ответ «всегда 401 через ~время хэша».
-		checkPassword(in.Password, dummyHash)
+	// Такого логина не может существовать — отвечаем сразу, не тратя хэш и место в лимитах.
+	if !usernameRe.MatchString(in.Username) {
 		return &apiError{Status: http.StatusUnauthorized, Message: "Неверное имя или пароль"}
 	}
-	if !checkPassword(in.Password, u.PassHash) {
+	// Лимит на адрес (перебор логинов) и на пару «аккаунт + адрес» (перебор пароля). Ключ по
+	// одному логину дал бы кому угодно запереть чужой аккаунт потоком неверных паролей.
+	ip := s.clientIP(r)
+	if ok, wait := s.limits.loginIP.allow(ip); !ok {
+		return tooMany(w, wait)
+	}
+	if ok, wait := s.limits.loginUser.allow(in.Username + "|" + ip); !ok {
+		return tooMany(w, wait)
+	}
+	u, err := s.store.UserByUsername(r.Context(), in.Username)
+	// Гоним PBKDF2 и для несуществующего логина: ответ «всегда 401 через ~время хэша».
+	stored := dummyHash
+	if err == nil {
+		stored = u.PassHash
+	}
+	var match bool
+	if slotErr := s.withHashSlot(r, func() { match = checkPassword(in.Password, stored) }); slotErr != nil {
+		return slotErr
+	}
+	if err != nil || !match {
 		return &apiError{Status: http.StatusUnauthorized, Message: "Неверное имя или пароль"}
 	}
 	out, err := s.issueSession(r, u)

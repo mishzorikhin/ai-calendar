@@ -167,13 +167,14 @@ describe('outbox flush', () => {
     expect((await o.flush()).synced).toBe(1)
     expect(auth).toBe('Bearer tok-1')
 
-    const { setAuthTokenGetter } = await import('./outbox')
-    setAuthTokenGetter(() => 'live-2')
+    const { setCredentialsGetter } = await import('./outbox')
+    await o.setOwner('7', true)
+    setCredentialsGetter(() => ({ token: 'live-2', userId: '7' }))
     auth = null
     await o.enqueue(deleteOp('evt-2'))
     await o.flush()
     expect(auth).toBe('Bearer live-2')
-    setAuthTokenGetter(() => null)
+    setCredentialsGetter(() => null)
   })
 
   it('401 останавливает обход — операции ждут свежего токена', async () => {
@@ -184,5 +185,112 @@ describe('outbox flush', () => {
     const o = await freshOutbox()
     await o.enqueue(deleteOp('evt-1'))
     expect(await o.flush()).toMatchObject({ synced: 0, remaining: 1 })
+  })
+})
+
+describe('outbox owner', () => {
+  it('вход другого пользователя стирает чужие операции, повторный вход того же — нет', async () => {
+    const backend = createMemoryBackend()
+    const o = await openOutbox(backend)
+    await o.setOwner('1')
+    await o.enqueue(deleteOp('evt-1'))
+    await o.setOwner(null) // выход: правки ждут возвращения хозяина
+    await o.setOwner('1')
+    expect(o.list()).toHaveLength(1)
+    await o.setOwner('2')
+    expect(o.list()).toHaveLength(0)
+    expect(await backend.list()).toHaveLength(0)
+    // Владелец переживает перезапуск: новая очередь на том же хранилище помнит, чья она.
+    await o.enqueue(deleteOp('evt-2'))
+    const reopened = await openOutbox(backend)
+    await reopened.setOwner('2')
+    expect(reopened.list()).toHaveLength(1)
+  })
+
+  it('операции старой версии без владельца: запуск с сессией их забирает, новый вход — стирает', async () => {
+    const legacy = async () => {
+      const backend = createMemoryBackend()
+      await backend.add(deleteOp('evt-1'))
+      return openOutbox(backend)
+    }
+    const started = await legacy()
+    await started.setOwner('1', true)
+    expect(started.list()).toHaveLength(1)
+    const loggedIn = await legacy()
+    await loggedIn.setOwner('1')
+    expect(loggedIn.list()).toHaveLength(0)
+  })
+
+  it('вторая вкладка с тем же хранилищем подхватывает смену владельца, а не стирает новые правки', async () => {
+    const backend = createMemoryBackend()
+    const tab1 = await openOutbox(backend)
+    const tab2 = await openOutbox(backend)
+    await tab1.setOwner('1')
+    await tab2.setOwner('1')
+    await tab1.setOwner('2')
+    await tab1.enqueue(deleteOp('evt-b'))
+    await tab2.setOwner('2') // событие storage во второй вкладке пришло позже
+    expect(await backend.list()).toHaveLength(1)
+    expect(tab2.list()).toEqual([expect.objectContaining({ entityId: 'evt-b', owner: '2' })])
+  })
+
+  it('чужие операции не уходят с токеном нового пользователя, даже пока очередь не стёрта', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    const { setCredentialsGetter } = await import('./outbox')
+    const o = await freshOutbox()
+    await o.setOwner('1')
+    await o.enqueue(deleteOp('evt-1'))
+    // Вошёл другой пользователь: сессия уже его, setOwner ещё не успел.
+    setCredentialsGetter(() => ({ token: 'tok-2', userId: '2' }))
+    expect(await o.flush()).toMatchObject({ synced: 0, remaining: 1 })
+    expect(fetch).not.toHaveBeenCalled()
+    setCredentialsGetter(() => null)
+  })
+})
+
+describe('outbox in-flight', () => {
+  /** fetch, где POST ждёт ручного release, а остальные запросы отвечают сразу и пишутся в calls. */
+  function stubSlowPost() {
+    const ctl = { release: null as ((r: Response) => void) | null, calls: [] as string[] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        ctl.calls.push(`${method} ${url}${init?.body ? ` ${String(init.body)}` : ''}`)
+        if (method === 'POST') return new Promise<Response>((resolve) => (ctl.release = resolve))
+        if (method === 'GET') return Promise.resolve(json([]))
+        return Promise.resolve(json({ id: 'evt-77' }))
+      }),
+    )
+    return ctl
+  }
+
+  it('правка во время отправки create не теряется, а уходит следом', async () => {
+    const ctl = stubSlowPost()
+    const o = await freshOutbox()
+    await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))
+    const flushing = o.flush()
+    await vi.waitFor(() => expect(ctl.release).not.toBeNull())
+    // Create уже летит: правка не может дописаться в его тело — она отдельная операция.
+    await o.enqueue(makeOp({ entityId: 'offline-1', body: { title: 'Б' } }))
+    expect(o.list()).toHaveLength(2)
+    ctl.release?.(json({ id: 'evt-77' }, 201))
+    await flushing
+    expect(o.list()).toHaveLength(0)
+    expect(ctl.calls.at(-1)).toBe('PATCH /api/events/evt-77 {"title":"Б"}')
+  })
+
+  it('удаление во время отправки create не отменяет его, а уходит следом', async () => {
+    const ctl = stubSlowPost()
+    const o = await freshOutbox()
+    await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))
+    const flushing = o.flush()
+    await vi.waitFor(() => expect(ctl.release).not.toBeNull())
+    await o.enqueue(deleteOp('offline-1'))
+    ctl.release?.(json({ id: 'evt-5' }, 201))
+    await flushing
+    expect(o.list()).toHaveLength(0)
+    expect(ctl.calls.at(-1)).toBe('DELETE /api/events/evt-5')
   })
 })
