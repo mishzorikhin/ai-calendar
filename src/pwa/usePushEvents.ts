@@ -5,7 +5,7 @@ import { keys } from '../api/queries'
 import { usePushDevice } from './usePushDevice'
 
 /** Перейти по адресу из уведомления (`/#day/2026-10-21`) без перезагрузки: маршрут и день читаются из хэша. */
-function openFromNotification(url: string): void {
+export function openFromNotification(url: string): void {
   const hash = new URL(url, window.location.href).hash || '#home'
   if (window.location.hash === hash) return
   window.history.pushState(null, '', hash)

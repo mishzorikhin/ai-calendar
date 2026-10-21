@@ -108,7 +108,11 @@ describe('local api', () => {
     const storage = new MemoryStorage()
     const api = createLocalApi(storage)
     const info = await api.getPush()
-    expect(info).toEqual({ publicKey: null, settings: { eventReminder: 10, taskTime: 540, digest: -1 }, devices: 0 })
+    expect(info).toEqual({
+      publicKey: null,
+      settings: { eventReminder: 10, taskTime: 540, digest: -1, evening: -1, quietFrom: -1, quietTo: -1 },
+      devices: 0,
+    })
     expect(await api.updateNotifySettings({ digest: 480 })).toMatchObject({ digest: 480, eventReminder: 10 })
     await expect(api.updateNotifySettings({ taskTime: 1440 })).rejects.toMatchObject({ status: 400 })
     await expect(api.updateNotifySettings({ eventReminder: -2 })).rejects.toMatchObject({ status: 400 })
@@ -117,5 +121,102 @@ describe('local api', () => {
     await expect(
       api.subscribePush({ endpoint: 'https://push.example/1', keys: { p256dh: 'x', auth: 'y' } }),
     ).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('повторяющиеся события: вхождения, перенос серии, «только этот день»', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const yoga = await api.createEvent({
+      title: 'Йога',
+      date: new Date(2026, 9, 20),
+      start: 1140,
+      end: 1200,
+      badge: 'sport',
+      repeat: 'weekly',
+    })
+    const on = async (d: Date) => (await api.getEvents(d)).filter((e) => e.title === 'Йога')
+    expect(await on(new Date(2026, 10, 3))).toHaveLength(1)
+    expect(await on(new Date(2026, 10, 4))).toHaveLength(0)
+    expect((await api.getMonthDots(2026, 10))[3]).toContain('sport')
+
+    await api.updateEvent(yoga.id, { skip: new Date(2026, 10, 3) })
+    expect(await on(new Date(2026, 10, 3))).toHaveLength(0)
+
+    await api.updateEvent(yoga.id, { occurrence: new Date(2026, 10, 10), date: new Date(2026, 10, 11) })
+    expect(await on(new Date(2026, 10, 11))).toHaveLength(1)
+    expect(await on(new Date(2026, 9, 20))).toHaveLength(0)
+
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 60, end: 120, repeat: 'daily', repeatUntil: '2026-01-01' }),
+    ).rejects.toMatchObject({ status: 400 })
+    const plain = await api.createEvent({ title: 'Разово', date: day, start: 60, end: 120 })
+    await expect(api.updateEvent(plain.id, { skip: day })).rejects.toMatchObject({ status: 400 })
+
+    await api.updateEvent(yoga.id, { repeat: '' })
+    expect(await on(new Date(2026, 10, 18))).toHaveLength(0)
+  })
+
+  it('сдвиг серии двигает конец и убранные дни; снятый повтор остаётся в дне вхождения', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const pool = await api.createEvent({
+      title: 'Бассейн',
+      date: new Date(2026, 9, 20),
+      start: 600,
+      end: 660,
+      repeat: 'weekly',
+      repeatUntil: '2026-11-24',
+    })
+    await api.updateEvent(pool.id, { skip: new Date(2026, 10, 3) })
+    const moved = await api.updateEvent(pool.id, { occurrence: new Date(2026, 10, 10), date: new Date(2026, 10, 11) })
+    expect(moved).toMatchObject({ repeatUntil: '2026-11-25', exdates: ['2026-11-04'] })
+    const on = async (d: Date) => (await api.getEvents(d)).filter((e) => e.title === 'Бассейн')
+    expect(await on(new Date(2026, 10, 4))).toHaveLength(0)
+    expect(await on(new Date(2026, 10, 25))).toHaveLength(1)
+    const single = await api.updateEvent(pool.id, {
+      occurrence: new Date(2026, 10, 18),
+      date: new Date(2026, 10, 18),
+      repeat: '',
+    })
+    expect(single.date).toEqual(new Date(2026, 10, 18))
+    expect(single.repeat).toBeUndefined()
+    await expect(api.updateNotifySettings({ quietFrom: 1380 })).rejects.toMatchObject({ status: 400 })
+    const again = await api.createEvent({
+      title: 'x',
+      date: new Date(2026, 9, 20),
+      start: 60,
+      end: 90,
+      repeat: 'daily',
+    })
+    await expect(
+      api.updateEvent(again.id, {
+        skip: new Date(2026, 9, 21),
+        occurrence: new Date(2026, 9, 22),
+        date: new Date(2026, 9, 23),
+      }),
+    ).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('новые настройки уведомлений проверяются как на сервере', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    expect(
+      await api.updateNotifySettings({ quietFrom: 1380, quietTo: 420, badgeReminders: { sport: 60 } }),
+    ).toMatchObject({
+      quietFrom: 1380,
+      badgeReminders: { sport: 60 },
+    })
+    await expect(api.updateNotifySettings({ evening: 1440 })).rejects.toMatchObject({ status: 400 })
+    await expect(api.updateNotifySettings({ badgeReminders: { sport: -3 } })).rejects.toMatchObject({ status: 400 })
+    expect(await api.getAlarms()).toEqual([])
+    await expect(api.createAlarm({ text: 'x', at: new Date() })).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('событие на весь день: время 0–1440, можно вернуть время', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const e = await api.createEvent({ title: 'Переезд', date: day, start: 600, end: 660, allDay: true })
+    expect(e).toMatchObject({ allDay: true, start: 0, end: 1440 })
+    expect((await api.getEvents(day)).find((x) => x.id === e.id)?.allDay).toBe(true)
+    const timed = await api.updateEvent(e.id, { allDay: false, start: 540, end: 600 })
+    expect(timed).toMatchObject({ start: 540, end: 600 })
+    expect(timed.allDay).toBeUndefined()
+    expect(await api.updateEvent(e.id, { allDay: true })).toMatchObject({ allDay: true, start: 0, end: 1440 })
   })
 })

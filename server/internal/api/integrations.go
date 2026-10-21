@@ -510,7 +510,7 @@ func (s *server) serveFeed(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var comps []*calsync.Component
-	for _, e := range s.store.EventsBetween(ctx, from, to) {
+	for _, e := range s.eventsBetween(ctx, from, to) {
 		if e.Source != "" {
 			continue
 		}
@@ -522,10 +522,14 @@ func (s *server) serveFeed(w http.ResponseWriter, r *http.Request) error {
 		if stamp.IsZero() {
 			stamp = now
 		}
-		ev := calsync.NewEventComponent(e.ID+"@ai-calendar", it, stamp)
+		uid := e.ID + "@ai-calendar"
+		if e.Repeat != model.RepeatNone {
+			uid = e.ID + "-" + strings.ReplaceAll(e.Date, "-", "") + "@ai-calendar" // своё у каждого вхождения
+		}
+		ev := calsync.NewEventComponent(uid, it, stamp)
 		reminders := e.Reminders
-		if reminders == nil && ns.EventReminder >= 0 {
-			reminders = []int{ns.EventReminder}
+		if def := ns.DefaultReminder(e.Badge); reminders == nil && def >= 0 {
+			reminders = []int{def}
 		}
 		for _, m := range reminders {
 			ev.Children = append(ev.Children, calsync.NewAlarm(m, e.Title))

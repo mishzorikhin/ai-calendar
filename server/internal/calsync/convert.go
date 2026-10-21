@@ -24,6 +24,8 @@ type Item struct {
 	Location string
 	Start    time.Time
 	End      time.Time
+	// AllDay — на весь день: в iCalendar пишется датой (VALUE=DATE), а не временем.
+	AllDay bool
 }
 
 // Ref — ссылка на событие во внешнем календаре и его версия.
@@ -44,6 +46,7 @@ func ItemOf(e model.Event, loc *time.Location) (Item, bool) {
 		Location: e.Subtitle,
 		Start:    time.Date(y, m, day, 0, e.Start, 0, 0, loc),
 		End:      time.Date(y, m, day, 0, e.End, 0, 0, loc),
+		AllDay:   e.AllDay,
 	}, true
 }
 
@@ -165,8 +168,14 @@ func applyItem(ev *Component, it Item, now time.Time) {
 		ev.Del("LOCATION")
 	}
 	ev.Del("DURATION")
-	ev.Set(Prop{Name: "DTSTART", Value: it.Start.UTC().Format(icalUTC)})
-	ev.Set(Prop{Name: "DTEND", Value: it.End.UTC().Format(icalUTC)})
+	if it.AllDay {
+		// Дата без времени и пояса: день один и тот же у всех, кто подписан на ленту.
+		ev.Set(Prop{Name: "DTSTART", Params: map[string]string{"VALUE": "DATE"}, Value: it.Start.Format("20060102")})
+		ev.Set(Prop{Name: "DTEND", Params: map[string]string{"VALUE": "DATE"}, Value: it.Start.AddDate(0, 0, 1).Format("20060102")})
+	} else {
+		ev.Set(Prop{Name: "DTSTART", Value: it.Start.UTC().Format(icalUTC)})
+		ev.Set(Prop{Name: "DTEND", Value: it.End.UTC().Format(icalUTC)})
+	}
 	ev.Set(Prop{Name: "DTSTAMP", Value: now.UTC().Format(icalUTC)})
 	ev.Set(Prop{Name: "LAST-MODIFIED", Value: now.UTC().Format(icalUTC)})
 }

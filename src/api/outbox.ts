@@ -32,6 +32,11 @@ export type PendingOp = {
   at: number
   /** id пользователя, сделавшего правку: повтор идёт только от его имени. Нет — операция старой версии. */
   owner?: string
+  /**
+   * Правка, которую нельзя склеивать с другими: «убрать день из серии» и перенос вхождения
+   * зависят от своих полей (skip, occurrence), и склейка подменила бы одно другим.
+   */
+  separate?: boolean
 }
 
 /** Хранилище очереди: IndexedDB в браузере/worker, память — в тестах. */
@@ -246,8 +251,11 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
 
     async enqueue(op) {
       // Правка неотправленного create или прошлой правки — дописываем поля в её тело.
-      if (op.action === 'update' && op.body) {
-        const target = ops.find((o) => o !== inFlight && o.action !== 'delete' && sameTarget(o, op.entity, op.entityId))
+      // Только в последнюю операцию этой сущности: если за ней уже стоит правка серии (separate),
+      // склейка с более ранней поставила бы новую правку раньше неё — и та бы её затёрла.
+      if (op.action === 'update' && op.body && !op.separate) {
+        const last = ops.findLast((o) => o !== inFlight && sameTarget(o, op.entity, op.entityId))
+        const target = last && last.action !== 'delete' && !last.separate ? last : undefined
         if (target) {
           await mergeUpdate(target, op.body)
           emit()

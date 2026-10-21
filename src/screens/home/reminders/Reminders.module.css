@@ -145,3 +145,147 @@
   line-height: 1.35;
   color: var(--danger-ink);
 }
+
+/* Группа внутри другой группы (типы событий): без подложки. */
+.groupCompact {
+  padding: 12px 0 0;
+}
+
+.groupCompact .groupTitle {
+  margin-bottom: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* --- Свои напоминания ----------------------------------------------------- */
+
+.alarmInput {
+  width: 100%;
+  height: 48px;
+  margin-bottom: 10px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.alarmInput::placeholder {
+  color: var(--ink-2);
+}
+
+.alarmInput[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 2px var(--danger-ink);
+}
+
+/* Невидимый системный выбор времени поверх «таблетки». */
+.alarmTime {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.alarmTime input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.alarmList,
+.deviceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alarm,
+.deviceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.deviceRow {
+  background: var(--surface-2);
+}
+
+.alarmText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.alarmTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.alarmWhen {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.alarmDelete {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--ink-2);
+}
+
+/* --- Своё время для типов событий --------------------------------------- */
+
+.badgeDefaults {
+  margin-top: 10px;
+}
+
+.disclosure {
+  width: 100%;
+  min-height: 44px;
+  justify-content: space-between;
+  padding: 0 4px 0 2px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.chevron,
+.chevronOpen {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.disclosureBody {
+  overflow: hidden;
+}
+
+.device + .group {
+  margin-top: 8px;
+}

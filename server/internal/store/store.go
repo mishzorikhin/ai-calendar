@@ -111,7 +111,11 @@ type Store interface {
 	MarkNotificationsRead(ctx context.Context) error
 
 	// EventsBetween — события пользователя с from по to включительно (ГГГГ-ММ-ДД).
+	// Повторяющиеся лежат одной записью на дату начала серии: вхождения разворачивает API.
 	EventsBetween(ctx context.Context, from, to string) []model.Event
+	// RepeatingEvents — повторяющиеся события пользователя, чья серия пересекает [from, to]:
+	// начинается не позже to и не закончилась до from.
+	RepeatingEvents(ctx context.Context, from, to string) []model.Event
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
@@ -155,9 +159,13 @@ type Store interface {
 	// ClaimReminder отмечает напоминание key текущего пользователя отправленным в момент now.
 	// false — его уже отправляли. Отметки старше ReminderMemory забываются.
 	ClaimReminder(ctx context.Context, key string, now time.Time) (bool, error)
-	// AddSnooze откладывает уведомление текущего пользователя до at;
-	// ErrLimit — отложенных уже MaxSnoozes.
-	AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) error
+	// AddSnooze откладывает уведомление текущего пользователя до at (и свои напоминания
+	// «напомни в 18:00»); ErrLimit — отложенных уже MaxSnoozes.
+	AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) (model.Snooze, error)
+	// Snoozes — отложенные уведомления текущего пользователя, ближайшие первыми.
+	Snoozes(ctx context.Context) []model.Snooze
+	// DeleteSnooze отменяет отложенное уведомление текущего пользователя; ErrNotFound — нет такого.
+	DeleteSnooze(ctx context.Context, id int64) error
 	// TakeDueSnoozes забирает отложенные уведомления всех пользователей со сроком не позже now.
 	TakeDueSnoozes(ctx context.Context, now time.Time) []model.Snooze
 	// ServerKey — значение name из хранилища; если его ещё нет — сохраняет gen() и
@@ -1251,10 +1259,10 @@ func (s *fileStore) ClaimReminder(ctx context.Context, key string, now time.Time
 	return true, s.save()
 }
 
-func (s *fileStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) error {
+func (s *fileStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) (model.Snooze, error) {
 	uid, err := s.uid(ctx)
 	if err != nil {
-		return err
+		return model.Snooze{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1265,11 +1273,60 @@ func (s *fileStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushM
 		}
 	}
 	if n >= MaxSnoozes {
-		return ErrLimit
+		return model.Snooze{}, ErrLimit
 	}
 	s.d.NextSnoozeID++
-	s.d.Snoozes = append(s.d.Snoozes, model.Snooze{ID: s.d.NextSnoozeID, UserID: uid, At: at, Message: msg})
+	z := model.Snooze{ID: s.d.NextSnoozeID, UserID: uid, At: at, Message: msg}
+	s.d.Snoozes = append(s.d.Snoozes, z)
+	return z, s.save()
+}
+
+func (s *fileStore) Snoozes(ctx context.Context) []model.Snooze {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Snooze
+	for _, z := range s.d.Snoozes {
+		if z.UserID == uid {
+			out = append(out, z)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b model.Snooze) int { return a.At.Compare(b.At) })
+	return out
+}
+
+func (s *fileStore) DeleteSnooze(ctx context.Context, id int64) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Snoozes, func(z model.Snooze) bool { return z.ID == id && z.UserID == uid })
+	if i < 0 {
+		return ErrNotFound
+	}
+	s.d.Snoozes = slices.Delete(s.d.Snoozes, i, i+1)
 	return s.save()
+}
+
+func (s *fileStore) RepeatingEvents(ctx context.Context, from, to string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Event
+	for _, e := range s.d.Events {
+		if e.UserID == uid && e.Repeat != model.RepeatNone && e.Date <= to && (e.RepeatUntil == "" || e.RepeatUntil >= from) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (s *fileStore) TakeDueSnoozes(_ context.Context, now time.Time) []model.Snooze {

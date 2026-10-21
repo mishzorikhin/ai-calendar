@@ -148,6 +148,55 @@ func (s *server) notifyShare(ctx context.Context, to model.User, task model.Task
 	}, pushOpts{ttl: 7 * 24 * time.Hour, urgency: webpush.UrgencyNormal})
 }
 
+// notifyTaskChange сообщает остальным участникам общей задачи, что её отметили выполненной,
+// вернули в работу или перенесли срок. Правки текста не сообщаются — их слишком много,
+// а «уведомление на каждую букву» быстро заставит выключить уведомления совсем.
+// Автору правки уведомление не приходит.
+func (s *server) notifyTaskChange(ctx context.Context, before, after model.Task) {
+	if len(after.Members) == 0 {
+		return // задача не общая
+	}
+	var text, body string
+	switch {
+	case before.Done != after.Done && after.Done:
+		text, body = fmt.Sprintf("Готово: «%s»", after.Title), "Задача выполнена"
+	case before.Done != after.Done:
+		text, body = fmt.Sprintf("Снова в работе: «%s»", after.Title), "Задачу вернули в работу"
+	case before.Due != after.Due && after.Due != "":
+		text, body = fmt.Sprintf("Новый срок: «%s»", after.Title), "Срок перенесли"
+	default:
+		return
+	}
+	actor, _ := store.UserFrom(ctx)
+	card := otherUser(actor)
+	who := actor.Name
+	if who == "" {
+		who = "@" + actor.Username
+	}
+	ids := []int64{after.OwnerID}
+	for _, m := range after.Members {
+		ids = append(ids, m.ID)
+	}
+	for _, id := range ids {
+		if id == actor.ID || id == 0 {
+			continue
+		}
+		to, err := s.store.UserByID(ctx, id)
+		if err != nil {
+			continue
+		}
+		_ = s.store.AddNotification(ctx, model.Notification{UserID: id, From: &card, TaskID: after.ID, Text: text})
+		s.pushToUser(to, model.PushMessage{
+			Kind:   model.PushShare,
+			Title:  after.Title,
+			Body:   body + " · " + who,
+			URL:    "/#home",
+			Tag:    "share:" + after.ID,
+			TaskID: after.ID,
+		}, pushOpts{ttl: 24 * time.Hour, urgency: webpush.UrgencyNormal})
+	}
+}
+
 // shareTaskWith добавляет участников к задаче task (свежей, после создания или правки)
 // и шлёт уведомления только тем, кого действительно добавили. Себя, владельца и уже
 // участвующих пропускает молча: участник может упомянуть владельца в заметке.

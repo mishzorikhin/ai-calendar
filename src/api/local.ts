@@ -1,5 +1,6 @@
 import type { ChatMessage, DatedEvent, NotifySettings, Task, User } from '../domain/types'
 import {
+  LIMITS,
   isValidRange,
   messageError,
   normalizeReminders,
@@ -8,6 +9,7 @@ import {
   titleError,
 } from '../domain/limits'
 import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
+import { isRepeat, occursOn, shiftSeries } from '../domain/repeat'
 import { fromISODate, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
@@ -38,17 +40,36 @@ const LOCAL_USER: User = { id: 0, username: 'local', name: 'Локальный �
 const NO_ACCOUNTS = new ApiError(400, 'Аккаунты и общие задачи работают только с сервером')
 const NO_CALENDARS = new ApiError(400, 'Подключение календарей работает только с сервером')
 const NO_PUSH = new ApiError(400, 'Уведомления работают только с сервером')
+const BADGES = ['sleep', 'routine', 'work', 'food', 'sport', 'read'] as const
+
+/** Проверка повтора — те же правила, что на сервере (validateRepeat). */
+function repeatError(repeat: unknown, until: string | undefined, date: string): string | null {
+  if (repeat !== undefined && repeat !== '' && !isRepeat(repeat)) return `Неизвестный повтор: «${String(repeat)}»`
+  if (!until) return null
+  if (!repeat) return 'Дата окончания нужна только повторяющемуся событию'
+  return until < date ? 'Повтор не может закончиться раньше первого дня' : null
+}
 
 /** Проверка настроек напоминаний — те же границы, что на сервере. */
 function notifySettingsError(patch: Partial<NotifySettings>): string | null {
   const { eventReminder, taskTime, digest } = patch
-  if (eventReminder !== undefined && eventReminder !== -1 && remindersError([eventReminder]))
+  const badReminder = (v: number) => v !== -1 && remindersError([v]) !== null
+  if (eventReminder !== undefined && badReminder(eventReminder))
     return 'Напоминание о событии — от 0 до 10080 минут или -1'
-  for (const v of [taskTime, digest]) {
+  for (const [badge, v] of Object.entries(patch.badgeReminders ?? {})) {
+    if (!BADGES.some((b) => b === badge)) return `Неизвестный тип события: «${badge}»`
+    if (v === undefined || badReminder(v)) return 'Напоминание о событии — от 0 до 10080 минут или -1'
+  }
+  for (const v of [taskTime, digest, patch.evening, patch.quietFrom, patch.quietTo]) {
     if (v !== undefined && v !== -1 && !(Number.isInteger(v) && v >= 0 && v < 1440))
       return 'Время — минуты от полуночи (0–1439) или -1'
   }
   return null
+}
+
+/** Тихие часы — оба края или ни одного (как на сервере). */
+function quietError(s: NotifySettings): string | null {
+  return s.quietFrom < 0 !== s.quietTo < 0 ? 'У тихих часов нужны и начало, и конец' : null
 }
 
 function emptySnapshot(): Snapshot {
@@ -94,30 +115,52 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       highlight: highlight !== false && createdAt !== undefined && Date.now() - Date.parse(createdAt) < HIGHLIGHT_MS,
       date: fromISODate(e.date),
     }))
+  /** События дня с развёрнутыми повторами — как eventsBetween на сервере. */
+  const eventsOn = (day: string, all: DatedEvent[] = events()): DatedEvent[] =>
+    all.flatMap((e) => {
+      const iso = toISODate(e.date)
+      if (!e.repeat) return iso === day ? [e] : []
+      if (!occursOn({ ...e, date: iso, repeat: e.repeat }, day)) return []
+      // «Новое» — только у первого вхождения.
+      return [{ ...e, date: fromISODate(day), highlight: e.highlight && iso === day }]
+    })
+  const monthEvents = (year: number, month: number): DatedEvent[] => {
+    const all = events()
+    const days = new Date(year, month + 1, 0).getDate()
+    return Array.from({ length: days }, (_, i) => eventsOn(toISODate(new Date(year, month, i + 1)), all)).flat()
+  }
   const nextId = (prefix: string) => `${prefix}-${data.nextId++}`
   // Имитируем сеть: ответ асинхронный, как у сервера.
   const reply = <T>(value: T) => Promise.resolve(value)
 
   return {
     mode: 'local',
-    getEvents: (date) => reply(eventsFor(date, events())),
+    getEvents: (date) => reply(eventsFor(date, eventsOn(toISODate(date)))),
     createEvent(input) {
       const title = input.title.trim()
       const subtitle = input.subtitle?.trim()
       const bad =
-        invalid(titleError(title), subtitleError(subtitle), remindersError(input.reminders)) ??
-        (isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+        invalid(
+          titleError(title),
+          subtitleError(subtitle),
+          remindersError(input.reminders),
+          repeatError(input.repeat, input.repeatUntil, toISODate(input.date)),
+        ) ?? (input.allDay || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
         title,
         subtitle,
-        start: input.start,
-        end: input.end,
+        // На весь день — как на сервере: время 0–1440.
+        start: input.allDay ? 0 : input.start,
+        end: input.allDay ? LIMITS.dayMinutes : input.end,
         badge: input.badge ?? 'routine',
         highlight: true,
         date: input.date,
+        allDay: input.allDay || undefined,
         reminders: input.reminders ? normalizeReminders(input.reminders) : null,
+        repeat: input.repeat,
+        repeatUntil: input.repeat ? input.repeatUntil || undefined : undefined,
       }
       data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
@@ -129,23 +172,55 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const prev = data.events[i]!
       const title = patch.title?.trim()
       const subtitle = patch.subtitle?.trim()
+      if (patch.skip && !prev.repeat) return invalid('Убрать один день можно только из повторяющегося события')!
+      if (patch.skip && patch.occurrence) return invalid('Убрать день и перенести серию — разными правками')!
+      const repeat = patch.repeat === undefined ? prev.repeat : patch.repeat || undefined
+      // Правка вхождения серии — как seriesPatch на сервере: перенос сдвигает всю серию (с концом
+      // и убранными днями), а снятый повтор оставляет событие в дне вхождения.
+      const occurrence = prev.repeat ? patch.occurrence : undefined
+      const moveTo = patch.date
+      const shift =
+        occurrence && repeat && moveTo ? (d: string) => shiftSeries(d, occurrence, moveTo) : (d: string) => d
+      const date =
+        occurrence && !repeat
+          ? toISODate(moveTo ?? occurrence)
+          : occurrence && moveTo
+            ? shift(prev.date)
+            : moveTo
+              ? toISODate(moveTo)
+              : prev.date
+      const skip = patch.skip && toISODate(patch.skip)
       const next = {
         ...prev,
         title: title ?? prev.title,
         subtitle: subtitle ?? prev.subtitle,
-        start: patch.start ?? prev.start,
-        end: patch.end ?? prev.end,
+        start: patch.allDay ? 0 : (patch.start ?? prev.start),
+        end: patch.allDay ? LIMITS.dayMinutes : (patch.end ?? prev.end),
+        allDay: patch.allDay === undefined ? prev.allDay : patch.allDay || undefined,
         badge: patch.badge ?? prev.badge,
-        date: patch.date ? toISODate(patch.date) : prev.date,
+        date,
         // undefined — не трогаем, null — по умолчанию, [] — без напоминаний.
         reminders:
           patch.reminders === undefined ? prev.reminders : patch.reminders && normalizeReminders(patch.reminders),
+        repeat,
+        // Снятый повтор забирает с собой дату окончания и убранные дни.
+        repeatUntil: !repeat
+          ? undefined
+          : patch.repeatUntil === undefined
+            ? prev.repeatUntil && shift(prev.repeatUntil)
+            : patch.repeatUntil || undefined,
+        exdates: !repeat
+          ? undefined
+          : skip && !prev.exdates?.includes(skip)
+            ? [...(prev.exdates ?? []), skip]
+            : prev.exdates?.map(shift),
       }
       const bad =
         invalid(
           title === undefined ? null : titleError(title),
           subtitleError(subtitle),
           remindersError(patch.reminders),
+          repeatError(next.repeat, next.repeatUntil, next.date),
         ) ?? (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       data.events[i] = next
@@ -159,7 +234,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(undefined)
     },
-    getMonthDots: (year, month) => reply(monthDotsFor(year, month, events())),
+    getMonthDots: (year, month) => reply(monthDotsFor(year, month, monthEvents(year, month))),
     getTasks: () => reply([...data.tasks]),
     createTask(input) {
       const title = input.title.trim()
@@ -250,14 +325,20 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     // Без сервера некому слать уведомления: настройки храним, подписаться нельзя.
     getPush: () => reply({ publicKey: null, settings: data.notify ?? DEFAULT_NOTIFY_SETTINGS, devices: 0 }),
     updateNotifySettings(patch) {
-      const bad = invalid(notifySettingsError(patch))
+      const next = { ...(data.notify ?? DEFAULT_NOTIFY_SETTINGS), ...patch }
+      const bad = invalid(notifySettingsError(patch), quietError(next))
       if (bad) return bad
-      data.notify = { ...(data.notify ?? DEFAULT_NOTIFY_SETTINGS), ...patch }
+      data.notify = next
       save()
-      return reply(data.notify)
+      return reply(next)
     },
     subscribePush: () => Promise.reject(NO_PUSH),
     unsubscribePush: () => reply(undefined),
     testPush: () => Promise.reject(NO_PUSH),
+    getDevices: () => reply([]),
+    deleteDevice: () => Promise.reject(NO_PUSH),
+    getAlarms: () => reply([]),
+    createAlarm: () => Promise.reject(NO_PUSH),
+    deleteAlarm: () => Promise.reject(NO_PUSH),
   }
 }

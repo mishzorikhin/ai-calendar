@@ -1,5 +1,6 @@
 import { usePush } from '../api/queries'
 import { DEFAULT_NOTIFY_SETTINGS, REMINDER_PRESETS, reminderShortLabel } from '../domain/reminders'
+import type { Badge } from '../domain/types'
 import { Pill } from './ui'
 import styles from './EventComposer.module.css'
 
@@ -55,8 +56,9 @@ export function ReminderPicker({
   )
 }
 
-/** Напоминание по умолчанию из настроек аккаунта. */
-export function useDefaultReminder(): number {
+/** Напоминание по умолчанию из настроек аккаунта — своё у типа события, если задано. */
+export function useDefaultReminder(badge: Badge): number {
   const { data } = usePush()
-  return (data?.settings ?? DEFAULT_NOTIFY_SETTINGS).eventReminder
+  const settings = data?.settings ?? DEFAULT_NOTIFY_SETTINGS
+  return settings.badgeReminders?.[badge] ?? settings.eventReminder
 }

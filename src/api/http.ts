@@ -1,4 +1,5 @@
 import type {
+  Alarm,
   AppNotification,
   Badge,
   CalDavCalendar,
@@ -8,6 +9,7 @@ import type {
   Integration,
   IntegrationsInfo,
   NotifySettings,
+  PushDevice,
   PushInfo,
   Task,
   User,
@@ -89,7 +91,12 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
       return toEvent(await post<EventDTO>('/api/events', { ...input, date: toISODate(input.date) }))
     },
     async updateEvent(id, patch) {
-      const body = { ...patch, date: patch.date ? toISODate(patch.date) : undefined }
+      const body = {
+        ...patch,
+        date: patch.date ? toISODate(patch.date) : undefined,
+        occurrence: patch.occurrence ? toISODate(patch.occurrence) : undefined,
+        skip: patch.skip ? toISODate(patch.skip) : undefined,
+      }
       return toEvent(await request<EventDTO>(`/api/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }))
     },
     deleteEvent: (id) => request<void>(`/api/events/${id}`, { method: 'DELETE' }),
@@ -212,6 +219,11 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     async testPush() {
       return (await post<{ sent: number }>('/api/push/test', {})).sent
     },
+    getDevices: () => request<PushDevice[]>('/api/push/devices'),
+    deleteDevice: (id) => request<void>(`/api/push/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    getAlarms: () => request<Alarm[]>('/api/reminders'),
+    createAlarm: ({ text, at }) => post<Alarm>('/api/reminders', { text, at: at.toISOString() }),
+    deleteAlarm: (id) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
   }
 }
 
