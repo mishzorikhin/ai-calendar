@@ -48,8 +48,8 @@
   border-radius: 30px;
   overflow: hidden;
   box-shadow:
-    0 -6px 18px rgba(30, 40, 70, 0.06),
-    0 1px 2px rgba(30, 40, 70, 0.04);
+    0 -6px 18px var(--shadow-c3),
+    0 1px 2px var(--shadow-c1);
 }
 
 .part + .part {
@@ -62,16 +62,22 @@
 }
 
 .morning {
-  background: linear-gradient(180deg, #d6ecc2 0px, #e9f4de 70px, #f7faf3 150px, #fdfdfc 260px);
+  background: linear-gradient(
+    180deg,
+    var(--morning-1) 0px,
+    var(--morning-2) 70px,
+    var(--morning-3) 150px,
+    var(--morning-4) 260px
+  );
 }
 
 .afternoon {
-  background: linear-gradient(180deg, #e3e9f2 0%, #d2dbe8 100%);
+  background: linear-gradient(180deg, var(--afternoon-1) 0%, var(--afternoon-2) 100%);
 }
 
 .night {
-  background: linear-gradient(180deg, #7f8a9b 0%, #a3adbc 70%, #b8c0cc 100%);
-  color: var(--ink-inverse);
+  background: linear-gradient(180deg, var(--night-1) 0%, var(--night-2) 70%, var(--night-3) 100%);
+  color: var(--on-accent);
 }
 
 .partHead {
@@ -113,17 +119,17 @@
 
 .morning .partIcon {
   background: var(--green);
-  color: var(--ink-inverse);
+  color: var(--on-accent);
 }
 
 .afternoon .partIcon {
   background: var(--yellow);
-  color: var(--ink-inverse);
+  color: var(--on-accent);
 }
 
 .night .partIcon {
   background: rgba(255, 255, 255, 0.28);
-  color: var(--ink-inverse);
+  color: var(--on-accent);
 }
 
 .timelineWrap {
@@ -162,8 +168,8 @@
   background: var(--surface);
   color: var(--ink);
   box-shadow:
-    0 1px 2px rgba(20, 30, 50, 0.05),
-    0 6px 18px rgba(20, 30, 50, 0.06);
+    0 1px 2px var(--shadow-c2),
+    0 6px 18px var(--shadow-c3);
   overflow: hidden;
 }
 
@@ -195,7 +201,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-inverse);
+  color: var(--on-accent);
 }
 
 .eventNew {
@@ -212,8 +218,8 @@
   border-radius: 999px;
   font-size: 10.5px;
   font-weight: 600;
-  color: #1f8a3f;
-  background: rgba(76, 196, 109, 0.14);
+  color: var(--success-ink);
+  background: var(--success-bg);
 }
 
 .sleep {
@@ -231,7 +237,7 @@
   flex: 1;
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(180deg, #e3e4ea, #f1f2f5);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
   transform-origin: bottom;
 }
 
@@ -298,7 +304,7 @@
   align-items: center;
   border-radius: 28px;
   background: var(--surface);
-  box-shadow: 0 -6px 20px rgba(30, 40, 70, 0.06);
+  box-shadow: 0 -6px 20px var(--shadow-c3);
   flex-shrink: 0;
 }
 
@@ -310,7 +316,7 @@
   height: 4px;
   margin-left: -13px;
   border-radius: 2px;
-  background: #e2e2e7;
+  background: var(--handle);
 }
 
 .weekViewport {
@@ -337,7 +343,7 @@
   inset: 3px 4px;
   border-radius: 20px;
   background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .weekName,
@@ -381,8 +387,8 @@
   padding: 4px;
   gap: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.34);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  background: var(--glass-weak);
+  box-shadow: inset 0 0 0 1px var(--glass-line);
 }
 
 .toggleBtn {
@@ -392,7 +398,7 @@
   border-radius: 999px;
   flex-direction: column;
   gap: 1px;
-  color: rgba(40, 30, 60, 0.62);
+  color: var(--bar-ink-2);
 }
 
 .toggleBtn[aria-checked='true'] {
@@ -455,7 +461,7 @@
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--red);
-  color: var(--ink-inverse);
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 600;
 }

@@ -3,7 +3,11 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { connectApi } from './api/connect'
 import { App } from './App'
+import { applyTheme } from './lib/theme'
 import './styles/global.css'
+
+// Тема — до первого кадра: выбор этого устройства из localStorage.
+applyTheme()
 
 const root = createRoot(document.getElementById('root')!)
 

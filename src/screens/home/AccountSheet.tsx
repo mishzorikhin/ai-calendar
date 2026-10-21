@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { apiErrorText } from '../../api/api'
+import { useApi } from '../../api/provider'
 import {
   useIntegrations,
   useLogout,
@@ -11,14 +12,25 @@ import {
 } from '../../api/queries'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
+import { Segmented } from '../../components/Segmented'
 import { ArrowRightIcon, BellIcon, CalendarIcon, CloseIcon, UsersIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pressable } from '../../components/ui'
 import { userColor, userInitials } from './avatar'
 import { reminderLabel } from '../../domain/reminders'
 import type { AppNotification } from '../../domain/types'
+import { useTheme, type ThemeChoice } from '../../lib/theme'
 import styles from './Home.module.css'
 
-/** Шторка аккаунта: профиль, подключённые календари, уведомления о совместных задачах, выход. */
+const THEMES = [
+  { id: 'system', label: 'Как в системе' },
+  { id: 'light', label: 'Светлое' },
+  { id: 'dark', label: 'Тёмное' },
+] as const satisfies readonly { id: ThemeChoice; label: string }[]
+
+/**
+ * Шторка аккаунта: профиль, оформление, подключённые календари, уведомления о совместных задачах,
+ * выход. В локальном режиме (без сервера) — только то, что работает в этом браузере.
+ */
 export function AccountSheet({
   onClose,
   onCalendars,
@@ -28,6 +40,9 @@ export function AccountSheet({
   onCalendars: () => void
   onReminders: () => void
 }) {
+  const api = useApi()
+  const server = api.mode === 'server'
+  const [theme, setTheme] = useTheme()
   const { data: me } = useMe()
   const session = useSession()
   const user = me ?? session?.user
@@ -76,15 +91,15 @@ export function AccountSheet({
   }
 
   return (
-    <BottomSheet label="Аккаунт" onClose={onClose}>
+    <BottomSheet label={server ? 'Аккаунт' : 'Настройки'} onClose={onClose}>
       <div className={styles.tagSheetHead}>
-        <h2>Аккаунт</h2>
+        <h2>{server ? 'Аккаунт' : 'Настройки'}</h2>
         <CircleButton tone="gray" size={44} onClick={onClose} aria-label="Закрыть">
           <CloseIcon size={18} />
         </CircleButton>
       </div>
 
-      {user && (
+      {server && user && (
         <div className={styles.accountHead}>
           <Avatar initials={userInitials(user)} color={userColor(user.username)} size={56} ring={false} />
           <div className={styles.accountNames}>
@@ -116,49 +131,60 @@ export function AccountSheet({
         </div>
       )}
 
-      <Pressable className={styles.settingsRow} scale={0.98} onClick={onCalendars}>
-        <span className={styles.settingsIcon}>
-          <CalendarIcon size={19} />
-        </span>
-        <span className={styles.settingsText}>
-          <span className={styles.settingsTitle}>Календари</span>
-          <span className={styles.settingsSub}>{calendarsSub}</span>
-        </span>
-        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
-      </Pressable>
+      {!server && <p className={styles.localNote}>Локальный режим: данные хранятся только в этом браузере</p>}
 
-      <Pressable className={styles.settingsRow} scale={0.98} onClick={onReminders}>
-        <span className={styles.settingsIcon}>
-          <BellIcon size={19} />
-        </span>
-        <span className={styles.settingsText}>
-          <span className={styles.settingsTitle}>Напоминания</span>
-          <span className={styles.settingsSub}>{remindersSub}</span>
-        </span>
-        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
-      </Pressable>
+      <p className={styles.sheetLabel}>Оформление</p>
+      <Segmented label="Оформление" options={THEMES} value={theme} onChange={setTheme} />
 
-      <p className={styles.sheetLabel}>Уведомления{unread > 0 ? ` · ${unread}` : ''}</p>
-      {notifications.length === 0 ? (
-        <p className={styles.notifEmpty}>Пока пусто — когда с вами поделятся задачей, она появится здесь</p>
-      ) : (
-        <ul className={styles.notifList}>
-          {notifications.map((n) => (
-            <NotificationRow key={n.id} n={n} />
-          ))}
-        </ul>
+      {server && (
+        <>
+          <Pressable className={styles.settingsRow} scale={0.98} onClick={onCalendars}>
+            <span className={styles.settingsIcon}>
+              <CalendarIcon size={19} />
+            </span>
+            <span className={styles.settingsText}>
+              <span className={styles.settingsTitle}>Календари</span>
+              <span className={styles.settingsSub}>{calendarsSub}</span>
+            </span>
+            <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+          </Pressable>
+
+          <Pressable className={styles.settingsRow} scale={0.98} onClick={onReminders}>
+            <span className={styles.settingsIcon}>
+              <BellIcon size={19} />
+            </span>
+            <span className={styles.settingsText}>
+              <span className={styles.settingsTitle}>Напоминания</span>
+              <span className={styles.settingsSub}>{remindersSub}</span>
+            </span>
+            <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+          </Pressable>
+
+          <p className={styles.sheetLabel}>Уведомления{unread > 0 ? ` · ${unread}` : ''}</p>
+          {notifications.length === 0 ? (
+            <p className={styles.notifEmpty}>Пока пусто — когда с вами поделятся задачей, она появится здесь</p>
+          ) : (
+            <ul className={styles.notifList}>
+              {notifications.map((n) => (
+                <NotificationRow key={n.id} n={n} />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
-      <div className={styles.accountFoot}>
-        <Pressable
-          className={`${styles.delete} ${confirmExit ? styles.deleteSure : ''}`}
-          onClick={exit}
-          disabled={logout.isPending}
-        >
-          {confirmExit ? 'Точно выйти?' : 'Выйти из аккаунта'}
-        </Pressable>
-        {logout.error && <p className={styles.sheetError}>{apiErrorText(logout.error)}</p>}
-      </div>
+      {server && (
+        <div className={styles.accountFoot}>
+          <Pressable
+            className={`${styles.delete} ${confirmExit ? styles.deleteSure : ''}`}
+            onClick={exit}
+            disabled={logout.isPending}
+          >
+            {confirmExit ? 'Точно выйти?' : 'Выйти из аккаунта'}
+          </Pressable>
+          {logout.error && <p className={styles.sheetError}>{apiErrorText(logout.error)}</p>}
+        </div>
+      )}
     </BottomSheet>
   )
 }

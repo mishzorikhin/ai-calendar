@@ -76,7 +76,7 @@
 .hint {
   margin: 6px 4px 0;
   font-size: 13px;
-  color: #b42318;
+  color: var(--danger-ink);
 }
 
 /* Сегодняшнее прошедшее время: доступно, но визуально уходит на второй план. */
@@ -116,13 +116,13 @@
 }
 
 .ok {
-  background: rgba(76, 196, 109, 0.12);
-  color: #1d6b34;
+  background: var(--success-bg);
+  color: var(--success-ink);
 }
 
 .warn {
-  background: rgba(240, 139, 61, 0.14);
-  color: #8a4210;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
 }
 
 /* «Сдвинуть на 11:00» — выход из пересечения в один тап. */
@@ -134,7 +134,7 @@
   background: var(--surface);
   font-size: 13.5px;
   font-weight: 600;
-  color: #8a4210;
+  color: var(--warn-ink);
 }
 
 .actions {
@@ -195,7 +195,7 @@
 
 .deleteSure {
   border-radius: 22px;
-  background: rgba(180, 35, 24, 0.12);
+  background: var(--danger-bg);
 }
 
 /* Куда сохранится событие: основной подключённый календарь. */

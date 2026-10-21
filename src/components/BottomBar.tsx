@@ -73,7 +73,7 @@ export function BottomBar() {
                 <span className={styles.text}>Проверьте текст запроса</span>
               ) : (
                 <Pressable className={styles.voice} onClick={() => setVoice('review')} aria-label="Закончить диктовку">
-                  <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
+                  <Waveform bars={22} color="var(--bar-ink-2)" height={24} />
                 </Pressable>
               )}
             </m.div>

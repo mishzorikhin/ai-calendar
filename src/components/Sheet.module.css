@@ -7,7 +7,7 @@
   background: var(--bg);
   border-radius: 0 0 var(--r-sheet) var(--r-sheet);
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(120, 70, 100, 0.08);
+  box-shadow: 0 10px 30px var(--sheet-shadow);
 }
 
 .inner {

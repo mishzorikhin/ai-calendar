@@ -100,7 +100,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 13px;
-  color: var(--ink-inverse);
+  color: var(--on-accent);
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.02em;

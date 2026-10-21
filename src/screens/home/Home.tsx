@@ -8,9 +8,9 @@ import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { TapToSay } from '../../components/BottomBar'
-import { ArrowRightIcon, CalendarIcon, PlusIcon } from '../../components/Icons'
+import { ArrowRightIcon, CalendarIcon, PlusIcon, SlidersIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
-import { Avatar, Pill, Pressable } from '../../components/ui'
+import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import type { DatedEvent, Task } from '../../domain/types'
 import { MONTHS_GENITIVE, MONTHS_SHORT, WEEKDAYS, addDays, pad2, startOfDay } from '../../lib/dates'
 import { minutesOf, useNow } from '../../lib/hooks'
@@ -81,6 +81,11 @@ export function Home() {
           </span>
         </Pressable>
         <div className={styles.topRight}>
+          {api.mode === 'local' && (
+            <CircleButton tone="white" size={44} onClick={() => setSheet('account')} aria-label="Настройки">
+              <SlidersIcon size={19} />
+            </CircleButton>
+          )}
           {api.mode === 'server' && user && (
             <Pressable
               className={styles.accountBtn}

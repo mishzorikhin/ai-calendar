@@ -271,8 +271,8 @@
   padding: 20px 18px;
   overflow: hidden;
   background:
-    radial-gradient(90% 70% at 100% 100%, rgba(250, 222, 205, 0.95) 0%, rgba(250, 222, 205, 0) 70%),
-    linear-gradient(165deg, #dfe4f8 0%, #e6e1f3 45%, #f0e2e6 100%);
+    radial-gradient(90% 70% at 100% 100%, var(--trip-glow) 0%, transparent 70%),
+    linear-gradient(165deg, var(--trip-1) 0%, var(--trip-2) 45%, var(--trip-3) 100%);
   transition: filter 0.4s;
 }
 
@@ -317,7 +317,7 @@
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--glass-strong);
   box-shadow: var(--shadow-sm);
   color: var(--ink);
   transition:
@@ -446,7 +446,7 @@
   height: 42px;
   border-radius: 50%;
   color: var(--ink-inverse);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink-inverse) 22%, transparent);
 }
 
 .segBtn svg {
@@ -481,7 +481,7 @@
 
 .starOff {
   display: inline-flex;
-  color: #d4d4da;
+  color: var(--handle);
 }
 
 .free {
@@ -649,7 +649,7 @@
 
 .deleteSure {
   border-radius: 22px;
-  background: rgba(180, 35, 24, 0.12);
+  background: var(--danger-bg);
 }
 
 /* --- Аккаунт и совместные задачи ----------------------------------------- */
@@ -718,6 +718,13 @@
   background: var(--surface-2);
   font-size: 17px;
   font-weight: 600;
+}
+
+.localNote {
+  margin: 4px 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
 }
 
 .accountFoot {
@@ -805,7 +812,7 @@
 
 .notifNew {
   background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px rgba(58, 120, 242, 0.35);
+  box-shadow: inset 0 0 0 1.5px var(--accent-line);
 }
 
 .notifIcon {

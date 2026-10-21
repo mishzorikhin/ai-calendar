@@ -29,7 +29,7 @@
   justify-content: center;
   border-radius: 18px;
   font-size: 26px;
-  color: var(--ink-inverse);
+  color: var(--on-dark);
   background: linear-gradient(150deg, #1a1a22, #3a3a4e);
   box-shadow: var(--shadow-sm);
 }

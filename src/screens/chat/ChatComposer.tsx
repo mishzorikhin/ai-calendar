@@ -166,7 +166,7 @@ export function ChatComposer({
           />
           {listening && text.length < 6 && (
             <span className={styles.dictation}>
-              <Waveform bars={14} height={18} color="rgba(60,60,90,0.5)" />
+              <Waveform bars={14} height={18} color="var(--ink-3)" />
             </span>
           )}
         </label>
