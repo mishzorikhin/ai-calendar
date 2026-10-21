@@ -71,7 +71,7 @@
 
 .night {
   background: linear-gradient(180deg, #7f8a9b 0%, #a3adbc 70%, #b8c0cc 100%);
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .partHead {
@@ -113,17 +113,17 @@
 
 .morning .partIcon {
   background: var(--green);
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .afternoon .partIcon {
   background: var(--yellow);
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .night .partIcon {
   background: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .timelineWrap {
@@ -195,7 +195,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .eventNew {
@@ -416,7 +416,7 @@
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
 
@@ -455,7 +455,7 @@
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--red);
-  color: #fff;
+  color: var(--ink-inverse);
   font-size: 11px;
   font-weight: 600;
 }

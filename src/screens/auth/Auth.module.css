@@ -29,7 +29,7 @@
   justify-content: center;
   border-radius: 18px;
   font-size: 26px;
-  color: #fff;
+  color: var(--ink-inverse);
   background: linear-gradient(150deg, #1a1a22, #3a3a4e);
   box-shadow: var(--shadow-sm);
 }
@@ -94,7 +94,7 @@
 
 .error {
   font-size: 13px;
-  color: #b42318;
+  color: var(--danger-ink);
 }
 
 .submit {

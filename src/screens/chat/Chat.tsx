@@ -13,12 +13,17 @@ import { DayPreview } from './DayPreview'
 import { TasksPill } from './TasksPill'
 import styles from './Chat.module.css'
 
+/** Насколько близко к низу ленты считаем, что человек «следит» за ответом. */
+const STICK_PX = 80
+
 const TOOL_LABELS: Record<string, string> = {
   get_day_schedule: 'Смотрю расписание',
   find_free_slots: 'Ищу свободное время',
   create_event: 'Создаю событие',
+  update_event: 'Меняю событие',
   delete_event: 'Удаляю событие',
   list_tasks: 'Смотрю задачи',
+  list_users: 'Ищу людей',
   create_task: 'Добавляю задачу',
   update_task: 'Обновляю задачу',
   delete_task: 'Удаляю задачу',
@@ -37,19 +42,31 @@ export function Chat() {
   })
   useEffect(() => consumeDraft(), [])
 
+  // Ленту ведём вниз за ответом, только если человек сам не ушёл читать историю выше.
+  const stick = useRef(true)
+  const onScroll = () => {
+    const el = list.current
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX
+  }
+  useEffect(() => {
+    if (stick.current) list.current?.scrollTo({ top: list.current.scrollHeight })
+  }, [messages.length, stream?.text, stream?.tools.length, failed.length])
+
+  /** Своё сообщение всегда показываем: прокрутка возвращается вниз. */
+  const sendAndFollow = (text: string) => {
+    stick.current = true
+    void send(text)
+  }
+
   // Запрос от голосового ввода или «поручить ассистенту» — отправляем сразу.
   const consumePrompt = useEffectEvent(() => {
     const text = prompt.trim()
     if (text) {
       setPrompt('')
-      void send(text)
+      sendAndFollow(text)
     }
   })
   useEffect(() => consumePrompt(), [])
-
-  useEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight })
-  }, [messages.length, stream?.text, stream?.tools.length, failed.length])
 
   return (
     <div className={styles.screen}>
@@ -61,7 +78,13 @@ export function Chat() {
         Сегодня
       </motion.h1>
 
-      <div ref={list} className={`${styles.messages} scroll-y`} role="log" aria-label="Диалог с ассистентом">
+      <div
+        ref={list}
+        className={`${styles.messages} scroll-y`}
+        role="log"
+        aria-label="Диалог с ассистентом"
+        onScroll={onScroll}
+      >
         {messages.map((m, i) => (
           <motion.p
             key={m.id}
@@ -79,7 +102,7 @@ export function Chat() {
           <FailedBubble
             key={m.id}
             message={m}
-            onRetry={() => void send(m.text)}
+            onRetry={() => sendAndFollow(m.text)}
             onDismiss={() => dismissFailed(m.id)}
           />
         ))}
@@ -89,7 +112,7 @@ export function Chat() {
         initialText={initialText}
         focusOnMount={Boolean(initialText)}
         busy={Boolean(stream && !stream.done)}
-        onSend={(text) => void send(text)}
+        onSend={sendAndFollow}
       />
     </div>
   )
@@ -148,7 +171,11 @@ function StreamReply({ stream }: { stream: ChatStream }) {
   )
 }
 
-/** Пузырь недоставленного сообщения: тусклый, с ошибкой и кнопками «повторить/убрать». */
+/**
+ * Сообщение без ответа. Не доставлено — тусклый пузырь с «повторить/убрать».
+ * Доставлено, но ответ оборвался — реплика уже в истории, показываем только строку
+ * с ошибкой и «спросить ещё раз», чтобы не дублировать пузырь.
+ */
 function FailedBubble({
   message,
   onRetry,
@@ -160,17 +187,20 @@ function FailedBubble({
 }) {
   return (
     <motion.div
-      className={styles.failed}
+      className={`${styles.failed} ${message.delivered ? styles.failedReply : ''}`}
       initial={{ opacity: 0, y: 12, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={spring}
-      style={{ originX: 1, originY: 1 }}
+      style={{ originX: message.delivered ? 0 : 1, originY: 1 }}
+      role="status"
     >
-      <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>{message.text}</p>
+      {!message.delivered && (
+        <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>{message.text}</p>
+      )}
       <p className={styles.failedMeta}>
-        Не отправлено — {message.error}
+        {message.delivered ? message.error : `Не отправлено — ${message.error}`}
         <button type="button" className={styles.failedRetry} onClick={onRetry}>
-          Повторить
+          {message.delivered ? 'Спросить ещё раз' : 'Повторить'}
         </button>
         <button type="button" className={styles.failedDismiss} onClick={onDismiss} aria-label="Убрать сообщение">
           Убрать

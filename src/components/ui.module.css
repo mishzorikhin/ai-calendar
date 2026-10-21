@@ -40,7 +40,7 @@
 
 .tone_dark {
   background: #111114;
-  color: #fff;
+  color: var(--ink-inverse);
 }
 
 .pill {
@@ -74,8 +74,8 @@
 }
 
 .pill_dark {
-  background: #0f0f12;
-  color: #fff;
+  background: var(--surface-ink);
+  color: var(--ink-inverse);
 }
 
 .pill_ghost {

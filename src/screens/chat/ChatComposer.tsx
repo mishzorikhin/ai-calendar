@@ -32,7 +32,11 @@ export function ChatComposer({
 
   // Диктовка: распознанный текст дописывается к тому, что уже было в поле.
   const base = useRef('')
+  // Начали печатать посреди диктовки — она останавливается, а поздние результаты
+  // распознавания больше не перезаписывают набранное руками.
+  const typed = useRef(false)
   const { listening, start, stop, supported } = useDictation((final, interim) => {
+    if (typed.current) return
     const extra = [final.trim(), interim.trim()].filter(Boolean).join(' ')
     setText(base.current + (extra ? `${base.current ? ' ' : ''}${extra}` : ''))
   })
@@ -64,6 +68,7 @@ export function ChatComposer({
       return
     }
     base.current = text.trim()
+    typed.current = false
     start()
   }
 
@@ -143,7 +148,10 @@ export function ChatComposer({
             rows={1}
             value={text}
             onChange={(e) => {
-              if (listening) base.current = ''
+              if (listening) {
+                typed.current = true
+                stop()
+              }
               setText(e.target.value)
             }}
             onKeyDown={(e) => {
