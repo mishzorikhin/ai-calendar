@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, type MouseEvent } from 'react'
 import { MoonIcon, PlusIcon, SunIcon } from '../../components/Icons'
 import { Pressable } from '../../components/ui'
@@ -68,33 +68,27 @@ export function PartCard({
   }
 
   return (
-    <motion.section
+    <m.section
       layout
       transition={spring}
       className={`${styles.part} ${styles[part.id]}`}
       style={{ zIndex: index + 1, flex: expanded ? '1 1 0%' : '0 0 auto', borderRadius: 30 }}
     >
-      <motion.button
-        layout="position"
-        type="button"
-        className={styles.partHead}
-        onClick={onOpen}
-        aria-expanded={expanded}
-      >
+      <m.button layout="position" type="button" className={styles.partHead} onClick={onOpen} aria-expanded={expanded}>
         <span className={styles.partTitle}>{part.title}</span>
         {!expanded && events.length > 0 && (
-          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={styles.partCount}>
+          <m.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={styles.partCount}>
             {pluralize(events.length, ['событие', 'события', 'событий'])}
-          </motion.span>
+          </m.span>
         )}
         <span className={styles.partIcon}>
           <Icon size={15} strokeWidth={2} />
         </span>
-      </motion.button>
+      </m.button>
 
       <AnimatePresence initial={false}>
         {expanded && (
-          <motion.div
+          <m.div
             key="tl"
             ref={wrap}
             layout
@@ -104,7 +98,7 @@ export function PartCard({
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={dateKey}
                 className={styles.timeline}
                 style={{ height: hours * HOUR_H }}
@@ -129,7 +123,7 @@ export function PartCard({
                     <i />
                   </span>
                 )}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
             {/* Клавиатурный (и явный) способ сделать то же, что тап по пустому времени. */}
             <Pressable
@@ -139,9 +133,9 @@ export function PartCard({
             >
               <PlusIcon size={15} /> Добавить событие · или нажмите на свободное время
             </Pressable>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
-    </motion.section>
+    </m.section>
   )
 }

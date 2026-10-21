@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { useAssistant } from '../app/assistant'
 import { useNavigation } from '../app/navigation'
@@ -51,7 +51,7 @@ function VoiceOverlayInner() {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
+        <m.div
           key="voice"
           className={styles.overlay}
           initial={{ opacity: 0 }}
@@ -59,7 +59,7 @@ function VoiceOverlayInner() {
           exit={{ opacity: 0, transition: { duration: 0.25 } }}
           onClick={() => setVoice('idle')}
         >
-          <motion.div
+          <m.div
             className={styles.panel}
             role="dialog"
             aria-label="Голосовой ввод"
@@ -71,7 +71,7 @@ function VoiceOverlayInner() {
           >
             <span className={styles.label} aria-live="polite">
               {voice === 'recording' && (
-                <motion.i
+                <m.i
                   animate={still ? undefined : { scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }}
                   transition={{ duration: 1.2, repeat: Infinity }}
                 />
@@ -85,7 +85,7 @@ function VoiceOverlayInner() {
             </p>
             <AnimatePresence initial={false} mode="wait">
               {voice === 'review' ? (
-                <motion.div
+                <m.div
                   key="actions"
                   className={styles.actions}
                   initial={{ opacity: 0, y: 10 }}
@@ -117,20 +117,20 @@ function VoiceOverlayInner() {
                   <Pill tone="ghost" onClick={() => setVoice('idle')}>
                     Отмена
                   </Pill>
-                </motion.div>
+                </m.div>
               ) : (
-                <motion.div key="stop" className={styles.actions} exit={{ opacity: 0 }}>
+                <m.div key="stop" className={styles.actions} exit={{ opacity: 0 }}>
                   <Pill tone="dark" small onClick={() => setVoice('review')}>
                     Готово
                   </Pill>
                   <Pill tone="ghost" small onClick={() => setVoice('idle')}>
                     Отмена
                   </Pill>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

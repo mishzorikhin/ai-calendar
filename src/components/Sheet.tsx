@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import type { ReactNode } from 'react'
 import styles from './Sheet.module.css'
 
@@ -18,8 +18,8 @@ export function Sheet({
   innerClassName?: string
 }) {
   return (
-    <motion.div className={`${styles.sheet} ${className ?? ''}`}>
+    <m.div className={`${styles.sheet} ${className ?? ''}`}>
       <div className={`${styles.inner} ${scroll ? 'scroll-y' : ''} ${innerClassName ?? ''}`}>{children}</div>
-    </motion.div>
+    </m.div>
   )
 }

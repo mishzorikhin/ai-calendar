@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
 import { apiErrorText } from '../../../api/api'
 import { useDeleteIntegration, useSyncIntegration, useUpdateIntegration } from '../../../api/queries'
@@ -64,14 +64,14 @@ export function IntegrationRow({ item, now }: { item: Integration; now: Date }) 
           </span>
           <span className={item.lastError ? styles.rowError : styles.rowMeta}>{item.lastError || meta}</span>
         </span>
-        <motion.span className={styles.chevron} animate={{ rotate: open ? 90 : 0 }} transition={spring}>
+        <m.span className={styles.chevron} animate={{ rotate: open ? 90 : 0 }} transition={spring}>
           <ArrowRightIcon size={16} strokeWidth={2.2} />
-        </motion.span>
+        </m.span>
       </Pressable>
 
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
+          <m.div
             id={detailsId}
             className={styles.details}
             initial={{ height: 0, opacity: 0 }}
@@ -123,13 +123,13 @@ export function IntegrationRow({ item, now }: { item: Integration; now: Date }) 
 
               <div className={styles.rowActions}>
                 <Pill small tone="white" onClick={() => sync.mutate(item.id)} disabled={sync.isPending}>
-                  <motion.span
+                  <m.span
                     className={styles.spin}
                     animate={sync.isPending && !reduce ? { rotate: 360 } : { rotate: 0 }}
                     transition={sync.isPending ? { repeat: Infinity, duration: 0.9, ease: 'linear' } : spring}
                   >
                     <RefreshIcon size={15} />
-                  </motion.span>
+                  </m.span>
                   {sync.isPending ? 'Обновляю…' : 'Обновить'}
                 </Pill>
                 <Pressable
@@ -152,7 +152,7 @@ export function IntegrationRow({ item, now }: { item: Integration; now: Date }) 
                 </p>
               )}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </li>

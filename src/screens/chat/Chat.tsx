@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
@@ -74,9 +74,9 @@ export function Chat() {
       <TasksPill />
       <DayPreview />
 
-      <motion.h1 variants={itemVariants} className={styles.title}>
+      <m.h1 variants={itemVariants} className={styles.title}>
         Сегодня
-      </motion.h1>
+      </m.h1>
 
       <div
         ref={list}
@@ -85,26 +85,26 @@ export function Chat() {
         aria-label="Диалог с ассистентом"
         onScroll={onScroll}
       >
-        {messages.map((m, i) => (
-          <motion.p
-            key={m.id}
-            className={`${styles.bubble} ${m.role === 'user' ? styles.bubbleUser : ''}`}
+        {messages.map((msg, i) => (
+          <m.p
+            key={msg.id}
+            className={`${styles.bubble} ${msg.role === 'user' ? styles.bubbleUser : ''}`}
             initial={{ opacity: 0, y: 12, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...spring, delay: i === messages.length - 1 ? 0.25 : 0 }}
-            style={{ originX: m.role === 'user' ? 1 : 0, originY: 1 }}
+            style={{ originX: msg.role === 'user' ? 1 : 0, originY: 1 }}
           >
-            {m.text}
-          </motion.p>
+            {msg.text}
+          </m.p>
         ))}
         {stream && <StreamReply stream={stream} />}
-        {failed.map((m) => (
+        {failed.map((msg) => (
           <FailedBubble
-            key={m.id}
-            message={m}
+            key={msg.id}
+            message={msg}
             busy={busy}
-            onRetry={() => sendAndFollow(m.text)}
-            onDismiss={() => dismissFailed(m.id)}
+            onRetry={() => sendAndFollow(msg.text)}
+            onDismiss={() => dismissFailed(msg.id)}
           />
         ))}
       </div>
@@ -123,7 +123,7 @@ function StreamReply({ stream }: { stream: ChatStream }) {
     go('day')
   }
   return (
-    <motion.div
+    <m.div
       className={styles.stream}
       initial={{ opacity: 0, y: 12, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -163,7 +163,7 @@ function StreamReply({ stream }: { stream: ChatStream }) {
           <Dots />
         )}
       </p>
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -185,7 +185,7 @@ function FailedBubble({
   onDismiss: () => void
 }) {
   return (
-    <motion.div
+    <m.div
       className={`${styles.failed} ${message.delivered ? styles.failedReply : ''}`}
       initial={{ opacity: 0, y: 12, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -205,6 +205,6 @@ function FailedBubble({
           Убрать
         </button>
       </p>
-    </motion.div>
+    </m.div>
   )
 }

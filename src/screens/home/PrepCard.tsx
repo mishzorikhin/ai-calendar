@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { useTasks, useUpdateTask } from '../../api/queries'
 import { BottomSheet } from '../../components/BottomSheet'
@@ -32,13 +32,13 @@ export function PrepCard({ onEdit }: { onEdit: (task: Task) => void }) {
             scale={0.97}
           >
             Выполненные · {done.length}
-            <motion.span animate={{ rotate: showDone ? 180 : 0 }} transition={spring} className={styles.flex}>
+            <m.span animate={{ rotate: showDone ? 180 : 0 }} transition={spring} className={styles.flex}>
               <ChevronDownIcon size={14} strokeWidth={2.2} />
-            </motion.span>
+            </m.span>
           </Pressable>
           <AnimatePresence initial={false}>
             {showDone && (
-              <motion.div
+              <m.div
                 key="done"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -49,7 +49,7 @@ export function PrepCard({ onEdit }: { onEdit: (task: Task) => void }) {
                 {done.map((task) => (
                   <TaskCard key={task.id} task={task} onEdit={onEdit} />
                 ))}
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </>
@@ -71,14 +71,14 @@ function TaskCard({ task, onEdit }: { task: Task; onEdit: (task: Task) => void }
       >
         <AnimatePresence initial={false}>
           {task.done && (
-            <motion.span
+            <m.span
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.4, opacity: 0 }}
               transition={spring}
             >
               <CheckIcon size={14} strokeWidth={2.4} />
-            </motion.span>
+            </m.span>
           )}
         </AnimatePresence>
       </Pressable>

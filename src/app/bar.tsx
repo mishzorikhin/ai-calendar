@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
+import { AnimatePresence, m, useIsPresent } from 'framer-motion'
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { spring } from '../lib/motion'
@@ -56,7 +56,7 @@ export function BarSlot({
   return createPortal(
     <AnimatePresence mode="popLayout">
       {isPresent && !hidden && children && (
-        <motion.div
+        <m.div
           key={id}
           className="bar-slot-item"
           initial={{ opacity: 0, y: 14 }}
@@ -65,7 +65,7 @@ export function BarSlot({
           transition={spring}
         >
           {children}
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>,
     slot,

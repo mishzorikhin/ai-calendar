@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { formatMinutes } from '../lib/dates'
 import { spring } from '../lib/motion'
@@ -58,7 +58,7 @@ export function ComposerStatus({
 }) {
   return (
     <AnimatePresence initial={false} mode="popLayout">
-      <motion.div
+      <m.div
         key={allDay ? 'all-day' : conflicts.join() || 'free'}
         className={`${styles.status} ${conflicts.length ? styles.warn : styles.ok}`}
         initial={{ opacity: 0, y: 6 }}
@@ -87,7 +87,7 @@ export function ComposerStatus({
             На {formatMinutes(shift)}
           </Pressable>
         )}
-      </motion.div>
+      </m.div>
     </AnimatePresence>
   )
 }

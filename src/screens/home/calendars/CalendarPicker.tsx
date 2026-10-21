@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import type { Ref } from 'react'
 import { CheckIcon, LockIcon } from '../../../components/Icons'
 import { Pressable } from '../../../components/ui'
@@ -19,7 +19,7 @@ export function CalendarPicker({
   ref?: Ref<HTMLDivElement>
 }) {
   return (
-    <motion.div
+    <m.div
       ref={ref}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -56,6 +56,6 @@ export function CalendarPicker({
           )
         })}
       </div>
-    </motion.div>
+    </m.div>
   )
 }

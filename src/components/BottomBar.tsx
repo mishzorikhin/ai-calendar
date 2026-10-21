@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState, type ReactNode } from 'react'
 import { useAssistant } from '../app/assistant'
 import { useBarContext } from '../app/bar'
@@ -31,7 +31,7 @@ export function BottomBar() {
   }
 
   return (
-    <motion.nav
+    <m.nav
       className={styles.bar}
       initial={false}
       animate={{ y: state.hidden ? '120%' : '0%', opacity: state.hidden ? 0 : 1 }}
@@ -61,7 +61,7 @@ export function BottomBar() {
         <div ref={setSlot} className={styles.slot} hidden={voiceActive} />
         <AnimatePresence initial={false}>
           {voiceActive && (
-            <motion.div
+            <m.div
               key={voice}
               className={styles.centerInner}
               initial={{ opacity: 0, y: 14 }}
@@ -76,7 +76,7 @@ export function BottomBar() {
                   <Waveform bars={22} color="rgba(60, 40, 70, 0.7)" height={24} />
                 </Pressable>
               )}
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -90,7 +90,7 @@ export function BottomBar() {
 
       <AnimatePresence>
         {hint && route === 'home' && !state.hidden && !voiceActive && (
-          <motion.div
+          <m.div
             className={styles.hint}
             role="status"
             initial={{ opacity: 0, y: 10, scale: 0.9 }}
@@ -103,10 +103,10 @@ export function BottomBar() {
             <Pressable className={styles.hintBtn} onClick={dismissHint}>
               Понятно
             </Pressable>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
-    </motion.nav>
+    </m.nav>
   )
 }
 

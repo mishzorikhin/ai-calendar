@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useCalendarName } from '../../api/queries'
 import { BADGE_ICON, RepeatIcon } from '../../components/Icons'
 import type { CalendarEvent } from '../../domain/types'
@@ -37,7 +37,7 @@ export function EventCard({
   const top = ((event.start - from) / 60) * HOUR_H + 3
   const height = Math.max(((end - event.start) / 60) * HOUR_H - 6, MIN_CARD_H)
   return (
-    <motion.button
+    <m.button
       data-event
       type="button"
       className={`${styles.event} ${event.highlight ? styles.eventNew : ''}`}
@@ -58,6 +58,6 @@ export function EventCard({
         <BadgeIcon size={10} strokeWidth={2.4} />
       </i>
       {event.highlight && <span className={styles.newTag}>Новое</span>}
-    </motion.button>
+    </m.button>
   )
 }

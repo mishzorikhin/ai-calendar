@@ -1,6 +1,6 @@
 import { Avatar, Stack } from '../../components/ui'
 import type { Task, User } from '../../domain/types'
-import { userColor, userInitials } from './AccountSheet'
+import { userColor, userInitials } from './avatar'
 import styles from './Home.module.css'
 
 /**

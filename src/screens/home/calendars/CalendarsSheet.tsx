@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { useIntegrations } from '../../../api/queries'
 import { BottomSheet } from '../../../components/BottomSheet'
@@ -47,7 +47,7 @@ export function CalendarsSheet({ onClose, notice: initial }: { onClose: () => vo
       </div>
 
       <AnimatePresence mode="popLayout" initial={false}>
-        <motion.div
+        <m.div
           key={view}
           initial={{ opacity: 0, x: view === 'list' ? -24 : 24 }}
           animate={{ opacity: 1, x: 0 }}
@@ -90,7 +90,7 @@ export function CalendarsSheet({ onClose, notice: initial }: { onClose: () => vo
               <FeedCard />
             </>
           )}
-        </motion.div>
+        </m.div>
       </AnimatePresence>
     </BottomSheet>
   )

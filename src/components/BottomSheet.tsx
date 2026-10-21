@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { softSpring } from '../lib/motion'
@@ -76,9 +76,9 @@ export function BottomSheet({
   }
 
   const content = (
-    <motion.div className={styles.root} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div className={styles.backdrop} style={{ opacity: dim }} onClick={onClose} aria-hidden="true" />
-      <motion.div
+    <m.div className={styles.root} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <m.div className={styles.backdrop} style={{ opacity: dim }} onClick={onClose} aria-hidden="true" />
+      <m.div
         ref={panel}
         className={styles.sheet}
         style={{ maxHeight, y }}
@@ -97,8 +97,8 @@ export function BottomSheet({
         </div>
         <div className={`${styles.body} ${padded ? styles.padded : ''} scroll-y`}>{children}</div>
         {footer && <div className={styles.footer}>{footer}</div>}
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   )
 
   const root = document.getElementById('modal-root')

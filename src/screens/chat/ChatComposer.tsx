@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigation } from '../../app/navigation'
 import { ArrowRightIcon, BackIcon, CloseIcon, MicIcon, StopIcon } from '../../components/Icons'
@@ -86,7 +86,7 @@ export function ChatComposer({
   const chipsKey = text ? 'quick' : active ? `cat-${active.id}` : 'cats'
 
   return (
-    <motion.div
+    <m.div
       className={styles.composer}
       style={{ paddingBottom: `max(var(--safe-bottom), ${kb + 10}px)` }}
       initial={{ y: 40, opacity: 0 }}
@@ -95,7 +95,7 @@ export function ChatComposer({
     >
       <div className={styles.chipsViewport}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
+          <m.div
             key={chipsKey}
             className={`${styles.chips} scroll-x`}
             initial={{ opacity: 0, x: 30 }}
@@ -134,7 +134,7 @@ export function ChatComposer({
                 </Pill>
               ))
             )}
-          </motion.div>
+          </m.div>
         </AnimatePresence>
       </div>
 
@@ -172,7 +172,7 @@ export function ChatComposer({
         </label>
         <AnimatePresence mode="popLayout" initial={false}>
           {text && !listening ? (
-            <motion.span
+            <m.span
               key="send"
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -189,9 +189,9 @@ export function ChatComposer({
               >
                 <ArrowRightIcon size={20} strokeWidth={2.2} />
               </CircleButton>
-            </motion.span>
+            </m.span>
           ) : supported ? (
-            <motion.span
+            <m.span
               key="mic"
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -207,10 +207,10 @@ export function ChatComposer({
               >
                 {listening ? <StopIcon size={18} /> : <MicIcon size={20} />}
               </CircleButton>
-            </motion.span>
+            </m.span>
           ) : null}
         </AnimatePresence>
       </div>
-    </motion.div>
+    </m.div>
   )
 }

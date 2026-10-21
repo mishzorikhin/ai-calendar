@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useLayoutEffect, useRef } from 'react'
 import { BackIcon, ArrowRightIcon } from '../../components/Icons'
 import { CircleButton, Pill } from '../../components/ui'
@@ -27,7 +27,7 @@ export function MonthPicker({
   }, [])
 
   return (
-    <motion.div
+    <m.div
       className={styles.pickerWrap}
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
@@ -45,15 +45,15 @@ export function MonthPicker({
           <BackIcon size={16} />
         </CircleButton>
         <div ref={row} className={`${styles.pickerMonths} scroll-x`}>
-          {MONTHS.map((m, i) => (
+          {MONTHS.map((name, i) => (
             <Pill
-              key={m}
+              key={name}
               small
               tone={i === month ? 'dark' : 'white'}
               aria-pressed={i === month}
               onClick={() => onPick(i)}
             >
-              {m}
+              {name}
             </Pill>
           ))}
         </div>
@@ -67,6 +67,6 @@ export function MonthPicker({
           <ArrowRightIcon size={16} />
         </CircleButton>
       </div>
-    </motion.div>
+    </m.div>
   )
 }

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useCalendarName } from '../../api/queries'
 import { DAY_PARTS } from '../../domain/calendar'
 import type { CalendarEvent } from '../../domain/types'
@@ -27,7 +27,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
           <p className={styles.agendaPart}>{part.title}</p>
           <ul className={styles.agendaItems}>
             {items.map((e) => (
-              <motion.li
+              <m.li
                 key={e.id}
                 initial={{ opacity: 0, x: -12 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -49,7 +49,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
                     <AgendaSub event={e} />
                   </span>
                 </button>
-              </motion.li>
+              </m.li>
             ))}
           </ul>
         </section>

@@ -74,8 +74,6 @@ export default defineConfig(({ mode }) => {
             filename: 'sw.ts',
             injectManifest: {
               globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-              // Греческие и вьетнамские начертания шрифта в интерфейсе не нужны — не кладём их в офлайн-кэш.
-              globIgnores: ['**/inter-{greek,greek-ext,vietnamese}-*'],
             },
           }),
     ],
@@ -90,10 +88,9 @@ export default defineConfig(({ mode }) => {
         ? undefined
         : {
             output: {
-              advancedChunks: {
+              codeSplitting: {
                 groups: [
                   { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
-                  { name: 'motion', test: /node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/ },
                   { name: 'query', test: /node_modules[\\/]@tanstack[\\/]/ },
                 ],
               },

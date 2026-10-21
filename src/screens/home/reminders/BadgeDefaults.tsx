@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { ChevronDownIcon } from '../../../components/Icons'
 import { Pressable } from '../../../components/ui'
@@ -12,7 +12,7 @@ import styles from './Reminders.module.css'
 /** −2 — «как обычно»: у типа нет своего значения. */
 const AS_USUAL = -2
 const CHOICES = [AS_USUAL, -1, ...REMINDER_PRESETS]
-const label = (m: number) => (m === AS_USUAL ? 'Как обычно' : reminderShortLabel(m))
+const label = (mins: number) => (mins === AS_USUAL ? 'Как обычно' : reminderShortLabel(mins))
 
 /** «Своё время для типов событий»: спорт — за час, работа — за 15 минут… */
 export function BadgeDefaults({
@@ -40,7 +40,7 @@ export function BadgeDefaults({
       </Pressable>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
+          <m.div
             className={styles.disclosureBody}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -54,11 +54,11 @@ export function BadgeDefaults({
                 options={CHOICES}
                 value={own[id] ?? AS_USUAL}
                 label={label}
-                onChange={(m) => set(id, m)}
+                onChange={(mins) => set(id, mins)}
                 compact
               />
             ))}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

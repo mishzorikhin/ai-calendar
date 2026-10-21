@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { AnimatePresence, m } from 'framer-motion'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useApi } from '../../api/provider'
 import { useDayEvents, useMe, useNotifications, useTasks } from '../../api/queries'
 import { useSession } from '../../api/session'
@@ -17,15 +17,18 @@ import { minutesOf, useNow } from '../../lib/hooks'
 import { itemVariants } from '../../lib/motion'
 import { pluralize } from '../../lib/plural'
 import { InstallBanner } from '../../pwa/InstallBanner'
-import { AccountSheet, userColor, userInitials } from './AccountSheet'
-import { CalendarsSheet } from './calendars/CalendarsSheet'
-import { RemindersSheet } from './reminders/RemindersSheet'
+import { userColor, userInitials } from './avatar'
 import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
 import { TaskSheet } from './TaskSheet'
 import { TasksGrid } from './TasksGrid'
 import styles from './Home.module.css'
+
+// Шторки аккаунта открываются редко — их код грузится по первому открытию.
+const AccountSheet = lazy(() => import('./AccountSheet').then((mod) => ({ default: mod.AccountSheet })))
+const CalendarsSheet = lazy(() => import('./calendars/CalendarsSheet').then((mod) => ({ default: mod.CalendarsSheet })))
+const RemindersSheet = lazy(() => import('./reminders/RemindersSheet').then((mod) => ({ default: mod.RemindersSheet })))
 
 export function Home() {
   const { go } = useNavigation()
@@ -68,7 +71,7 @@ export function Home() {
         <TapToSay />
       </BarSlot>
 
-      <motion.header variants={itemVariants} className={styles.top}>
+      <m.header variants={itemVariants} className={styles.top}>
         <Pressable className={styles.todayLink} scale={0.97} onClick={() => openDay(today)}>
           <span className={styles.todayLabel}>
             {WEEKDAYS[today.getDay()]}, {today.getDate()} {MONTHS_GENITIVE[today.getMonth()]}
@@ -96,9 +99,9 @@ export function Home() {
             </span>
           </Pressable>
         </div>
-      </motion.header>
+      </m.header>
 
-      <motion.section variants={itemVariants} className={styles.goals}>
+      <m.section variants={itemVariants} className={styles.goals}>
         <div className={styles.goalsHead}>
           <div>
             <h1 className={`display ${styles.goalsTitle}`}>Сегодня</h1>
@@ -113,38 +116,38 @@ export function Home() {
             <span className={styles.meetingSub}>Нажмите, чтобы что-нибудь запланировать</span>
           </Pressable>
         )}
-      </motion.section>
+      </m.section>
 
       <InstallBanner />
 
-      <motion.div variants={itemVariants} className={styles.label}>
+      <m.div variants={itemVariants} className={styles.label}>
         <span>Задачи и цели{tasksFailed ? ' · не загрузились' : tasks.length > 0 ? ` · ${openTasks}` : ''}</span>
         <Pressable className={styles.labelAdd} aria-label="Добавить задачу" onClick={() => setTaskSheet('new')}>
           <PlusIcon size={15} strokeWidth={2.4} />
         </Pressable>
-      </motion.div>
+      </m.div>
 
       {tasksFailed ? (
-        <motion.div variants={itemVariants} className={styles.failCard}>
+        <m.div variants={itemVariants} className={styles.failCard}>
           <span className={`title ${styles.failTitle}`}>Задачи не загрузились</span>
           <span className={styles.meetingSub}>Проверьте соединение и попробуйте ещё раз</span>
           <Pill tone="dark" small className={styles.failRetry} onClick={() => void refetchTasks()}>
             Повторить
           </Pill>
-        </motion.div>
+        </m.div>
       ) : tasks.length === 0 ? (
-        <motion.div variants={itemVariants}>
+        <m.div variants={itemVariants}>
           <Pressable className={styles.free} scale={0.98} onClick={() => setTaskSheet('new')}>
             <span className={`title ${styles.meetingTitle}`}>Задач пока нет</span>
             <span className={styles.meetingSub}>Нажмите, чтобы добавить — или попросите ассистента</span>
           </Pressable>
-        </motion.div>
+        </m.div>
       ) : (
         <>
           <TasksGrid onEdit={setTaskSheet} />
-          <motion.div variants={itemVariants}>
+          <m.div variants={itemVariants}>
             <PrepCard onEdit={setTaskSheet} />
-          </motion.div>
+          </m.div>
         </>
       )}
 
@@ -157,16 +160,23 @@ export function Home() {
           />
         )}
         {sheet === 'account' && (
-          <AccountSheet
-            key="account-sheet"
-            onClose={() => setSheet(null)}
-            onCalendars={() => setSheet('calendars')}
-            onReminders={() => setSheet('reminders')}
-          />
+          <Suspense key="account-sheet" fallback={null}>
+            <AccountSheet
+              onClose={() => setSheet(null)}
+              onCalendars={() => setSheet('calendars')}
+              onReminders={() => setSheet('reminders')}
+            />
+          </Suspense>
         )}
-        {sheet === 'reminders' && <RemindersSheet key="reminders-sheet" onClose={() => setSheet(null)} />}
+        {sheet === 'reminders' && (
+          <Suspense key="reminders-sheet" fallback={null}>
+            <RemindersSheet onClose={() => setSheet(null)} />
+          </Suspense>
+        )}
         {sheet === 'calendars' && (
-          <CalendarsSheet key="calendars-sheet" notice={oauthReturn} onClose={() => setSheet(null)} />
+          <Suspense key="calendars-sheet" fallback={null}>
+            <CalendarsSheet notice={oauthReturn} onClose={() => setSheet(null)} />
+          </Suspense>
         )}
       </AnimatePresence>
     </Sheet>
