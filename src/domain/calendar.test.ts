@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findFreeSlots, firstFreeTime, nearestTimeOption, partOf, slotAt } from './calendar'
+import { TIME_OPTIONS, findFreeSlots, firstFreeTime, fitDuration, nearestTimeOption, partOf, slotAt } from './calendar'
 import type { CalendarEvent } from './types'
 
 const ev = (id: string, start: number, end: number): CalendarEvent => ({
@@ -52,6 +52,16 @@ describe('выбор времени', () => {
   it('firstFreeTime пропускает занятое', () => {
     expect(firstFreeTime(DAY, 0)).toBe(h(9))
     expect(firstFreeTime(DAY, h(10))).toBe(h(11, 30))
+  })
+
+  it('TIME_OPTIONS покрывает все сутки, включая ночь', () => {
+    expect(TIME_OPTIONS[0]).toBe(0)
+    expect(TIME_OPTIONS.at(-1)).toBe(h(23, 30))
+  })
+
+  it('fitDuration не даёт выйти за полночь', () => {
+    expect(fitDuration(h(23, 30), 60)).toBe(30)
+    expect(fitDuration(h(9), 60)).toBe(60)
   })
 
   it('nearestTimeOption округляет до получаса', () => {

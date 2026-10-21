@@ -13,9 +13,9 @@ import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
 import { useNavigation } from '../app/navigation'
-import { TIME_OPTIONS, firstFreeTime, nearestTimeOption, slotAt } from '../domain/calendar'
+import { TIME_OPTIONS, firstFreeTime, fitDuration, nearestTimeOption, slotAt } from '../domain/calendar'
 import { minutesOf } from '../lib/hooks'
-import { addDays, formatMinutes, isSameDay, relativeDayLabel, startOfDay } from '../lib/dates'
+import { addDays, formatMinutes, fromISODate, isSameDay, relativeDayLabel, startOfDay, toISODate } from '../lib/dates'
 import { BADGE_OPTIONS } from '../lib/badges'
 import { spring } from '../lib/motion'
 import { BADGE_ICON } from './Icons'
@@ -33,6 +33,8 @@ const DURATIONS = [
   { value: 120, label: '2 ч' },
   { value: 180, label: '3 ч' },
   { value: 240, label: '4 ч' },
+  { value: 360, label: '6 ч' },
+  { value: 480, label: '8 ч' },
 ] as const
 
 /** Сколько ближайших дней предлагаем в композере. */
@@ -96,7 +98,9 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   // Другие события дня — для подсчёта свободного времени (себя при правке не считаем).
   const others = events.filter((e) => e.id !== editing?.id)
   const start = pickedStart ?? firstFreeTime(others, isSameDay(date, now) ? minutesOf(now) : 0)
-  const end = start + duration
+  // Поздний старт + длинное событие не должны вылезать за полночь — укорачиваем до 24:00.
+  const length = fitDuration(start, duration)
+  const end = start + length
 
   const today = startOfDay(new Date())
   const dates = Array.from({ length: DAY_CHOICES }, (_, i) => addDays(today, i))
@@ -111,7 +115,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
     editing ? editing.end - editing.start : null,
   )
 
-  const conflicts = slotAt(others, start, duration).conflicts
+  const conflicts = slotAt(others, start, length).conflicts
 
   // Прокручиваем ленту времени к выбранному варианту до первой отрисовки.
   useLayoutEffect(() => {
@@ -256,6 +260,20 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
               {relativeDayLabel(d, today)}
             </Pill>
           ))}
+          {/* Любая дата — через системный выбор: на телефоне это привычный календарь. */}
+          <label className={styles.otherDate}>
+            <CalendarIcon size={14} />
+            Другая дата
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={toISODate(date)}
+              aria-label="Выбрать другую дату"
+              onChange={(e) => {
+                if (e.target.value) setDate(fromISODate(e.target.value))
+              }}
+            />
+          </label>
         </div>
 
         <p className={styles.label} id="composer-start">
@@ -279,7 +297,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
         <p className={styles.label} id="composer-duration">
           Длительность
         </p>
-        <div className={styles.row} role="group" aria-labelledby="composer-duration">
+        <div className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-duration">
           {durations.map((d) => (
             <Pill
               key={d}

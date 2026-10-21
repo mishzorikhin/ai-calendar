@@ -43,6 +43,29 @@
   flex-shrink: 0;
 }
 
+/* Пилюля «Другая дата»: невидимый input поверх ловит тап и открывает системный выбор даты. */
+.otherDate {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  font-size: 14.5px;
+  white-space: nowrap;
+}
+
+.dateInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .status {
   margin: 16px 4px 0;
   padding: 10px 14px;
