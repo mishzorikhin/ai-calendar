@@ -2,6 +2,7 @@
 package model
 
 import (
+	"slices"
 	"time"
 	"unicode/utf8"
 )
@@ -47,21 +48,24 @@ type User struct {
 // ReadOnly — менять можно только в исходном календаре (подписка, повтор серии,
 // многодневное или на весь день). AllDay — на весь день: Start 0, End 1440.
 type Event struct {
-	ID         string    `json:"id"`
-	UserID     int64     `json:"userId,omitempty"`
-	Date       string    `json:"date"`
-	Title      string    `json:"title"`
-	Subtitle   string    `json:"subtitle,omitempty"`
-	Start      int       `json:"start"`
-	End        int       `json:"end"`
-	Badge      Badge     `json:"badge"`
-	Highlight  bool      `json:"highlight,omitempty"`
-	Source     string    `json:"source,omitempty"`
-	ExternalID string    `json:"externalId,omitempty"`
-	ETag       string    `json:"etag,omitempty"`
-	ReadOnly   bool      `json:"readOnly,omitempty"`
-	AllDay     bool      `json:"allDay,omitempty"`
-	CreatedAt  time.Time `json:"createdAt,omitempty"`
+	ID         string `json:"id"`
+	UserID     int64  `json:"userId,omitempty"`
+	Date       string `json:"date"`
+	Title      string `json:"title"`
+	Subtitle   string `json:"subtitle,omitempty"`
+	Start      int    `json:"start"`
+	End        int    `json:"end"`
+	Badge      Badge  `json:"badge"`
+	Highlight  bool   `json:"highlight,omitempty"`
+	Source     string `json:"source,omitempty"`
+	ExternalID string `json:"externalId,omitempty"`
+	ETag       string `json:"etag,omitempty"`
+	ReadOnly   bool   `json:"readOnly,omitempty"`
+	AllDay     bool   `json:"allDay,omitempty"`
+	// Reminders — за сколько минут до начала напомнить. nil — как в настройках
+	// пользователя (события внешних календарей и созданные до напоминаний), [] — не напоминать.
+	Reminders []int     `json:"reminders"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }
 
 // EventPatch — частичное обновление события: nil-поля не трогаем.
@@ -73,6 +77,8 @@ type EventPatch struct {
 	Start    *int
 	End      *int
 	Badge    *Badge
+	// Reminders: указатель на nil — вернуть напоминание по умолчанию.
+	Reminders *[]int
 }
 
 // Apply применяет патч к событию на месте.
@@ -95,6 +101,15 @@ func (e *Event) Apply(p EventPatch) {
 	if p.Badge != nil {
 		e.Badge = *p.Badge
 	}
+	if p.Reminders != nil {
+		e.Reminders = slices.Clone(*p.Reminders)
+	}
+}
+
+// OnlyReminders — патч меняет только напоминания: во внешний календарь писать нечего.
+func (p EventPatch) OnlyReminders() bool {
+	return p.Reminders != nil && p.Title == nil && p.Subtitle == nil && p.Date == nil &&
+		p.Start == nil && p.End == nil && p.Badge == nil
 }
 
 // TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).
@@ -254,4 +269,69 @@ type Integration struct {
 	LastSync  time.Time `json:"lastSync"`
 	LastError string    `json:"lastError,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// MaxReminders — сколько напоминаний можно задать одному событию;
+// MaxReminderMinutes — самое раннее напоминание: за неделю.
+const (
+	MaxReminders       = 3
+	MaxReminderMinutes = 7 * 24 * 60
+)
+
+// PushSubscription — подписка браузера на Web Push (PushSubscription.toJSON()).
+// Endpoint — адрес у сервиса доставки браузера, P256DH и Auth — ключи шифрования.
+// Наружу не отдаётся: адрес позволяет слать уведомления на устройство.
+type PushSubscription struct {
+	Endpoint  string    `json:"endpoint"`
+	P256DH    string    `json:"p256dh"`
+	Auth      string    `json:"auth"`
+	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// NotifySettings — настройки напоминаний пользователя. Время — минуты от полуночи
+// в поясе пользователя; -1 — выключено.
+type NotifySettings struct {
+	// EventReminder — за сколько минут напоминать о событии без своих напоминаний
+	// (новые события по умолчанию, внешние календари).
+	EventReminder int `json:"eventReminder"`
+	// TaskTime — во сколько напомнить о незакрытой задаче или цели в день срока.
+	TaskTime int `json:"taskTime"`
+	// Digest — во сколько присылать сводку дня: встречи и задачи на сегодня.
+	Digest int `json:"digest"`
+}
+
+// DefaultNotifySettings — настройки, пока пользователь их не менял.
+var DefaultNotifySettings = NotifySettings{EventReminder: 10, TaskTime: 9 * 60, Digest: -1}
+
+// PushKind — вид уведомления: от него зависят кнопки в уведомлении.
+type PushKind string
+
+const (
+	PushEvent  PushKind = "event"
+	PushTask   PushKind = "task"
+	PushDigest PushKind = "digest"
+	PushShare  PushKind = "share"
+	PushTest   PushKind = "test"
+)
+
+// PushMessage — содержимое уведомления; service worker показывает его как есть.
+type PushMessage struct {
+	Kind  PushKind `json:"kind"`
+	Title string   `json:"title"`
+	Body  string   `json:"body,omitempty"`
+	// URL — что открыть по нажатию (адрес приложения: «/#day/2026-10-21»).
+	URL string `json:"url,omitempty"`
+	// Tag — одно уведомление на событие: новое с тем же тегом заменяет старое.
+	Tag string `json:"tag,omitempty"`
+	// TaskID — для кнопки «Готово» у напоминания о задаче.
+	TaskID string `json:"taskId,omitempty"`
+}
+
+// Snooze — отложенное уведомление («Напомнить через 10 минут»).
+type Snooze struct {
+	ID      int64       `json:"id"`
+	UserID  int64       `json:"userId"`
+	At      time.Time   `json:"at"`
+	Message PushMessage `json:"message"`
 }

@@ -24,6 +24,13 @@
 //	CALENDAR_SYNC_INTERVAL   период фоновой синхронизации (по умолчанию 15m; 0 — выключить)
 //	CALENDAR_ALLOW_PRIVATE   1 — разрешить адреса внутренней сети (свой Nextcloud дома)
 //	DEFAULT_TIMEZONE         пояс пользователей, пока браузер не сообщил свой (Europe/Moscow)
+//
+// Уведомления (Web Push, без внешних аккаунтов):
+//
+//	VAPID_PRIVATE_KEY  закрытый ключ VAPID (base64url); по умолчанию создаётся при первом запуске
+//	                   и хранится в хранилище. Смена ключа отключает уведомления на всех устройствах
+//	VAPID_SUBJECT      контакт для сервисов доставки (mailto:… или https://…); по умолчанию PUBLIC_URL
+//	REMINDER_INTERVAL  как часто проверять напоминания (по умолчанию 30s; 0 — не рассылать)
 package main
 
 import (
@@ -86,6 +93,10 @@ func run(port string) error {
 	if err != nil {
 		return err
 	}
+	reminderEvery, err := time.ParseDuration(env("REMINDER_INTERVAL", "30s"))
+	if err != nil {
+		return fmt.Errorf("REMINDER_INTERVAL: %w", err)
+	}
 
 	srv := &http.Server{
 		Addr: ":" + port,
@@ -99,6 +110,12 @@ func run(port string) error {
 
 			ClosedRegistration: os.Getenv("REGISTRATION") == "closed",
 			Proxy:              proxyMode(os.Getenv("TRUST_PROXY")),
+			Push: api.PushOptions{
+				PrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
+				Subject:    os.Getenv("VAPID_SUBJECT"),
+				Interval:   reminderEvery,
+				Background: ctx,
+			},
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

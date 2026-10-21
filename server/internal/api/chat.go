@@ -201,6 +201,7 @@ func chatSystemPrompt(now time.Time) string {
 - Приветствия, вопросы и обычный разговор — просто отвечай, инструменты не нужны.
 - Просят что-то запланировать — сначала посмотри день (get_day_schedule или find_free_slots), потом create_event. Если день или время не указаны, выбери разумное свободное окно сам и сообщи, что выбрал; уточняй, только когда совсем непонятно.
 - Просят изменить или перенести событие — update_event с id из get_day_schedule.
+- «Напомни за час до встречи» — reminders в create_event/update_event (минуты до начала). Напоминания приходят пуш-уведомлением на устройства, где пользователь включил уведомления в настройках аккаунта.
 - Даты в инструментах — ГГГГ-ММ-ДД, время — ЧЧ:ММ.
 - Просят добавить задачу или цель — create_task; «задача» — одно дело, «цель» — то, к чему идут (с дедлайном due, если назвали срок). Отметить выполненной или поменять — update_task, id бери из list_tasks.
 - Совместная задача: чтобы поделиться, передай логины в members (create_task/update_task) или впиши @логин в название — участник увидит задачу у себя и получит уведомление. Логины всех пользователей — list_users; «задача для Анны» — найди её логин через list_users.
@@ -251,6 +252,8 @@ var chatTools = []llm.Tool{
 				"end":      map[string]any{"type": "string", "description": "Конец, ЧЧ:ММ"},
 				"badge":    map[string]any{"type": "string", "enum": []string{"routine", "work", "food", "sport", "read", "sleep"}, "description": "Тип события"},
 				"subtitle": map[string]any{"type": "string", "description": "Место или детали, необязательно"},
+				"reminders": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 10080}, "maxItems": 3,
+					"description": "За сколько минут до начала напомнить пуш-уведомлением: [60] — за час, [0] — в момент начала, [] — не напоминать. Не указывай, если пользователь не просил — сработает его напоминание по умолчанию"},
 			},
 			"required":             []string{"date", "title", "start", "end"},
 			"additionalProperties": false,
@@ -258,7 +261,7 @@ var chatTools = []llm.Tool{
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "update_event",
-		Description: "Изменить событие пользователя: название, время, день, тип. id — из get_day_schedule.",
+		Description: "Изменить событие пользователя: название, время, день, тип, напоминания. id — из get_day_schedule. Напоминания можно менять и у событий read_only.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -269,6 +272,8 @@ var chatTools = []llm.Tool{
 				"end":      map[string]any{"type": "string", "description": "Новый конец, ЧЧ:ММ"},
 				"badge":    map[string]any{"type": "string", "enum": []string{"routine", "work", "food", "sport", "read", "sleep"}, "description": "Новый тип"},
 				"subtitle": map[string]any{"type": "string", "description": "Место или детали; пустая строка убирает"},
+				"reminders": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 10080}, "maxItems": 3,
+					"description": "Новые напоминания: за сколько минут до начала ([15], [1440, 60]); [] — не напоминать"},
 			},
 			"required":             []string{"event_id"},
 			"additionalProperties": false,
@@ -443,11 +448,16 @@ type toolEvent struct {
 	ReadOnly bool `json:"read_only,omitempty"`
 	// External — событие из подключённого календаря (Google, Яндекс…).
 	External bool `json:"external,omitempty"`
+	// Reminders — за сколько минут напомнить; нет поля — по настройкам пользователя.
+	Reminders []int `json:"reminders,omitempty"`
+	// NoReminders — напоминания у события выключены.
+	NoReminders bool `json:"no_reminders,omitempty"`
 }
 
 func toToolEvent(e model.Event) toolEvent {
 	t := toolEvent{ID: e.ID, Title: e.Title, Subtitle: e.Subtitle, Badge: string(e.Badge),
-		AllDay: e.AllDay, ReadOnly: e.ReadOnly, External: e.Source != ""}
+		AllDay: e.AllDay, ReadOnly: e.ReadOnly, External: e.Source != "",
+		Reminders: e.Reminders, NoReminders: e.Reminders != nil && len(e.Reminders) == 0}
 	if !e.AllDay {
 		t.Start, t.End = hm(e.Start), hm(e.End)
 	}
@@ -542,15 +552,45 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if !badge.Valid() {
 		return `{"error":"badge должен быть routine|work|food|sport|read|sleep"}`, toolMeta{}
 	}
+	reminders, errText := remindersArg(args)
+	if errText != "" {
+		return errText, toolMeta{}
+	}
 	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
-		Start: start, End: end, Badge: badge, Highlight: true,
+		Start: start, End: end, Badge: badge, Highlight: true, Reminders: reminders,
 	})
 	if err != nil {
 		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
 	}
 	meta := toolMeta{detail: fmt.Sprintf("%s · %s–%s", title, hm(start), hm(end)), date: day.Format(time.DateOnly)}
 	return toolJSON(map[string]any{"ok": true, "event": toToolEvent(ev)}), meta
+}
+
+// remindersArg — напоминания из аргументов инструмента; nil — не указаны.
+// Второе значение — ошибка для модели.
+func remindersArg(args map[string]any) ([]int, string) {
+	raw, ok := args["reminders"]
+	if !ok || raw == nil {
+		return nil, ""
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil, `{"error":"reminders — список минут до начала"}`
+	}
+	out := make([]int, 0, len(list))
+	for _, v := range list {
+		f, ok := v.(float64)
+		if !ok || f != float64(int(f)) {
+			return nil, `{"error":"reminders — список целых минут до начала"}`
+		}
+		out = append(out, int(f))
+	}
+	out, err := validateReminders(out)
+	if err != nil {
+		return nil, toolErr(err, "неверные напоминания")
+	}
+	return out, ""
 }
 
 // toolUpdateEvent меняет событие по патчу: сначала читаем, проверяем
@@ -600,6 +640,16 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 			return `{"error":"badge должен быть routine|work|food|sport|read|sleep"}`, toolMeta{}
 		}
 		patch.Badge = &b
+	}
+	if _, ok := args["reminders"]; ok {
+		reminders, errText := remindersArg(args)
+		if errText != "" {
+			return errText, toolMeta{}
+		}
+		if reminders == nil {
+			reminders = []int{}
+		}
+		patch.Reminders = &reminders
 	}
 	cur, err := s.store.Event(ctx, id)
 	if err != nil {

@@ -362,12 +362,15 @@ func (s *server) markIntegrationError(ctx context.Context, id, msg string) {
 }
 
 // updateEventSynced применяет патч; у события внешнего календаря — сначала там.
+// Напоминания — настройка приложения: их можно менять и у событий только для чтения,
+// а во внешний календарь такая правка не уходит.
 func (s *server) updateEventSynced(ctx context.Context, cur model.Event, patch model.EventPatch) (model.Event, error) {
-	if cur.ReadOnly {
+	onlyReminders := patch.OnlyReminders()
+	if cur.ReadOnly && !onlyReminders {
 		return model.Event{}, errReadOnlyEvent
 	}
 	newETag, pushed := "", false
-	if cur.Source != "" {
+	if cur.Source != "" && !onlyReminders {
 		in, err := s.store.Integration(ctx, cur.Source)
 		if err == nil {
 			merged := cur

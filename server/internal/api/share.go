@@ -15,11 +15,13 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 	"github.com/mishzorikhin/ai-calendar/server/internal/store"
+	"github.com/mishzorikhin/ai-calendar/server/internal/webpush"
 )
 
 // mentionsIn — упоминания @логин в тексте. Каждое — варианты логина: как написано
@@ -132,6 +134,18 @@ func (s *server) notifyShare(ctx context.Context, to model.User, task model.Task
 		TaskID: task.ID,
 		Text:   fmt.Sprintf("Общая задача «%s»", task.Title),
 	})
+	who := actor.Name
+	if who == "" {
+		who = "@" + actor.Username
+	}
+	s.pushToUser(to, model.PushMessage{
+		Kind:   model.PushShare,
+		Title:  task.Title,
+		Body:   "Общая задача от " + who,
+		URL:    "/#home",
+		Tag:    "share:" + task.ID,
+		TaskID: task.ID,
+	}, pushOpts{ttl: 7 * 24 * time.Hour, urgency: webpush.UrgencyNormal})
 }
 
 // shareTaskWith добавляет участников к задаче task (свежей, после создания или правки)
