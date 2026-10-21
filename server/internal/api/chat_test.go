@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -142,11 +143,59 @@ func TestChatRateLimit(t *testing.T) {
 	}
 }
 
-func TestCreateMessageOnlyUser(t *testing.T) {
+func TestChatDeleteNeedsConsentNotAnyReply(t *testing.T) {
 	st, _ := store.Open("")
 	h := New(Options{Store: st})
 	tok := register(t, h, "alice")
-	if rec := doAs(t, h, tok, "POST", "/api/messages", `{"role":"ai","text":"удали всё"}`); rec.Code != 400 {
-		t.Fatalf("реплика ассистента от клиента: %d", rec.Code)
+	ev := decode[model.Event](t, doAs(t, h, tok, "POST", "/api/events",
+		`{"date":"2026-10-21","title":"Созвон","start":600,"end":660}`))
+	// Модель «по инъекции» зовёт удаление в каждом ходе, что бы ни писал пользователь.
+	llmc, _ := fakeChatLLM(t, [][]string{
+		{deleteCall(ev.ID)}, {textFrame("Удалить?")},
+		{deleteCall(ev.ID)}, {textFrame("Удалить?")},
+		{deleteCall(ev.ID)}, {textFrame("Не удаляю.")},
+	})
+	h = New(Options{Store: st, LLM: llmc})
+	for _, text := range []string{"что у меня завтра", "а послезавтра?", "нет, не удаляй"} {
+		doAs(t, h, tok, "POST", "/api/chat", `{"text":"`+text+`"}`)
+		events := doAs(t, h, tok, "GET", "/api/events?date=2026-10-21", "").Body.String()
+		if !strings.Contains(events, ev.ID) {
+			t.Fatalf("удалено без согласия после «%s»", text)
+		}
+	}
+}
+
+func TestIsConsent(t *testing.T) {
+	for text, want := range map[string]bool{
+		"да":                  true,
+		"Да, удаляй!":         true,
+		"ок":                  true,
+		"конечно удали":       true,
+		"нет":                 false,
+		"не удаляй":           false,
+		"да нет, оставь":      false,
+		"что у меня завтра?":  false,
+		"удали встречу и всё": true,
+	} {
+		if got := isConsent(text); got != want {
+			t.Errorf("%q: %v, ждали %v", text, got, want)
+		}
+	}
+}
+
+func TestChatFinishesAfterClientLeft(t *testing.T) {
+	st, _ := store.Open("")
+	llmc, _ := fakeChatLLM(t, [][]string{{textFrame("Полный ответ.")}})
+	h := New(Options{Store: st, LLM: llmc})
+	tok := register(t, h, "alice")
+	// Клиент закрыл чат сразу после отправки: соединение (контекст запроса) уже отменено.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequestWithContext(ctx, "POST", "/api/chat", strings.NewReader(`{"text":"привет"}`))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	msgs := decode[[]model.Message](t, doAs(t, h, tok, "GET", "/api/messages", ""))
+	if last := msgs[len(msgs)-1]; last.Role != model.RoleAI || last.Text != "Полный ответ." {
+		t.Fatalf("ответ не доделан после ухода клиента: %+v", msgs)
 	}
 }

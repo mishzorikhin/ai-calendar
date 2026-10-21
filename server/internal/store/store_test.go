@@ -84,14 +84,14 @@ func checkRecentMessages(t *testing.T, s Store) {
 	if all := s.RecentMessages(ctx, 100); len(all) != len(s.Messages(ctx)) {
 		t.Fatalf("n больше истории: %d из %d", len(all), len(s.Messages(ctx)))
 	}
-	if s.UserCount(context.Background()) < 2 {
+	if n, err := s.UserCount(context.Background()); err != nil || n < 2 {
 		t.Fatal("UserCount не видит аккаунты")
 	}
 }
 
 func TestRecentMessages(t *testing.T) {
 	s, _ := Open("")
-	if s.UserCount(context.Background()) != 0 {
+	if n, _ := s.UserCount(context.Background()); n != 0 {
 		t.Fatal("пустое хранилище без аккаунтов")
 	}
 	checkRecentMessages(t, s)

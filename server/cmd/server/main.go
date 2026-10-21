@@ -12,7 +12,8 @@
 //	STATIC_DIR    раздавать фронтенд с диска вместо встроенного (для разработки)
 //	CORS_ORIGINS  источники через запятую, которым разрешён доступ к API
 //	REGISTRATION  closed — новые аккаунты не создаются (первый, владелец, — можно); по умолчанию open
-//	TRUST_PROXY   1 — сервер за своим прокси: адрес клиента для лимитов берём из X-Forwarded-For
+//	TRUST_PROXY   адрес клиента для лимитов: пусто — X-Forwarded-For только от прокси из внутренней
+//	              сети (свой nginx рядом), 1 — всегда из X-Forwarded-For, 0 — никогда
 //
 // Внешние календари:
 //
@@ -97,7 +98,7 @@ func run(port string) error {
 			Calendars:   calOpts,
 
 			ClosedRegistration: os.Getenv("REGISTRATION") == "closed",
-			TrustProxy:         os.Getenv("TRUST_PROXY") == "1",
+			Proxy:              proxyMode(os.Getenv("TRUST_PROXY")),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -208,6 +209,17 @@ func checkHealth(port string) int {
 		return 1
 	}
 	return 0
+}
+
+// proxyMode — значение TRUST_PROXY: 1 — доверять прокси всегда, 0 — никогда, пусто — соседу из внутренней сети.
+func proxyMode(v string) api.ProxyMode {
+	switch v {
+	case "1":
+		return api.ProxyTrust
+	case "0":
+		return api.ProxyNone
+	}
+	return api.ProxyAuto
 }
 
 func env(key, fallback string) string {

@@ -39,8 +39,8 @@ type Options struct {
 	Calendars CalendarOptions
 	// ClosedRegistration — новые аккаунты не создаются; первый (владелец сервера) — можно.
 	ClosedRegistration bool
-	// TrustProxy — сервер стоит за своим прокси: адрес клиента берём из X-Forwarded-For.
-	TrustProxy bool
+	// Proxy — откуда брать адрес клиента для лимитов (TRUST_PROXY).
+	Proxy ProxyMode
 }
 
 type server struct {
@@ -53,7 +53,7 @@ type server struct {
 	confirms *confirmations
 
 	closedRegistration bool
-	trustProxy         bool
+	proxy              ProxyMode
 }
 
 // New собирает обработчик: /api/* — JSON API, остальное — SPA.
@@ -62,7 +62,7 @@ func New(opts Options) http.Handler {
 	s := &server{
 		store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version,
 		limits: newLimits(), confirms: newConfirmations(),
-		closedRegistration: opts.ClosedRegistration, trustProxy: opts.TrustProxy,
+		closedRegistration: opts.ClosedRegistration, proxy: opts.Proxy,
 	}
 	if bg := opts.Calendars.Background; bg != nil && opts.Calendars.SyncInterval > 0 {
 		go s.runSyncLoop(bg, opts.Calendars.SyncInterval)
@@ -90,7 +90,6 @@ func New(opts Options) http.Handler {
 	mux.Handle("GET /api/notifications", s.authed(s.listNotifications))
 	mux.Handle("POST /api/notifications/read", s.authed(s.readNotifications))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
-	mux.Handle("POST /api/messages", s.authed(s.createMessage))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
 	mux.Handle("POST /api/integrations", s.authed(s.createIntegration))
@@ -488,31 +487,5 @@ func (s *server) deleteTask(w http.ResponseWriter, r *http.Request) error {
 
 func (s *server) listMessages(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, nonNil(s.store.Messages(r.Context())))
-	return nil
-}
-
-type messageInput struct {
-	Role model.Role `json:"role"`
-	Text string     `json:"text"`
-}
-
-func (s *server) createMessage(w http.ResponseWriter, r *http.Request) error {
-	var in messageInput
-	if err := readJSON(w, r, &in); err != nil {
-		return err
-	}
-	// Реплики ассистента пишет только сервер: подделанная история ушла бы модели как её собственные слова.
-	if in.Role != model.RoleUser {
-		return badRequest("role должен быть user")
-	}
-	in.Text = strings.TrimSpace(in.Text)
-	if in.Text == "" || utf8.RuneCountInString(in.Text) > maxMessage {
-		return badRequest("Текст обязателен и не длиннее %d символов", maxMessage)
-	}
-	m, err := s.store.AddMessage(r.Context(), in.Role, in.Text)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusCreated, m)
 	return nil
 }

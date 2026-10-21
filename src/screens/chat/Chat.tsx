@@ -32,7 +32,7 @@ const TOOL_LABELS: Record<string, string> = {
 export function Chat() {
   const { prompt, setPrompt, draft, setDraft } = useAssistant()
   const messages = useMessages()
-  const { stream, send, failed, dismissFailed } = useSendChat()
+  const { stream, busy, send, failed, dismissFailed } = useSendChat()
   const list = useRef<HTMLDivElement>(null)
 
   // Черновик (например, запрос, который нужно поправить) забираем в поле один раз.
@@ -102,18 +102,14 @@ export function Chat() {
           <FailedBubble
             key={m.id}
             message={m}
+            busy={busy}
             onRetry={() => sendAndFollow(m.text)}
             onDismiss={() => dismissFailed(m.id)}
           />
         ))}
       </div>
 
-      <ChatComposer
-        initialText={initialText}
-        focusOnMount={Boolean(initialText)}
-        busy={Boolean(stream && !stream.done)}
-        onSend={sendAndFollow}
-      />
+      <ChatComposer initialText={initialText} focusOnMount={Boolean(initialText)} busy={busy} onSend={sendAndFollow} />
     </div>
   )
 }
@@ -178,10 +174,13 @@ function StreamReply({ stream }: { stream: ChatStream }) {
  */
 function FailedBubble({
   message,
+  busy,
   onRetry,
   onDismiss,
 }: {
   message: FailedMessage
+  /** Ассистент отвечает на другое сообщение — повтор недоступен. */
+  busy: boolean
   onRetry: () => void
   onDismiss: () => void
 }) {
@@ -199,7 +198,7 @@ function FailedBubble({
       )}
       <p className={styles.failedMeta}>
         {message.delivered ? message.error : `Не отправлено — ${message.error}`}
-        <button type="button" className={styles.failedRetry} onClick={onRetry}>
+        <button type="button" className={styles.failedRetry} onClick={onRetry} disabled={busy}>
           {message.delivered ? 'Спросить ещё раз' : 'Повторить'}
         </button>
         <button type="button" className={styles.failedDismiss} onClick={onDismiss} aria-label="Убрать сообщение">

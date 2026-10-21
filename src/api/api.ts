@@ -53,9 +53,10 @@ export interface CalendarApi {
   updateTask(id: string, patch: TaskPatch): Promise<Task>
   deleteTask(id: string): Promise<void>
   getMessages(): Promise<ChatMessage[]>
-  addMessage(role: ChatMessage['role'], text: string): Promise<ChatMessage>
-  /** Сообщение ассистенту: ответ приходит потоком событий в onEvent. */
-  /** Сообщение ассистенту; ответ — потоком событий. `signal` прерывает чтение ответа (ушли из чата). */
+  /**
+   * Сообщение ассистенту: ответ приходит потоком событий в onEvent. `signal` прерывает чтение
+   * (ушли из чата) — сервер всё равно допишет ответ и сохранит его в истории.
+   */
   sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>
 
   /** Профиль текущего пользователя. */

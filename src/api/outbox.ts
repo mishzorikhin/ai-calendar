@@ -30,6 +30,8 @@ export type PendingOp = {
    */
   dedupe?: { path: string; match: readonly string[] }
   at: number
+  /** id пользователя, сделавшего правку: повтор идёт только от его имени. Нет — операция старой версии. */
+  owner?: string
 }
 
 /** Хранилище очереди: IndexedDB в браузере/worker, память — в тестах. */
@@ -205,8 +207,10 @@ export interface Outbox {
    * Чья это очередь. Вошёл другой пользователь — операции прошлого стираются: иначе
    * они уехали бы на сервер с его токеном, в чужой календарь. Выход (null) очередь
    * не трогает — тот же человек войдёт снова и доиграет свои правки.
+   * adopt — операции без владельца (от версии до этой правки) достаются ему, а не стираются:
+   * так делают только при запуске с уже открытой сессией — правки почти наверняка её.
    */
-  setOwner(userId: string | null): Promise<void>
+  setOwner(userId: string | null, adopt?: boolean): Promise<void>
   subscribe(fn: () => void): () => void
 }
 
@@ -258,7 +262,7 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
           return
         }
       }
-      const stored = await backend.add(op)
+      const stored = await backend.add({ ...op, owner: op.owner ?? owner ?? undefined })
       ops = [...ops, stored]
       emit()
     },
@@ -267,12 +271,16 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
       if (flushing) return { synced: 0, dropped: 0, remaining: ops.length }
       flushing = true
       const result: FlushResult = { synced: 0, dropped: 0, remaining: 0 }
-      // Токен на весь обход: живой getter страницы или сохранённый в метаданных (service worker).
-      const token = (await getToken?.()) ?? (await backend.getMeta(META_TOKEN))
+      // Сессия на весь обход: живая со страницы или сохранённая в метаданных (service worker).
+      const live = await getCredentials?.()
+      const token = live?.token ?? (await backend.getMeta(META_TOKEN))
+      const user = live?.userId ?? (await backend.getMeta(META_OWNER))
       try {
         for (;;) {
           const op = ops[0]
           if (!op) break
+          // Чужая операция (вход сменился, а setOwner ещё не стёр очередь) с этим токеном не уходит.
+          if (user !== null && (op.owner ?? owner) !== user) break
           inFlight = op
           const outcome = await replay(op, backend, baseUrl, token).finally(() => (inFlight = null))
           if (outcome === 'retry') break
@@ -295,17 +303,19 @@ export async function openOutbox(backend: OutboxBackend): Promise<Outbox> {
 
     setAuthToken: (token) => backend.setMeta(META_TOKEN, token),
 
-    async setOwner(userId) {
+    async setOwner(userId, adopt = false) {
       if (userId === null || userId === owner) return
-      const previous = owner
+      // Источник правды — IndexedDB: её делят вкладки, и другая могла уже сменить владельца.
+      const stored = await backend.getMeta(META_OWNER)
       owner = userId
-      if (previous !== null) {
-        // Память чистим до первого await: обход очереди уже не возьмёт чужую операцию.
+      if (stored === userId) {
+        ops = await backend.list()
+      } else if (!(stored === null && adopt)) {
         ops = []
-        emit()
         await backend.clear()
       }
-      await backend.setMeta(META_OWNER, userId)
+      emit()
+      if (stored !== userId) await backend.setMeta(META_OWNER, userId)
     },
 
     subscribe(fn) {
@@ -327,11 +337,12 @@ type Outcome = 'done' | 'drop' | 'retry'
 const META_TOKEN = 'authToken'
 /** id пользователя, чьи операции лежат в очереди. */
 const META_OWNER = 'owner'
-let getToken: (() => string | null | undefined | Promise<string | null | undefined>) | null = null
+type Credentials = { token: string; userId: string } | null | undefined
+let getCredentials: (() => Credentials | Promise<Credentials>) | null = null
 
-/** Подключить источник токена — вызывает приложение один раз при старте. */
-export function setAuthTokenGetter(fn: () => string | null | undefined | Promise<string | null | undefined>): void {
-  getToken = fn
+/** Подключить источник сессии (токен и id пользователя) — вызывает приложение один раз при старте. */
+export function setCredentialsGetter(fn: () => Credentials | Promise<Credentials>): void {
+  getCredentials = fn
 }
 
 async function send(

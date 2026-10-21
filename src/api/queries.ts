@@ -439,16 +439,19 @@ export function useSendChat() {
         )
       } catch (err) {
         error = apiErrorText(err)
+      }
+      // На сервере уже лежат сохранённые реплики и изменения инструментов.
+      // Отправка занята до конца: пока история не перечитана, новый поток стёр бы этот.
+      try {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: keys.messages }),
+          qc.invalidateQueries({ queryKey: keys.allEvents }),
+          qc.invalidateQueries({ queryKey: keys.allMonths }),
+          qc.invalidateQueries({ queryKey: keys.tasks }),
+        ])
       } finally {
         active.current = null
       }
-      // На сервере уже лежат сохранённые реплики и изменения инструментов.
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: keys.messages }),
-        qc.invalidateQueries({ queryKey: keys.allEvents }),
-        qc.invalidateQueries({ queryKey: keys.allMonths }),
-        qc.invalidateQueries({ queryKey: keys.tasks }),
-      ])
       if (ctl.signal.aborted) return
       setStream(null)
       if (error) {
@@ -463,7 +466,9 @@ export function useSendChat() {
     setFailed((list) => list.filter((m) => m.id !== id))
   }, [])
 
-  return { stream, send, failed, dismissFailed }
+  /** Ответ ещё идёт или история перечитывается — отправлять новое нельзя. */
+  const busy = stream !== null
+  return { stream, busy, send, failed, dismissFailed }
 }
 
 // --- Внешние календари ------------------------------------------------------

@@ -12,11 +12,14 @@ import type {
 } from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
 import { ApiError, type CalendarApi, type ChatEvent, type Session } from './api'
-import { setAuthTokenGetter } from './outbox'
+import { setCredentialsGetter } from './outbox'
 import { getSession, setSession } from './session'
 
-// Офлайн-очередь повторяет запросы тем же токеном, что и обычные вызовы.
-setAuthTokenGetter(() => getSession()?.token)
+// Офлайн-очередь повторяет запросы тем же токеном, что и обычные вызовы, и только операции этого пользователя.
+setCredentialsGetter(() => {
+  const s = getSession()
+  return s && { token: s.token, userId: String(s.user.id) }
+})
 
 // Форматы ответов сервера (server/internal/model).
 // externalId/etag/userId/createdAt — служебные поля сервера, в интерфейс их не тащим.
@@ -49,7 +52,8 @@ function headers(init?: RequestInit): HeadersInit | undefined {
 }
 
 export function createHttpApi(baseUrl = ''): CalendarApi {
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  /** Запрос с сессией: сеть недоступна — ApiError(0), ответ не 2xx — ApiError с текстом сервера. */
+  async function send(path: string, init?: RequestInit): Promise<Response> {
     let res: Response
     try {
       res = await fetch(baseUrl + path, { ...init, headers: headers(init) })
@@ -58,10 +62,17 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     }
     // Сессия протухла или удалена на сервере — возвращаемся на экран входа.
     if (res.status === 401 && getSession()) setSession(null)
+    if (!res.ok) {
+      const body: unknown = await res.json().catch(() => null)
+      throw new ApiError(res.status, errorMessage(body, res.status))
+    }
+    return res
+  }
+
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await send(path, init)
     if (res.status === 204) return undefined as T
-    const body: unknown = await res.json().catch(() => null)
-    if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.status))
-    return body as T
+    return (await res.json().catch(() => null)) as T
   }
 
   const post = <T>(path: string, data: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(data) })
@@ -89,25 +100,15 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     updateTask: (id, patch) => request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
     getMessages: () => request<ChatMessage[]>('/api/messages'),
-    addMessage: (role, text) => post<ChatMessage>('/api/messages', { role, text }),
     async sendChat(text, onEvent, signal) {
       let res: Response
       try {
-        res = await fetch(`${baseUrl}/api/chat`, {
-          method: 'POST',
-          headers: headers({ body: '{}' }),
-          body: JSON.stringify({ text }),
-          signal,
-        })
-      } catch {
+        res = await send('/api/chat', { method: 'POST', body: JSON.stringify({ text }), signal })
+      } catch (e) {
         if (signal?.aborted) return
-        throw new ApiError(0, 'Нет соединения с сервером')
+        throw e
       }
-      if (res.status === 401 && getSession()) setSession(null)
-      if (!res.ok || !res.body) {
-        const body: unknown = await res.json().catch(() => null)
-        throw new ApiError(res.status, errorMessage(body, res.status))
-      }
+      if (!res.body) throw new ApiError(0, 'Сервер не прислал ответ')
       // Сервер уже сохранил реплику: дальше любая ошибка — обрыв ответа, а не «не отправлено».
       onEvent({ type: 'open' })
       // SSE: фреймы вида «data: {json}» разделены пустой строкой.

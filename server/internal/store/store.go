@@ -90,7 +90,7 @@ type Store interface {
 	// пользователь получает записи без владельца (данные до аккаунтов).
 	CreateUser(ctx context.Context, username, name, passHash string) (model.User, error)
 	// UserCount — сколько аккаунтов на сервере (закрытая регистрация пускает только первого).
-	UserCount(ctx context.Context) int
+	UserCount(ctx context.Context) (int, error)
 	// UserByUsername — пользователь с PassHash (для входа).
 	UserByUsername(ctx context.Context, username string) (model.User, error)
 	// SearchUsers — поиск по имени и логину для упоминаний; без PassHash и без самого себя.
@@ -672,10 +672,10 @@ func (s *fileStore) CreateUser(ctx context.Context, username, name, passHash str
 	return su.public(), s.save()
 }
 
-func (s *fileStore) UserCount(context.Context) int {
+func (s *fileStore) UserCount(context.Context) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.d.Users)
+	return len(s.d.Users), nil
 }
 
 func (s *fileStore) UserByUsername(_ context.Context, username string) (model.User, error) {

@@ -179,16 +179,6 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       return reply(undefined)
     },
     getMessages: () => reply([...data.messages]),
-    addMessage(role, text) {
-      // Как сервер: реплики ассистента клиент не пишет.
-      if (role !== 'user') return Promise.reject(new ApiError(400, 'role должен быть user'))
-      const bad = invalid(messageError(text.trim()))
-      if (bad) return bad
-      const message: ChatMessage = { id: (data.messages.at(-1)?.id ?? 0) + 1, role, text: text.trim() }
-      data = { ...data, messages: [...data.messages, message] }
-      save()
-      return reply(message)
-    },
     // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
     async sendChat(text, onEvent) {
       const bad = invalid(messageError(text.trim()))

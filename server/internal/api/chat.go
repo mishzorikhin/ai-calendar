@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/llm"
@@ -28,6 +29,9 @@ const (
 	chatMaxRounds = 6
 	// chatDeadline — на сколько продлевается write-дедлайн при каждом фрейме.
 	chatDeadline = 2 * time.Minute
+	// chatBudget — сколько ответ может доделываться после ухода клиента: модель и инструменты
+	// работают на отвязанном от запроса контексте, чтобы ответ дописался и сохранился.
+	chatBudget = 5 * time.Minute
 )
 
 type chatInput struct {
@@ -60,25 +64,28 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusOK)
 
 	rc := http.NewResponseController(w)
-	emit := func(v any) bool {
+	// Клиент мог уйти (закрыл чат, пропала сеть): дальше не пишем, но ответ доделываем.
+	gone := false
+	emit := func(v any) {
+		if gone {
+			return
+		}
 		raw, err := json.Marshal(v)
 		if err != nil {
-			return false
+			return
 		}
 		// Продлеваем дедлайн ответа: между фреймами модель может думать до бюджета раунда.
 		_ = rc.SetWriteDeadline(time.Now().Add(chatDeadline))
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
-			return false
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil || rc.Flush() != nil {
+			gone = true
 		}
-		return rc.Flush() == nil
 	}
-	// Ответ сохраняем в историю, даже если клиент ушёл посреди потока: контекст запроса
-	// к этому моменту уже отменён, поэтому пишем с отвязанным от него контекстом.
+	// Контекст ответа не зависит от соединения: ушедший клиент увидит готовый ответ в истории.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), chatBudget)
+	defer cancel()
 	text := strings.Builder{}
 	defer func() {
 		if t := strings.TrimSpace(text.String()); t != "" {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
-			defer cancel()
 			if _, err := s.store.AddMessage(ctx, model.RoleAI, t); err != nil {
 				slog.Warn("чат: не сохранён ответ", "err", err)
 			}
@@ -94,8 +101,9 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	now := time.Now().In(s.cal.location(user))
-	msgs := s.chatHistory(r.Context(), now)
-	turn := chatTurn{now: now, id: userMsg.ID}
+	recent := s.store.RecentMessages(ctx, chatHistorySize)
+	msgs := chatHistory(recent, now)
+	turn := chatTurn{now: now, id: userMsg.ID, prevID: previousUserMessage(recent, userMsg.ID), text: in.Text}
 	var modelErr error
 	for round := 0; round < chatMaxRounds; round++ {
 		// Последний заход — без инструментов: модель обязана ответить текстом, а не вызвать ещё один.
@@ -105,7 +113,7 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) error {
 		}
 		// Текст разных заходов («Смотрю расписание.» → «Готово») разделяем, а не склеиваем.
 		sep := text.Len() > 0
-		msg, err := s.llm.Chat(r.Context(), msgs, tools, func(d string) {
+		msg, err := s.llm.Chat(ctx, msgs, tools, func(d string) {
 			if sep {
 				sep = false
 				d = "\n\n" + strings.TrimLeft(d, " \n")
@@ -123,13 +131,9 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) error {
 			break
 		}
 		for _, call := range msg.ToolCalls {
-			if !emit(map[string]any{"type": "tool", "name": call.Function.Name, "status": "run"}) {
-				return nil
-			}
-			result, meta := s.runTool(r.Context(), turn, call)
-			if !emit(map[string]any{"type": "tool", "name": call.Function.Name, "status": "done", "detail": meta.detail, "date": meta.date}) {
-				return nil
-			}
+			emit(map[string]any{"type": "tool", "name": call.Function.Name, "status": "run"})
+			result, meta := s.runTool(ctx, turn, call)
+			emit(map[string]any{"type": "tool", "name": call.Function.Name, "status": "done", "detail": meta.detail, "date": meta.date})
 			msgs = append(msgs, llm.Message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
 	}
@@ -150,16 +154,27 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// chatTurn — один запрос пользователя к ассистенту: его время (в поясе пользователя)
-// и id реплики, по которому подтверждение удаления отличает «этот» ход от следующего.
+// chatTurn — один запрос пользователя к ассистенту: его время (в поясе пользователя),
+// id его реплики и предыдущей реплики пользователя, текст — для подтверждения удалений.
 type chatTurn struct {
-	now time.Time
-	id  int
+	now    time.Time
+	id     int
+	prevID int
+	text   string
+}
+
+// previousUserMessage — id реплики пользователя перед текущей (0 — её нет в истории).
+func previousUserMessage(msgs []model.Message, current int) int {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if m := msgs[i]; m.Role == model.RoleUser && m.ID != current {
+			return m.ID
+		}
+	}
+	return 0
 }
 
 // chatHistory — последние реплики диалога с системным промптом в начале.
-func (s *server) chatHistory(ctx context.Context, now time.Time) []llm.Message {
-	msgs := s.store.RecentMessages(ctx, chatHistorySize)
+func chatHistory(msgs []model.Message, now time.Time) []llm.Message {
 	out := make([]llm.Message, 0, len(msgs)+1)
 	out = append(out, llm.Message{Role: "system", Content: chatSystemPrompt(now)})
 	for _, m := range msgs {
@@ -834,10 +849,10 @@ func needsConfirmation(what map[string]any) string {
 // confirmTTL — сколько ждёт предложенное удаление, пока пользователь ответит.
 const confirmTTL = 10 * time.Minute
 
-// confirmations — удаления, которые ассистент уже предложил. Удаление проходит, только
-// если его предложили в одном ходе диалога, а повторили в следующем: между ними была
-// реплика пользователя. Так команду «удали» из текста чужого события модель не выполнит
-// за один ход, сколько бы раз ни вызвала инструмент.
+// confirmations — удаления, которые ассистент уже предложил. Удаление проходит, только если
+// его предложили в предыдущем ходе, а в этом пользователь ответил согласием («да», «удаляй»).
+// Так команду «удали» из текста чужого события модель не выполнит: ни за один ход, сколько бы
+// раз ни вызвала инструмент, ни после любой посторонней реплики.
 type confirmations struct {
 	mu      sync.Mutex
 	pending map[string]pendingConfirm
@@ -852,8 +867,8 @@ func newConfirmations() *confirmations {
 	return &confirmations{pending: map[string]pendingConfirm{}}
 }
 
-// confirm — true, если удаление key уже предлагали в прошлом ходе (и ещё не истекло);
-// тогда запись снимается. Иначе удаление запоминается за текущим ходом.
+// confirm — true, если удаление key предложено в прошлом ходе, а текущая реплика — согласие;
+// запись тогда снимается. Иначе удаление (заново) запоминается за текущим ходом.
 func (c *confirmations) confirm(ctx context.Context, turn chatTurn, key string) bool {
 	u, _ := store.UserFrom(ctx)
 	key = strconv.FormatInt(u.ID, 10) + ":" + key
@@ -865,12 +880,42 @@ func (c *confirmations) confirm(ctx context.Context, turn chatTurn, key string) 
 			delete(c.pending, k)
 		}
 	}
-	if p, ok := c.pending[key]; ok && p.turn != turn.id {
+	if p, ok := c.pending[key]; ok && turn.prevID != 0 && p.turn == turn.prevID && isConsent(turn.text) {
 		delete(c.pending, key)
 		return true
 	}
-	if _, ok := c.pending[key]; !ok {
+	if p, ok := c.pending[key]; !ok || p.turn != turn.id {
 		c.pending[key] = pendingConfirm{turn: turn.id, at: now}
 	}
 	return false
+}
+
+// Слова согласия и отказа для ответа на «удалить?». Отказ сильнее: «не удаляй» — это нет.
+var (
+	consentWords = map[string]bool{
+		"да": true, "ага": true, "угу": true, "ок": true, "окей": true, "ok": true, "okay": true, "yes": true,
+		"давай": true, "удаляй": true, "удали": true, "удалить": true, "удалите": true, "убери": true, "убирай": true,
+		"конечно": true, "подтверждаю": true, "согласен": true, "согласна": true, "верно": true, "точно": true,
+		"можно": true, "go": true, "го": true,
+	}
+	refusalWords = map[string]bool{
+		"не": true, "нет": true, "неа": true, "no": true, "стоп": true, "отмена": true, "отмени": true,
+		"погоди": true, "подожди": true, "оставь": true,
+	}
+)
+
+// isConsent — реплика пользователя похожа на согласие и не содержит отказа.
+func isConsent(text string) bool {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	yes := false
+	for _, w := range words {
+		w = strings.ReplaceAll(w, "ё", "е")
+		if refusalWords[w] {
+			return false
+		}
+		yes = yes || consentWords[w]
+	}
+	return yes
 }

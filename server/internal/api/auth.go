@@ -194,10 +194,17 @@ func (s *server) register(w http.ResponseWriter, r *http.Request) error {
 	if err := in.validate(true); err != nil {
 		return err
 	}
-	if s.closedRegistration && s.store.UserCount(r.Context()) > 0 {
-		return &apiError{Status: http.StatusForbidden, Message: "Регистрация на этом сервере закрыта"}
+	if s.closedRegistration {
+		// Ошибка подсчёта — тоже отказ: закрытая регистрация не должна открываться от сбоя базы.
+		n, err := s.store.UserCount(r.Context())
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return &apiError{Status: http.StatusForbidden, Message: "Регистрация на этом сервере закрыта"}
+		}
 	}
-	if ok, wait := s.limits.register.allow(clientIP(r, s.trustProxy)); !ok {
+	if ok, wait := s.limits.register.allow(s.clientIP(r)); !ok {
 		return tooMany(w, wait)
 	}
 	var hash string
@@ -229,11 +236,17 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in.Username = strings.ToLower(strings.TrimSpace(in.Username))
-	// Лимит и на аккаунт (перебор пароля с разных адресов), и на адрес (перебор логинов).
-	if ok, wait := s.limits.loginIP.allow(clientIP(r, s.trustProxy)); !ok {
+	// Такого логина не может существовать — отвечаем сразу, не тратя хэш и место в лимитах.
+	if !usernameRe.MatchString(in.Username) {
+		return &apiError{Status: http.StatusUnauthorized, Message: "Неверное имя или пароль"}
+	}
+	// Лимит на адрес (перебор логинов) и на пару «аккаунт + адрес» (перебор пароля). Ключ по
+	// одному логину дал бы кому угодно запереть чужой аккаунт потоком неверных паролей.
+	ip := s.clientIP(r)
+	if ok, wait := s.limits.loginIP.allow(ip); !ok {
 		return tooMany(w, wait)
 	}
-	if ok, wait := s.limits.loginUser.allow(in.Username); !ok {
+	if ok, wait := s.limits.loginUser.allow(in.Username + "|" + ip); !ok {
 		return tooMany(w, wait)
 	}
 	u, err := s.store.UserByUsername(r.Context(), in.Username)

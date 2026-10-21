@@ -11,7 +11,7 @@ const listeners = new Set<() => void>()
 
 // Уже открытая сессия тоже сразу уходит в очередь — иначе service worker
 // останется без токена до первой смены сессии.
-if (current) persistToken(current)
+if (current) persistToken(current, true)
 
 function load(): Session | null {
   try {
@@ -45,10 +45,11 @@ export function setSession(s: Session | null) {
 // Токен дублируем в IndexedDB очереди: service worker не видит localStorage,
 // а для replay офлайн-мутаций по Background Sync токен нужен и без открытой страницы.
 // Владелец очереди — чтобы правки одного аккаунта не уехали на сервер от имени другого.
-function persistToken(s: Session | null) {
+// adopt — запуск с уже открытой сессией: операции старой версии без владельца — её.
+function persistToken(s: Session | null, adopt = false) {
   void getOutbox()
     .then(async (o) => {
-      await o.setOwner(s ? String(s.user.id) : null)
+      await o.setOwner(s ? String(s.user.id) : null, adopt)
       await o.setAuthToken(s?.token ?? null)
     })
     .catch(() => {})

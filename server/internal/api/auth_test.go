@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestAuthRequired(t *testing.T) {
 		}
 	}
 	for _, p := range [][2]string{
-		{"POST", "/api/events"}, {"POST", "/api/tasks"}, {"POST", "/api/messages"}, {"POST", "/api/chat"},
+		{"POST", "/api/events"}, {"POST", "/api/tasks"}, {"POST", "/api/chat"},
 	} {
 		if rec := do(t, h, p[0], p[1], `{}`); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s без токена: %d, ждали 401", p[0], p[1], rec.Code)
@@ -119,7 +120,7 @@ func TestDataIsolation(t *testing.T) {
 	// Алиса создала событие, задачу и сообщение — у Боба всё пусто.
 	doAs(t, h, alice, "POST", "/api/events", `{"date":"2026-10-20","title":"Встреча","start":600,"end":660}`)
 	doAs(t, h, alice, "POST", "/api/tasks", `{"title":"Личное"}`)
-	doAs(t, h, alice, "POST", "/api/messages", `{"role":"user","text":"только моё"}`)
+	doAs(t, h, alice, "POST", "/api/chat", `{"text":"только моё"}`)
 
 	if got := decode[[]model.Event](t, doAs(t, h, bob, "GET", "/api/events?date=2026-10-20", "")); len(got) != 0 {
 		t.Fatalf("чужие события у Боба: %+v", got)
@@ -510,13 +511,58 @@ func TestClosedRegistration(t *testing.T) {
 }
 
 func TestClientIP(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "10.0.0.5:4321"
-	r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.7")
-	if got := clientIP(r, false); got != "10.0.0.5" {
-		t.Fatalf("без прокси: %s", got)
+	req := func(remote string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.7")
+		return r
 	}
-	if got := clientIP(r, true); got != "203.0.113.7" {
-		t.Fatalf("за прокси берём адрес, дописанный прокси: %s", got)
+	for _, c := range []struct {
+		remote string
+		mode   ProxyMode
+		want   string
+	}{
+		// Сосед из внутренней сети — свой прокси: берём адрес, который дописал он (последний).
+		{"10.0.0.5:4321", ProxyAuto, "203.0.113.7"},
+		{"127.0.0.1:4321", ProxyAuto, "203.0.113.7"},
+		// Напрямую из интернета заголовок подделывается — не верим.
+		{"198.51.100.9:4321", ProxyAuto, "198.51.100.9"},
+		{"198.51.100.9:4321", ProxyTrust, "203.0.113.7"},
+		{"10.0.0.5:4321", ProxyNone, "10.0.0.5"},
+	} {
+		if got := clientIP(req(c.remote), c.mode); got != c.want {
+			t.Errorf("%s режим %d: %s, ждали %s", c.remote, c.mode, got, c.want)
+		}
+	}
+}
+
+func TestLoginLimitDoesNotLockOutOwner(t *testing.T) {
+	h, _ := newAuthedServer(t)
+	login := func(remote, password string) int {
+		r := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"username":"alice","password":"`+password+`"}`))
+		r.RemoteAddr = remote
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec.Code
+	}
+	for range 15 {
+		login("198.51.100.66:1000", "wrong12")
+	}
+	if code := login("198.51.100.66:1000", "secret1"); code != http.StatusTooManyRequests {
+		t.Fatalf("перебор с одного адреса: %d", code)
+	}
+	// Хозяйка аккаунта с другого адреса входит, как будто атаки нет.
+	if code := login("203.0.113.5:2000", "secret1"); code != http.StatusOK {
+		t.Fatalf("вход хозяйки с её адреса: %d", code)
+	}
+}
+
+func TestLimiterPruneBounded(t *testing.T) {
+	l := newLimiter(2, time.Hour)
+	for i := range limiterMaxKeys + 500 {
+		l.allow(strconv.Itoa(i))
+	}
+	if n := len(l.buckets); n > limiterMaxKeys {
+		t.Fatalf("вёдер: %d, предел %d", n, limiterMaxKeys)
 	}
 }

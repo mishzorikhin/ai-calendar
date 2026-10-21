@@ -57,11 +57,20 @@ func (l *limiter) allow(key string) (bool, time.Duration) {
 }
 
 // prune убирает вёдра, которые успели наполниться: их владельцы давно не приходили.
+// Если так освободить место не вышло (поток новых ключей), выбрасывает произвольную
+// четверть: лимит этих ключей начнётся заново, зато обход не повторяется на каждом запросе
+// и память не растёт.
 func (l *limiter) prune(now time.Time) {
 	for k, b := range l.buckets {
 		if b.tokens+float64(now.Sub(b.at))/float64(l.every) >= l.burst {
 			delete(l.buckets, k)
 		}
+	}
+	for k := range l.buckets {
+		if len(l.buckets) <= limiterMaxKeys*3/4 {
+			break
+		}
+		delete(l.buckets, k)
 	}
 }
 
@@ -91,20 +100,40 @@ func tooMany(w http.ResponseWriter, wait time.Duration) error {
 	return &apiError{Status: http.StatusTooManyRequests, Message: "Слишком много попыток — подождите немного"}
 }
 
-// clientIP — адрес клиента. За доверенным прокси (TRUST_PROXY=1) — последний адрес из
-// X-Forwarded-For: его дописал сам прокси, а начало списка клиент может подделать.
-func clientIP(r *http.Request, trustProxy bool) string {
-	if trustProxy {
+// ProxyMode — откуда брать адрес клиента для лимитов.
+type ProxyMode int
+
+const (
+	// ProxyAuto — X-Forwarded-For только от соседа из внутренней сети или loopback (свой
+	// nginx/Caddy рядом). Напрямую из интернета такой заголовок подделывается и игнорируется.
+	ProxyAuto ProxyMode = iota
+	// ProxyTrust — всегда X-Forwarded-For (TRUST_PROXY=1): прокси стоит снаружи.
+	ProxyTrust
+	// ProxyNone — никогда (TRUST_PROXY=0): сервер смотрит в интернет сам.
+	ProxyNone
+)
+
+func (s *server) clientIP(r *http.Request) string { return clientIP(r, s.proxy) }
+
+// clientIP — адрес клиента. За прокси — последний адрес из X-Forwarded-For: его дописал
+// сам прокси, а начало списка клиент может подделать.
+func clientIP(r *http.Request, mode ProxyMode) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	trust := mode == ProxyTrust
+	if mode == ProxyAuto {
+		ip := net.ParseIP(host)
+		trust = ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+	}
+	if trust {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			if ip := strings.TrimSpace(parts[len(parts)-1]); net.ParseIP(ip) != nil {
 				return ip
 			}
 		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
 	}
 	return host
 }

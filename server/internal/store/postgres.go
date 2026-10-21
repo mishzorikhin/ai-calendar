@@ -682,12 +682,12 @@ func (s *pgStore) AddMessage(ctx context.Context, role model.Role, text string) 
 	return m, nil
 }
 
-func (s *pgStore) UserCount(ctx context.Context) int {
+func (s *pgStore) UserCount(ctx context.Context) (int, error) {
 	var n int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
-		return 0
+		return 0, fmt.Errorf("подсчёт пользователей: %w", err)
 	}
-	return n
+	return n, nil
 }
 
 func (s *pgStore) CreateUser(ctx context.Context, username, name, passHash string) (model.User, error) {
