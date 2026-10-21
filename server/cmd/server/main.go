@@ -11,6 +11,16 @@
 //	LLM_MODEL     модель (по умолчанию qwen3.6-unlim-noreason)
 //	STATIC_DIR    раздавать фронтенд с диска вместо встроенного (для разработки)
 //	CORS_ORIGINS  источники через запятую, которым разрешён доступ к API
+//
+// Внешние календари:
+//
+//	SECRET_KEY               ключ шифрования паролей и токенов (по умолчанию — файл DATA_DIR/secret.key)
+//	PUBLIC_URL               внешний адрес сервера для входа через Google/Microsoft (https://…)
+//	GOOGLE_CLIENT_ID/SECRET  OAuth-приложение Google; без них Google не предлагается
+//	MICROSOFT_CLIENT_ID/SECRET OAuth-приложение Microsoft (Outlook); без них Outlook не предлагается
+//	CALENDAR_SYNC_INTERVAL   период фоновой синхронизации (по умолчанию 15m; 0 — выключить)
+//	CALENDAR_ALLOW_PRIVATE   1 — разрешить адреса внутренней сети (свой Nextcloud дома)
+//	DEFAULT_TIMEZONE         пояс пользователей, пока браузер не сообщил свой (Europe/Moscow)
 package main
 
 import (
@@ -26,9 +36,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // база поясов внутри бинарника: в distroless-образе её может не быть
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/api"
+	"github.com/mishzorikhin/ai-calendar/server/internal/calsync"
 	"github.com/mishzorikhin/ai-calendar/server/internal/llm"
+	"github.com/mishzorikhin/ai-calendar/server/internal/secret"
 	"github.com/mishzorikhin/ai-calendar/server/internal/store"
 	"github.com/mishzorikhin/ai-calendar/server/web"
 )
@@ -63,6 +76,14 @@ func run(port string) error {
 		webFS = os.DirFS(dir)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	calOpts, err := calendarOptions(ctx)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr: ":" + port,
 		Handler: api.New(api.Options{
@@ -71,15 +92,13 @@ func run(port string) error {
 			Web:         webFS,
 			CORSOrigins: splitList(os.Getenv("CORS_ORIGINS")),
 			Version:     version,
+			Calendars:   calOpts,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -113,6 +132,43 @@ func newLLM() *llm.Client {
 		APIKey:  key,
 		Model:   env("LLM_MODEL", "qwen3.6-unlim-noreason"),
 	}, 20*time.Second)
+}
+
+// calendarOptions — настройки внешних календарей из окружения.
+func calendarOptions(ctx context.Context) (api.CalendarOptions, error) {
+	key, persistent, err := secret.LoadKey(os.Getenv("SECRET_KEY"), env("DATA_DIR", "./data"))
+	if err != nil {
+		return api.CalendarOptions{}, err
+	}
+	if !persistent {
+		slog.Warn("SECRET_KEY не задан и DATA_DIR пуст: после перезапуска календари с паролем придётся подключить заново")
+	}
+	box, err := secret.New(key)
+	if err != nil {
+		return api.CalendarOptions{}, err
+	}
+	interval, err := time.ParseDuration(env("CALENDAR_SYNC_INTERVAL", "15m"))
+	if err != nil {
+		return api.CalendarOptions{}, fmt.Errorf("CALENDAR_SYNC_INTERVAL: %w", err)
+	}
+	opts := api.CalendarOptions{
+		Secrets:         box,
+		PublicURL:       os.Getenv("PUBLIC_URL"),
+		AllowPrivate:    os.Getenv("CALENDAR_ALLOW_PRIVATE") == "1",
+		DefaultTimeZone: env("DEFAULT_TIMEZONE", "Europe/Moscow"),
+		SyncInterval:    interval,
+		Background:      ctx,
+	}
+	if id, sec := os.Getenv("GOOGLE_CLIENT_ID"), os.Getenv("GOOGLE_CLIENT_SECRET"); id != "" && sec != "" {
+		opts.Google = calsync.GoogleApp(id, sec)
+	}
+	if id, sec := os.Getenv("MICROSOFT_CLIENT_ID"), os.Getenv("MICROSOFT_CLIENT_SECRET"); id != "" && sec != "" {
+		opts.Outlook = calsync.OutlookApp(id, sec)
+	}
+	if (opts.Google != nil || opts.Outlook != nil) && opts.PublicURL == "" {
+		slog.Warn("PUBLIC_URL не задан: адрес возврата для входа через Google/Microsoft возьмём из запроса")
+	}
+	return opts, nil
 }
 
 // openStore выбирает хранилище: PostgreSQL по DATABASE_URL, иначе JSON-файл из DATA_DIR.

@@ -128,6 +128,35 @@ var schema = []string{
 	`CREATE INDEX IF NOT EXISTS notifications_user ON notifications (user_id, id)`,
 	`CREATE SEQUENCE IF NOT EXISTS event_id_seq`,
 	`CREATE SEQUENCE IF NOT EXISTS task_id_seq`,
+	// Внешние календари: события получают источник и id во внешнем календаре,
+	// пользователь — часовой пояс и секрет ссылки на свою ленту .ics.
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS external_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS etag TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS read_only BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE`,
+	`CREATE INDEX IF NOT EXISTS events_source ON events (user_id, source) WHERE source <> ''`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS time_zone TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS feed_token TEXT NOT NULL DEFAULT ''`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS users_feed_token ON users (feed_token) WHERE feed_token <> ''`,
+	`CREATE SEQUENCE IF NOT EXISTS integration_id_seq`,
+	`CREATE TABLE IF NOT EXISTS integrations (
+		id          TEXT PRIMARY KEY,
+		user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		kind        TEXT NOT NULL,
+		name        TEXT NOT NULL,
+		url         TEXT NOT NULL DEFAULT '',
+		username    TEXT NOT NULL DEFAULT '',
+		secret      TEXT NOT NULL DEFAULT '',
+		calendar_id TEXT NOT NULL DEFAULT '',
+		badge       TEXT NOT NULL DEFAULT 'routine',
+		writable    BOOLEAN NOT NULL DEFAULT FALSE,
+		is_primary  BOOLEAN NOT NULL DEFAULT FALSE,
+		last_sync   TIMESTAMPTZ NOT NULL DEFAULT '0001-01-01',
+		last_error  TEXT NOT NULL DEFAULT '',
+		created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`,
+	`CREATE INDEX IF NOT EXISTS integrations_user ON integrations (user_id)`,
 }
 
 func (s *pgStore) migrate(ctx context.Context) error {
@@ -243,12 +272,14 @@ func uid(ctx context.Context) (int64, error) {
 	return u.ID, err
 }
 
-const eventColumns = `id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at`
+const eventColumns = `id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
+	source, external_id, etag, read_only, all_day`
 
 func scanEvent(row pgx.Row) (model.Event, error) {
 	var e model.Event
 	var userID *int64
-	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt)
+	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt,
+		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay)
 	if userID != nil {
 		e.UserID = *userID
 	}
@@ -308,10 +339,12 @@ func (s *pgStore) CreateEvent(ctx context.Context, e model.Event) (model.Event, 
 	}
 	e.UserID = u
 	e.CreatedAt = time.Now()
-	err = s.pool.QueryRow(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at)
-		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9)
+	err = s.pool.QueryRow(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
+			source, external_id, etag, read_only, all_day)
+		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`,
-		e.UserID, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, e.Highlight, e.CreatedAt).Scan(&e.ID)
+		e.UserID, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, e.Highlight, e.CreatedAt,
+		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay).Scan(&e.ID)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("создание события: %w", err)
 	}
@@ -669,8 +702,8 @@ func (s *pgStore) CreateUser(ctx context.Context, username, name, passHash strin
 
 func (s *pgStore) UserByUsername(ctx context.Context, username string) (model.User, error) {
 	var u model.User
-	err := s.pool.QueryRow(ctx, `SELECT id, username, name, pass_hash, created_at FROM users WHERE lower(username) = lower($1)`,
-		username).Scan(&u.ID, &u.Username, &u.Name, &u.PassHash, &u.CreatedAt)
+	err := s.pool.QueryRow(ctx, `SELECT id, username, name, pass_hash, time_zone, created_at FROM users WHERE lower(username) = lower($1)`,
+		username).Scan(&u.ID, &u.Username, &u.Name, &u.PassHash, &u.TimeZone, &u.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.User{}, ErrNotFound
@@ -731,9 +764,9 @@ func (s *pgStore) UserBySession(ctx context.Context, tokenHash string) (model.Us
 	var u model.User
 	var expires time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.name, u.created_at, s.expires_at
+		SELECT u.id, u.username, u.name, u.time_zone, u.created_at, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1`,
-		tokenHash).Scan(&u.ID, &u.Username, &u.Name, &u.CreatedAt, &expires)
+		tokenHash).Scan(&u.ID, &u.Username, &u.Name, &u.TimeZone, &u.CreatedAt, &expires)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.User{}, ErrUnauthorized
@@ -810,4 +843,270 @@ func (s *pgStore) MarkNotificationsRead(ctx context.Context) error {
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND NOT is_read`, u)
 	return err
+}
+
+func (s *pgStore) EventsBetween(ctx context.Context, from, to string) []model.Event {
+	u, err := uid(ctx)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events WHERE user_id = $1 AND date >= $2 AND date <= $3`, u, from, to)
+	return collectEvents(rows, err)
+}
+
+func (s *pgStore) SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return SyncStats{}, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return SyncStats{}, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `SELECT `+eventColumns+` FROM events WHERE user_id = $1 AND source = $2`, u, source)
+	existing := collectEvents(rows, err)
+	if err != nil {
+		return SyncStats{}, fmt.Errorf("события источника: %w", err)
+	}
+	byExt := make(map[string]model.Event, len(existing))
+	var stats SyncStats
+	for _, e := range existing {
+		if _, dup := byExt[e.ExternalID]; dup {
+			// Дубль (например, после сбоя) — лишний удаляем.
+			if _, err := tx.Exec(ctx, `DELETE FROM events WHERE id = $1`, e.ID); err != nil {
+				return SyncStats{}, err
+			}
+			stats.Removed++
+			continue
+		}
+		byExt[e.ExternalID] = e
+	}
+	seen := map[string]bool{}
+	now := time.Now()
+	for _, in := range events {
+		if in.ExternalID == "" || seen[in.ExternalID] {
+			continue
+		}
+		seen[in.ExternalID] = true
+		if cur, ok := byExt[in.ExternalID]; ok {
+			if !mergeSynced(&cur, in) {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `UPDATE events SET date=$2, title=$3, subtitle=$4, start_min=$5, end_min=$6, badge=$7,
+				etag=$8, read_only=$9, all_day=$10 WHERE id=$1`,
+				cur.ID, cur.Date, cur.Title, cur.Subtitle, cur.Start, cur.End, cur.Badge, cur.ETag, cur.ReadOnly, cur.AllDay); err != nil {
+				return SyncStats{}, fmt.Errorf("обновление события: %w", err)
+			}
+			stats.Updated++
+			continue
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
+				source, external_id, etag, read_only, all_day)
+			VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9, $10, $11, $12, $13)`,
+			u, in.Date, in.Title, in.Subtitle, in.Start, in.End, in.Badge, now, source, in.ExternalID, in.ETag, in.ReadOnly, in.AllDay); err != nil {
+			return SyncStats{}, fmt.Errorf("добавление события: %w", err)
+		}
+		stats.Added++
+	}
+	for ext, e := range byExt {
+		if seen[ext] {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM events WHERE id = $1`, e.ID); err != nil {
+			return SyncStats{}, fmt.Errorf("удаление события: %w", err)
+		}
+		stats.Removed++
+	}
+	return stats, tx.Commit(ctx)
+}
+
+func (s *pgStore) SetEventETag(ctx context.Context, id, etag string) error {
+	u, err := uid(ctx)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE events SET etag = $3 WHERE id = $1 AND user_id = $2`, id, u, etag)
+	if err != nil {
+		return fmt.Errorf("версия события: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+const integrationColumns = `id, user_id, kind, name, url, username, secret, calendar_id, badge, writable, is_primary,
+	last_sync, last_error, created_at`
+
+func scanIntegration(row pgx.Row) (model.Integration, error) {
+	var in model.Integration
+	err := row.Scan(&in.ID, &in.UserID, &in.Kind, &in.Name, &in.URL, &in.Username, &in.Secret, &in.CalendarID,
+		&in.Badge, &in.Writable, &in.Primary, &in.LastSync, &in.LastError, &in.CreatedAt)
+	return in, err
+}
+
+func collectIntegrations(rows pgx.Rows, err error) []model.Integration {
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []model.Integration
+	for rows.Next() {
+		in, err := scanIntegration(rows)
+		if err != nil {
+			return nil
+		}
+		out = append(out, in)
+	}
+	return out
+}
+
+func (s *pgStore) Integrations(ctx context.Context) []model.Integration {
+	u, err := uid(ctx)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+integrationColumns+` FROM integrations WHERE user_id = $1 ORDER BY created_at, id`, u)
+	return collectIntegrations(rows, err)
+}
+
+func (s *pgStore) Integration(ctx context.Context, id string) (model.Integration, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return model.Integration{}, err
+	}
+	in, err := scanIntegration(s.pool.QueryRow(ctx, `SELECT `+integrationColumns+` FROM integrations WHERE id = $1 AND user_id = $2`, id, u))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Integration{}, ErrNotFound
+	}
+	return in, err
+}
+
+func (s *pgStore) SaveIntegration(ctx context.Context, in model.Integration) (model.Integration, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return model.Integration{}, err
+	}
+	in.UserID = u
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Integration{}, err
+	}
+	defer tx.Rollback(ctx)
+	if in.ID == "" {
+		in.CreatedAt = time.Now()
+		err = tx.QueryRow(ctx, `INSERT INTO integrations (id, user_id, kind, name, url, username, secret, calendar_id, badge,
+				writable, is_primary, last_sync, last_error, created_at)
+			VALUES ('cal-' || nextval('integration_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+			u, in.Kind, in.Name, in.URL, in.Username, in.Secret, in.CalendarID, in.Badge, in.Writable, in.Primary,
+			in.LastSync, in.LastError, in.CreatedAt).Scan(&in.ID)
+		if err != nil {
+			return model.Integration{}, fmt.Errorf("подключение календаря: %w", err)
+		}
+	} else {
+		err = tx.QueryRow(ctx, `UPDATE integrations SET kind=$3, name=$4, url=$5, username=$6, secret=$7, calendar_id=$8,
+				badge=$9, writable=$10, is_primary=$11, last_sync=$12, last_error=$13
+			WHERE id=$1 AND user_id=$2 RETURNING created_at`,
+			in.ID, u, in.Kind, in.Name, in.URL, in.Username, in.Secret, in.CalendarID, in.Badge, in.Writable, in.Primary,
+			in.LastSync, in.LastError).Scan(&in.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Integration{}, ErrNotFound
+		}
+		if err != nil {
+			return model.Integration{}, fmt.Errorf("сохранение календаря: %w", err)
+		}
+	}
+	if in.Primary {
+		if _, err := tx.Exec(ctx, `UPDATE integrations SET is_primary = FALSE WHERE user_id = $1 AND id <> $2`, u, in.ID); err != nil {
+			return model.Integration{}, err
+		}
+	}
+	return in, tx.Commit(ctx)
+}
+
+func (s *pgStore) DeleteIntegration(ctx context.Context, id string) error {
+	u, err := uid(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `DELETE FROM integrations WHERE id = $1 AND user_id = $2`, id, u)
+	if err != nil {
+		return fmt.Errorf("удаление календаря: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM events WHERE user_id = $1 AND source = $2`, u, id); err != nil {
+		return fmt.Errorf("удаление событий календаря: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *pgStore) AllIntegrations(ctx context.Context) []model.Integration {
+	rows, err := s.pool.Query(ctx, `SELECT `+integrationColumns+` FROM integrations ORDER BY user_id, created_at`)
+	return collectIntegrations(rows, err)
+}
+
+func (s *pgStore) SetTimeZone(ctx context.Context, tz string) (model.User, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return model.User{}, err
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET time_zone = $2 WHERE id = $1`, u, tz); err != nil {
+		return model.User{}, fmt.Errorf("часовой пояс: %w", err)
+	}
+	user, _ := UserFrom(ctx)
+	user.TimeZone = tz
+	return user, nil
+}
+
+func (s *pgStore) FeedToken(ctx context.Context) (string, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return "", err
+	}
+	var token string
+	err = s.pool.QueryRow(ctx, `SELECT feed_token FROM users WHERE id = $1`, u).Scan(&token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return token, err
+}
+
+func (s *pgStore) SetFeedToken(ctx context.Context, token string) error {
+	u, err := uid(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE users SET feed_token = $2 WHERE id = $1`, u, token)
+	return err
+}
+
+func (s *pgStore) UserByFeedToken(ctx context.Context, token string) (model.User, error) {
+	if token == "" {
+		return model.User{}, ErrNotFound
+	}
+	var u model.User
+	err := s.pool.QueryRow(ctx, `SELECT id, username, name, time_zone, created_at FROM users WHERE feed_token = $1`, token).
+		Scan(&u.ID, &u.Username, &u.Name, &u.TimeZone, &u.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.User{}, ErrNotFound
+	}
+	return u, err
+}
+
+func (s *pgStore) UserByID(ctx context.Context, id int64) (model.User, error) {
+	var u model.User
+	err := s.pool.QueryRow(ctx, `SELECT id, username, name, time_zone, created_at FROM users WHERE id = $1`, id).
+		Scan(&u.ID, &u.Username, &u.Name, &u.TimeZone, &u.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.User{}, ErrNotFound
+	}
+	return u, err
 }

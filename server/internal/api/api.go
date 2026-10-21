@@ -35,18 +35,24 @@ type Options struct {
 	// CORSOrigins — источники, которым разрешены запросы к API (для vite dev).
 	CORSOrigins []string
 	Version     string
+	// Calendars — подключение внешних календарей (Google, Outlook, CalDAV, .ics).
+	Calendars CalendarOptions
 }
 
 type server struct {
 	store   store.Store
 	llm     *llm.Client
+	cal     *calendars
 	version string
 }
 
 // New собирает обработчик: /api/* — JSON API, остальное — SPA.
 // Публичны только health и вход/регистрация; данные — за Bearer-токеном.
 func New(opts Options) http.Handler {
-	s := &server{store: opts.Store, llm: opts.LLM, version: opts.Version}
+	s := &server{store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version}
+	if bg := opts.Calendars.Background; bg != nil && opts.Calendars.SyncInterval > 0 {
+		go s.runSyncLoop(bg, opts.Calendars.SyncInterval)
+	}
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /api/health", handlerFunc(s.health))
@@ -72,6 +78,18 @@ func New(opts Options) http.Handler {
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/messages", s.authed(s.createMessage))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
+	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
+	mux.Handle("POST /api/integrations", s.authed(s.createIntegration))
+	mux.Handle("POST /api/integrations/caldav/discover", s.authed(s.discoverCalDAV))
+	mux.Handle("PATCH /api/integrations/{id}", s.authed(s.updateIntegration))
+	mux.Handle("DELETE /api/integrations/{id}", s.authed(s.deleteIntegration))
+	mux.Handle("POST /api/integrations/{id}/sync", s.authed(s.syncIntegrationNow))
+	mux.Handle("POST /api/integrations/oauth/{provider}/start", s.authed(s.oauthStart))
+	mux.Handle("GET /api/integrations/oauth/{provider}/callback", handlerFunc(s.oauthCallback))
+	mux.Handle("GET /api/feed", s.authed(s.getFeed))
+	mux.Handle("POST /api/feed", s.authed(s.resetFeed))
+	mux.Handle("DELETE /api/feed", s.authed(s.disableFeed))
+	mux.Handle("GET /api/feed/{file}", handlerFunc(s.serveFeed))
 	mux.Handle("/api/", handlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return notFound("Метод API")
 	}))
@@ -166,7 +184,7 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if !in.Badge.Valid() {
 		return badRequest("Неизвестный тип события: %q", in.Badge)
 	}
-	ev, err := s.store.CreateEvent(r.Context(), model.Event{
+	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
 	})
 	if err != nil {
@@ -225,7 +243,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateRange(merged.Start, merged.End); err != nil {
 		return err
 	}
-	patched, err := s.store.UpdateEvent(r.Context(), id, model.EventPatch{
+	patched, err := s.updateEventSynced(r.Context(), current, model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
 	})
 	if err != nil {
@@ -239,7 +257,11 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) error {
-	if err := s.store.DeleteEvent(r.Context(), r.PathValue("id")); err != nil {
+	current, err := s.store.Event(r.Context(), r.PathValue("id"))
+	if err == nil {
+		err = s.deleteEventSynced(r.Context(), current)
+	}
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return notFound("Событие")
 		}

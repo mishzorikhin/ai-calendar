@@ -9,6 +9,7 @@ package store
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,6 +105,40 @@ type Store interface {
 	AddNotification(ctx context.Context, n model.Notification) error
 	// MarkNotificationsRead отмечает все уведомления пользователя прочитанными.
 	MarkNotificationsRead(ctx context.Context) error
+
+	// EventsBetween — события пользователя с from по to включительно (ГГГГ-ММ-ДД).
+	EventsBetween(ctx context.Context, from, to string) []model.Event
+	// SyncEvents приводит события источника source к списку events: совпавшие по
+	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
+	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
+	// SetEventETag запоминает версию события во внешнем календаре после записи туда.
+	SetEventETag(ctx context.Context, id, etag string) error
+
+	// Integrations — подключённые календари пользователя в порядке подключения.
+	Integrations(ctx context.Context) []model.Integration
+	Integration(ctx context.Context, id string) (model.Integration, error)
+	// SaveIntegration создаёт (пустой ID) или заменяет подключение. Primary=true
+	// снимает отметку «сюда новые события» с остальных календарей пользователя.
+	SaveIntegration(ctx context.Context, in model.Integration) (model.Integration, error)
+	// DeleteIntegration удаляет подключение вместе с его событиями.
+	DeleteIntegration(ctx context.Context, id string) error
+	// AllIntegrations — подключения всех пользователей (для фоновой синхронизации).
+	AllIntegrations(ctx context.Context) []model.Integration
+
+	// SetTimeZone запоминает часовой пояс текущего пользователя.
+	SetTimeZone(ctx context.Context, tz string) (model.User, error)
+	// FeedToken — секрет ссылки на ленту .ics пользователя ("" — лента выключена).
+	FeedToken(ctx context.Context) (string, error)
+	SetFeedToken(ctx context.Context, token string) error
+	// UserByFeedToken — владелец ленты по секрету из ссылки.
+	UserByFeedToken(ctx context.Context, token string) (model.User, error)
+	// UserByID — пользователь без пароля (фоновая синхронизация, вход через OAuth).
+	UserByID(ctx context.Context, id int64) (model.User, error)
+}
+
+// SyncStats — итог синхронизации источника.
+type SyncStats struct {
+	Added, Updated, Removed int
 }
 
 // storedUser — пользователь в файле: PassHash хранится, но не отдаётся в API.
@@ -112,7 +147,13 @@ type storedUser struct {
 	Username  string    `json:"username"`
 	Name      string    `json:"name"`
 	PassHash  string    `json:"passHash"`
+	TimeZone  string    `json:"timeZone,omitempty"`
+	FeedToken string    `json:"feedToken,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (u storedUser) public() model.User {
+	return model.User{ID: u.ID, Username: u.Username, Name: u.Name, TimeZone: u.TimeZone, CreatedAt: u.CreatedAt}
 }
 
 type storedSession struct {
@@ -127,6 +168,7 @@ type data struct {
 	Users         []storedUser             `json:"users"`
 	Sessions      map[string]storedSession `json:"sessions"`
 	Notifications []model.Notification     `json:"notifications"`
+	Integrations  []model.Integration      `json:"integrations"`
 	NextID        int                      `json:"nextId"`
 	NextUserID    int64                    `json:"nextUserId"`
 }
@@ -233,11 +275,18 @@ func (s *fileStore) uid(ctx context.Context) (int64, error) {
 	return u.ID, err
 }
 
-// userByID — карточка пользователя (без пароля) по id.
+// userCard — карточка другого пользователя для задач: без пароля и личных настроек.
+func (s *fileStore) userCard(id int64) (model.User, bool) {
+	u, ok := s.userByID(id)
+	u.TimeZone = ""
+	return u, ok
+}
+
+// userByID — пользователь (без пароля) по id.
 func (s *fileStore) userByID(id int64) (model.User, bool) {
 	for _, u := range s.d.Users {
 		if u.ID == id {
-			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, CreatedAt: u.CreatedAt}, true
+			return u.public(), true
 		}
 	}
 	return model.User{}, false
@@ -254,13 +303,13 @@ func taskVisible(t *model.Task, uid int64) bool {
 // decorateTask заполняет Owner, свежие карточки Members и роль запросившего.
 // Вызывается под блокировкой; меняет переданную копию задачи.
 func (s *fileStore) decorateTask(t *model.Task, uid int64) {
-	if owner, ok := s.userByID(t.OwnerID); ok {
+	if owner, ok := s.userCard(t.OwnerID); ok {
 		owner := owner
 		t.Owner = &owner
 	}
 	members := t.Members[:0]
 	for _, m := range t.Members {
-		if u, ok := s.userByID(m.ID); ok {
+		if u, ok := s.userCard(m.ID); ok {
 			members = append(members, u)
 		}
 	}
@@ -481,7 +530,7 @@ func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID i
 		s.decorateTask(&out, uid)
 		return out, nil // уже участник — не дублируем
 	}
-	member, ok := s.userByID(memberID)
+	member, ok := s.userCard(memberID)
 	if !ok {
 		return model.Task{}, ErrNotFound
 	}
@@ -594,7 +643,7 @@ func (s *fileStore) CreateUser(ctx context.Context, username, name, passHash str
 		}
 		s.d.Messages = append(s.d.Messages, model.Message{ID: id, UserID: su.ID, Role: model.RoleAI, Text: "Чем могу помочь?", CreatedAt: s.now()})
 	}
-	return model.User{ID: su.ID, Username: su.Username, Name: su.Name, CreatedAt: su.CreatedAt}, s.save()
+	return su.public(), s.save()
 }
 
 func (s *fileStore) UserByUsername(_ context.Context, username string) (model.User, error) {
@@ -603,7 +652,9 @@ func (s *fileStore) UserByUsername(_ context.Context, username string) (model.Us
 	lower := strings.ToLower(username)
 	for _, u := range s.d.Users {
 		if u.Username == lower {
-			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, PassHash: u.PassHash, CreatedAt: u.CreatedAt}, nil
+			out := u.public()
+			out.PassHash = u.PassHash
+			return out, nil
 		}
 	}
 	return model.User{}, ErrNotFound
@@ -644,8 +695,7 @@ func (s *fileStore) UpdateUser(ctx context.Context, name string) (model.User, er
 	for i := range s.d.Users {
 		if s.d.Users[i].ID == uid {
 			s.d.Users[i].Name = name
-			u := s.d.Users[i]
-			return model.User{ID: u.ID, Username: u.Username, Name: u.Name, CreatedAt: u.CreatedAt}, s.save()
+			return s.d.Users[i].public(), s.save()
 		}
 	}
 	return model.User{}, ErrNotFound
@@ -744,3 +794,245 @@ type MemberError struct{ Msg string }
 
 func (e *MemberError) Error() string { return e.Msg }
 func badMember(msg string) error     { return &MemberError{Msg: msg} }
+
+func (s *fileStore) EventsBetween(ctx context.Context, from, to string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Event
+	for _, e := range s.d.Events {
+		if e.UserID == uid && e.Date >= from && e.Date <= to {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return SyncStats{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	incoming := make(map[string]model.Event, len(events))
+	for _, e := range events {
+		if _, dup := incoming[e.ExternalID]; !dup && e.ExternalID != "" {
+			incoming[e.ExternalID] = e
+		}
+	}
+	var stats SyncStats
+	kept := s.d.Events[:0]
+	seen := map[string]bool{}
+	for _, e := range s.d.Events {
+		if e.UserID != uid || e.Source != source {
+			kept = append(kept, e)
+			continue
+		}
+		in, ok := incoming[e.ExternalID]
+		if !ok || seen[e.ExternalID] {
+			stats.Removed++
+			continue
+		}
+		seen[e.ExternalID] = true
+		if mergeSynced(&e, in) {
+			stats.Updated++
+		}
+		kept = append(kept, e)
+	}
+	s.d.Events = kept
+	for _, e := range events {
+		if e.ExternalID == "" || seen[e.ExternalID] {
+			continue
+		}
+		seen[e.ExternalID] = true
+		e.ID = s.nextID("evt")
+		e.UserID = uid
+		e.Source = source
+		e.Highlight = false
+		e.CreatedAt = s.now()
+		s.d.Events = append(s.d.Events, e)
+		stats.Added++
+	}
+	return stats, s.save()
+}
+
+// mergeSynced переносит в событие поля из внешнего календаря; true — что-то изменилось.
+func mergeSynced(e *model.Event, in model.Event) bool {
+	before := *e
+	e.Date, e.Title, e.Subtitle = in.Date, in.Title, in.Subtitle
+	e.Start, e.End, e.Badge = in.Start, in.End, in.Badge
+	e.ETag, e.ReadOnly, e.AllDay = in.ETag, in.ReadOnly, in.AllDay
+	return before != *e
+}
+
+func (s *fileStore) SetEventETag(ctx context.Context, id, etag string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Events, func(e model.Event) bool { return e.ID == id && e.UserID == uid })
+	if i < 0 {
+		return ErrNotFound
+	}
+	s.d.Events[i].ETag = etag
+	return s.save()
+}
+
+func (s *fileStore) Integrations(ctx context.Context) []model.Integration {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Integration
+	for _, in := range s.d.Integrations {
+		if in.UserID == uid {
+			out = append(out, in)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) Integration(ctx context.Context, id string) (model.Integration, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Integration{}, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, in := range s.d.Integrations {
+		if in.ID == id && in.UserID == uid {
+			return in, nil
+		}
+	}
+	return model.Integration{}, ErrNotFound
+}
+
+func (s *fileStore) SaveIntegration(ctx context.Context, in model.Integration) (model.Integration, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.Integration{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	in.UserID = uid
+	if in.ID == "" {
+		in.ID = s.nextID("cal")
+		in.CreatedAt = s.now()
+		s.d.Integrations = append(s.d.Integrations, in)
+	} else {
+		i := slices.IndexFunc(s.d.Integrations, func(x model.Integration) bool { return x.ID == in.ID && x.UserID == uid })
+		if i < 0 {
+			return model.Integration{}, ErrNotFound
+		}
+		in.CreatedAt = s.d.Integrations[i].CreatedAt
+		s.d.Integrations[i] = in
+	}
+	if in.Primary {
+		for i := range s.d.Integrations {
+			if x := &s.d.Integrations[i]; x.UserID == uid && x.ID != in.ID {
+				x.Primary = false
+			}
+		}
+	}
+	return in, s.save()
+}
+
+func (s *fileStore) DeleteIntegration(ctx context.Context, id string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.d.Integrations, func(x model.Integration) bool { return x.ID == id && x.UserID == uid })
+	if i < 0 {
+		return ErrNotFound
+	}
+	s.d.Integrations = slices.Delete(s.d.Integrations, i, i+1)
+	s.d.Events = slices.DeleteFunc(s.d.Events, func(e model.Event) bool { return e.UserID == uid && e.Source == id })
+	return s.save()
+}
+
+func (s *fileStore) AllIntegrations(context.Context) []model.Integration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Clone(s.d.Integrations)
+}
+
+func (s *fileStore) SetTimeZone(ctx context.Context, tz string) (model.User, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return model.User{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.d.Users {
+		if s.d.Users[i].ID == uid {
+			s.d.Users[i].TimeZone = tz
+			return s.d.Users[i].public(), s.save()
+		}
+	}
+	return model.User{}, ErrNotFound
+}
+
+func (s *fileStore) FeedToken(ctx context.Context) (string, error) {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return "", err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, u := range s.d.Users {
+		if u.ID == uid {
+			return u.FeedToken, nil
+		}
+	}
+	return "", ErrNotFound
+}
+
+func (s *fileStore) SetFeedToken(ctx context.Context, token string) error {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.d.Users {
+		if s.d.Users[i].ID == uid {
+			s.d.Users[i].FeedToken = token
+			return s.save()
+		}
+	}
+	return ErrNotFound
+}
+
+func (s *fileStore) UserByFeedToken(_ context.Context, token string) (model.User, error) {
+	if token == "" {
+		return model.User{}, ErrNotFound
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, u := range s.d.Users {
+		if u.FeedToken != "" && subtle.ConstantTimeCompare([]byte(u.FeedToken), []byte(token)) == 1 {
+			return u.public(), nil
+		}
+	}
+	return model.User{}, ErrNotFound
+}
+
+func (s *fileStore) UserByID(_ context.Context, id int64) (model.User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if u, ok := s.userByID(id); ok {
+		return u, nil
+	}
+	return model.User{}, ErrNotFound
+}

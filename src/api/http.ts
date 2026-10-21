@@ -1,4 +1,15 @@
-import type { AppNotification, Badge, CalendarEvent, ChatMessage, DatedEvent, Task, User } from '../domain/types'
+import type {
+  AppNotification,
+  Badge,
+  CalDavCalendar,
+  CalendarEvent,
+  ChatMessage,
+  DatedEvent,
+  Integration,
+  IntegrationsInfo,
+  Task,
+  User,
+} from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
 import { ApiError, type CalendarApi, type ChatEvent, type Session } from './api'
 import { setAuthTokenGetter } from './outbox'
@@ -8,9 +19,25 @@ import { getSession, setSession } from './session'
 setAuthTokenGetter(() => getSession()?.token)
 
 // Форматы ответов сервера (server/internal/model).
-type EventDTO = CalendarEvent & { date: string }
+// externalId/etag/userId/createdAt — служебные поля сервера, в интерфейс их не тащим.
+type EventDTO = CalendarEvent & {
+  date: string
+  externalId?: string
+  etag?: string
+  userId?: number
+  createdAt?: string
+}
 
-const toEvent = ({ date, ...e }: EventDTO): DatedEvent => ({ ...e, date: fromISODate(date) })
+const toEvent = ({ date, externalId: _x, etag: _e, userId: _u, createdAt: _c, ...e }: EventDTO): DatedEvent => ({
+  ...e,
+  date: fromISODate(date),
+})
+
+/** Абсолютная ссылка на путь API: лента .ics открывается в других приложениях. */
+function absolute(baseUrl: string, path: string): string {
+  // В тестах (node) адреса страницы нет — достраиваем от localhost.
+  return new URL(baseUrl + path, globalThis.location?.href ?? 'http://localhost/').toString()
+}
 
 // Заголовки запроса: Bearer-сессия + JSON-тело, когда оно есть.
 function headers(init?: RequestInit): HeadersInit | undefined {
@@ -132,6 +159,34 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     addTaskMember: (taskId, username) => post<Task>(`/api/tasks/${taskId}/members`, { username }),
     removeTaskMember: (taskId, username) =>
       request<Task>(`/api/tasks/${taskId}/members/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+    async setTimeZone(timeZone) {
+      const user = await request<User>('/api/me', { method: 'PATCH', body: JSON.stringify({ timeZone }) })
+      const s = getSession()
+      if (s) setSession({ ...s, user })
+      return user
+    },
+
+    getIntegrations: () => request<IntegrationsInfo>('/api/integrations'),
+    async discoverCalDav(input) {
+      const res = await post<{ calendars: CalDavCalendar[] }>('/api/integrations/caldav/discover', input)
+      return res.calendars
+    },
+    createIntegration: (input) => post<Integration>('/api/integrations', input),
+    updateIntegration: (id, patch) =>
+      request<Integration>(`/api/integrations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteIntegration: (id) => request<void>(`/api/integrations/${id}`, { method: 'DELETE' }),
+    syncIntegration: (id) => post<Integration>(`/api/integrations/${id}/sync`, {}),
+    async startOAuth(provider) {
+      return (await post<{ url: string }>(`/api/integrations/oauth/${provider}/start`, {})).url
+    },
+    async getFeed() {
+      const { path } = await request<{ path: string }>('/api/feed')
+      return path ? absolute(baseUrl, path) : null
+    },
+    async resetFeed() {
+      return absolute(baseUrl, (await post<{ path: string }>('/api/feed', {})).path)
+    },
+    disableFeed: () => request<void>('/api/feed', { method: 'DELETE' }),
   }
 }
 

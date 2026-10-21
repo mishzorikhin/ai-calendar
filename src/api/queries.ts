@@ -1,12 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type {
   AppNotification,
+  CalDavCredentials,
   CalendarEvent,
   ChatMessage,
   DatedEvent,
   EventPatch,
+  IntegrationPatch,
+  IntegrationsInfo,
   NewEvent,
+  NewIntegration,
   NewTask,
   Task,
   TaskPatch,
@@ -27,14 +31,25 @@ export const keys = {
   me: ['me'] as const,
   users: (q: string) => ['users', q] as const,
   notifications: ['notifications'] as const,
+  integrations: ['integrations'] as const,
+  feed: ['feed'] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
+
+/** Делит события дня на события со временем и события на весь день. */
+function splitAllDay(list: CalendarEvent[]): { timed: CalendarEvent[]; allDay: CalendarEvent[] } {
+  if (!list.some((e) => e.allDay)) return { timed: list, allDay: NO_EVENTS }
+  return { timed: list.filter((e) => !e.allDay), allDay: list.filter((e) => e.allDay) }
+}
 
 /**
  * События дня. Пока грузятся — предыдущий день (без мигания при листании) или пустой список.
  * Там, где по событиям считаются свободные окна и конфликты, передавайте `keepPrevious: false`:
  * иначе время будет посчитано по чужому дню.
+ *
+ * `events` — только события со временем (шкала, окна, «Далее»); события на весь день
+ * (праздники и дни рождения из подключённых календарей) — отдельно в `allDay`.
  */
 export function useDayEvents(date: Date, { keepPrevious = true }: { keepPrevious?: boolean } = {}) {
   const api = useApi()
@@ -42,8 +57,9 @@ export function useDayEvents(date: Date, { keepPrevious = true }: { keepPrevious
     queryKey: keys.events(date),
     queryFn: () => api.getEvents(date),
     placeholderData: keepPrevious ? keepPreviousData : undefined,
+    select: splitAllDay,
   })
-  return { ...query, events: query.data ?? NO_EVENTS }
+  return { ...query, events: query.data?.timed ?? NO_EVENTS, allDay: query.data?.allDay ?? NO_EVENTS }
 }
 
 export function useMonthDots(year: number, month: number) {
@@ -165,6 +181,39 @@ export function useUpdateMe() {
     mutationFn: (name: string) => api.updateMe(name),
     onSuccess: (user) => qc.setQueryData(keys.me, user),
   })
+}
+
+/**
+ * Сообщает серверу пояс браузера, если он другой: в нём сервер раскладывает
+ * внешние календари по дням. Вызывается один раз в корне приложения.
+ */
+export function useSyncTimeZone() {
+  const api = useApi()
+  const qc = useQueryClient()
+  const { data: me } = useMe()
+  const known = me?.timeZone
+  const userId = me?.id
+  useEffect(() => {
+    if (api.mode !== 'server' || userId === undefined) return
+    let zone: string
+    try {
+      zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    } catch {
+      return
+    }
+    if (!zone || zone === known) return
+    api
+      .setTimeZone(zone)
+      .then((user) => {
+        qc.setQueryData(keys.me, user)
+        // Внешние события могли лечь в другие дни — перечитываем.
+        void qc.invalidateQueries({ queryKey: keys.allEvents })
+        void qc.invalidateQueries({ queryKey: keys.allMonths })
+      })
+      .catch(() => {
+        /* без сети попробуем при следующем запуске */
+      })
+  }, [api, qc, known, userId])
 }
 
 /** Люди для @упоминаний и шаринга: пустой запрос — все пользователи кроме себя. */
@@ -405,4 +454,105 @@ export function useSendChat() {
   }, [])
 
   return { stream, send, failed, dismissFailed }
+}
+
+// --- Внешние календари ------------------------------------------------------
+
+const NO_INTEGRATIONS: IntegrationsInfo = { items: [], providers: { google: false, outlook: false } }
+
+/** Подключённые календари; пока идёт синхронизация на сервере, статус обновляется сам. */
+export function useIntegrations() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.integrations, queryFn: () => api.getIntegrations() })
+  return { ...query, info: query.data ?? NO_INTEGRATIONS }
+}
+
+/** После изменений календарей перечитываем список и все дни: события могли появиться или пропасть. */
+function useCalendarsChanged() {
+  const qc = useQueryClient()
+  return useCallback(() => {
+    void qc.invalidateQueries({ queryKey: keys.integrations })
+    void qc.invalidateQueries({ queryKey: keys.allEvents })
+    void qc.invalidateQueries({ queryKey: keys.allMonths })
+  }, [qc])
+}
+
+/** Название календаря, откуда пришло событие (для подписи в карточке и шторке). */
+export function useCalendarName(source: string | undefined): string | undefined {
+  const api = useApi()
+  const { data } = useQuery({
+    queryKey: keys.integrations,
+    queryFn: () => api.getIntegrations(),
+    enabled: !!source && api.mode === 'server',
+    staleTime: 60_000,
+    select: (info: IntegrationsInfo) => info.items.find((i) => i.id === source)?.name,
+  })
+  return source ? (data ?? 'Подключённый календарь') : undefined
+}
+
+/** Календарь, куда уходят новые события, если он назначен. */
+export function usePrimaryCalendar(): string | undefined {
+  const api = useApi()
+  const { data } = useQuery({
+    queryKey: keys.integrations,
+    queryFn: () => api.getIntegrations(),
+    enabled: api.mode === 'server',
+    staleTime: 60_000,
+    select: (info: IntegrationsInfo) => info.items.find((i) => i.primary && i.writable)?.name,
+  })
+  return data
+}
+
+export function useDiscoverCalDav() {
+  const api = useApi()
+  return useMutation({ mutationFn: (input: CalDavCredentials) => api.discoverCalDav(input) })
+}
+
+export function useCreateIntegration() {
+  const api = useApi()
+  const changed = useCalendarsChanged()
+  return useMutation({ mutationFn: (input: NewIntegration) => api.createIntegration(input), onSuccess: changed })
+}
+
+export function useUpdateIntegration() {
+  const api = useApi()
+  const changed = useCalendarsChanged()
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: IntegrationPatch }) => api.updateIntegration(id, patch),
+    onSettled: changed,
+  })
+}
+
+export function useDeleteIntegration() {
+  const api = useApi()
+  const changed = useCalendarsChanged()
+  return useMutation({ mutationFn: (id: string) => api.deleteIntegration(id), onSettled: changed })
+}
+
+export function useSyncIntegration() {
+  const api = useApi()
+  const changed = useCalendarsChanged()
+  return useMutation({ mutationFn: (id: string) => api.syncIntegration(id), onSettled: changed })
+}
+
+/** Вход в Google/Microsoft: получаем ссылку и уходим на страницу согласия. */
+export function useStartOAuth() {
+  const api = useApi()
+  return useMutation({
+    mutationFn: (provider: 'google' | 'outlook') => api.startOAuth(provider),
+    onSuccess: (url) => window.location.assign(url),
+  })
+}
+
+/** Ссылка на ленту .ics пользователя. */
+export function useFeed() {
+  const api = useApi()
+  const qc = useQueryClient()
+  const query = useQuery({ queryKey: keys.feed, queryFn: () => api.getFeed(), enabled: api.mode === 'server' })
+  const reset = useMutation({ mutationFn: () => api.resetFeed(), onSuccess: (url) => qc.setQueryData(keys.feed, url) })
+  const disable = useMutation({
+    mutationFn: () => api.disableFeed(),
+    onSuccess: () => qc.setQueryData(keys.feed, null),
+  })
+  return { url: query.data ?? null, isLoading: query.isLoading, reset, disable }
 }

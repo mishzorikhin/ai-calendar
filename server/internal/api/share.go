@@ -55,6 +55,7 @@ func (s *server) resolveUsernames(ctx context.Context, names []string) (users []
 // notifyShare — «X поделился с вами задачей».
 func (s *server) notifyShare(ctx context.Context, to model.User, task model.Task) {
 	actor, _ := store.UserFrom(ctx)
+	actor = otherUser(actor)
 	_ = s.store.AddNotification(ctx, model.Notification{
 		UserID: to.ID,
 		From:   &actor,

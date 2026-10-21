@@ -226,6 +226,32 @@ export const StopIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const RefreshIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12a7.5 7.5 0 0 1 13.2-4.9M17.9 3.6v3.6h-3.6M6.1 20.4v-3.6h3.6" />
+  </Svg>
+)
+
+export const LinkIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2" />
+  </Svg>
+)
+
+export const CopyIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="8.5" y="8.5" width="11" height="11" rx="2.5" />
+    <path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" />
+  </Svg>
+)
+
+export const LockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5" />
+    <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+  </Svg>
+)
+
 export const BADGE_ICON = {
   sleep: MoonIcon,
   routine: SparkIcon,

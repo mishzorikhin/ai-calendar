@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../../api/api'
-import { useLogout, useMarkNotificationsRead, useMe, useNotifications, useUpdateMe } from '../../api/queries'
+import {
+  useIntegrations,
+  useLogout,
+  useMarkNotificationsRead,
+  useMe,
+  useNotifications,
+  useUpdateMe,
+} from '../../api/queries'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
-import { CloseIcon, UsersIcon } from '../../components/Icons'
+import { ArrowRightIcon, CalendarIcon, CloseIcon, UsersIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pressable } from '../../components/ui'
 import type { AppNotification } from '../../domain/types'
 import styles from './Home.module.css'
@@ -21,8 +28,8 @@ export function userInitials(user: { username: string; name: string }): string {
   return [...source].slice(0, 1).join('').toUpperCase()
 }
 
-/** Шторка аккаунта: профиль, уведомления о совместных задачах, выход. */
-export function AccountSheet({ onClose }: { onClose: () => void }) {
+/** Шторка аккаунта: профиль, подключённые календари, уведомления о совместных задачах, выход. */
+export function AccountSheet({ onClose, onCalendars }: { onClose: () => void; onCalendars: () => void }) {
   const { data: me } = useMe()
   const session = useSession()
   const user = me ?? session?.user
@@ -30,6 +37,9 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
   const markRead = useMarkNotificationsRead()
   const updateMe = useUpdateMe()
   const logout = useLogout()
+  const { info } = useIntegrations()
+  const calendarsSub =
+    info.items.length > 0 ? info.items.map((i) => i.name).join(', ') : 'Google, Яндекс, iCloud, ссылка .ics'
 
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(user?.name ?? '')
@@ -101,6 +111,17 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       )}
+
+      <Pressable className={styles.settingsRow} scale={0.98} onClick={onCalendars}>
+        <span className={styles.settingsIcon}>
+          <CalendarIcon size={19} />
+        </span>
+        <span className={styles.settingsText}>
+          <span className={styles.settingsTitle}>Календари</span>
+          <span className={styles.settingsSub}>{calendarsSub}</span>
+        </span>
+        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+      </Pressable>
 
       <p className={styles.sheetLabel}>Уведомления{unread > 0 ? ` · ${unread}` : ''}</p>
       {notifications.length === 0 ? (

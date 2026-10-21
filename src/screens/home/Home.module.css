@@ -727,6 +727,58 @@
   padding-bottom: 4px;
 }
 
+/* Строка настроек в шторке аккаунта («Календари»). */
+.settingsRow {
+  width: 100%;
+  min-height: 62px;
+  margin-top: 18px;
+  padding: 10px 14px 10px 10px;
+  justify-content: flex-start;
+  gap: 12px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.settingsIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.settingsText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settingsTitle {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.settingsSub {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settingsArrow {
+  flex-shrink: 0;
+  color: var(--ink-soft);
+}
+
 .notifEmpty {
   margin: 4px;
   font-size: 13.5px;

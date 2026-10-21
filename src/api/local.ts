@@ -26,6 +26,7 @@ const GREETING: ChatMessage = { id: 0, role: 'ai', text: 'Чем могу пом
 // Локальный режим — один «пользователь» без пароля; общие задачи недоступны.
 const LOCAL_USER: User = { id: 0, username: 'local', name: 'Локальный режим' }
 const NO_ACCOUNTS = new ApiError(400, 'Аккаунты и общие задачи работают только с сервером')
+const NO_CALENDARS = new ApiError(400, 'Подключение календарей работает только с сервером')
 
 function emptySnapshot(): Snapshot {
   return { events: [], messages: [GREETING], tasks: [], nextId: 3 }
@@ -209,5 +210,18 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     markNotificationsRead: () => reply(undefined),
     addTaskMember: () => Promise.reject(NO_ACCOUNTS),
     removeTaskMember: () => Promise.reject(NO_ACCOUNTS),
+    setTimeZone: (timeZone) => reply({ ...LOCAL_USER, timeZone }),
+
+    // Внешних календарей без сервера нет: список пуст, подключение — с понятной ошибкой.
+    getIntegrations: () => reply({ items: [], providers: { google: false, outlook: false } }),
+    discoverCalDav: () => Promise.reject(NO_CALENDARS),
+    createIntegration: () => Promise.reject(NO_CALENDARS),
+    updateIntegration: () => Promise.reject(NO_CALENDARS),
+    deleteIntegration: () => Promise.reject(NO_CALENDARS),
+    syncIntegration: () => Promise.reject(NO_CALENDARS),
+    startOAuth: () => Promise.reject(NO_CALENDARS),
+    getFeed: () => reply(null),
+    resetFeed: () => Promise.reject(NO_CALENDARS),
+    disableFeed: () => reply(undefined),
   }
 }

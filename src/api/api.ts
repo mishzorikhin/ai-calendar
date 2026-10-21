@@ -2,10 +2,16 @@ import type {
   AppNotification,
   CalendarEvent,
   ChatMessage,
+  CalDavCalendar,
+  CalDavCredentials,
   DatedEvent,
   EventPatch,
+  Integration,
+  IntegrationPatch,
+  IntegrationsInfo,
   MonthDots,
   NewEvent,
+  NewIntegration,
   NewTask,
   Task,
   TaskPatch,
@@ -66,6 +72,27 @@ export interface CalendarApi {
   addTaskMember(taskId: string, username: string): Promise<Task>
   /** Владелец удаляет участника, участник так выходит из задачи. */
   removeTaskMember(taskId: string, username: string): Promise<Task>
+  /** Запомнить часовой пояс браузера — в нём сервер раскладывает внешние календари по дням. */
+  setTimeZone(timeZone: string): Promise<User>
+
+  /** Подключённые календари и доступные сервисы. */
+  getIntegrations(): Promise<IntegrationsInfo>
+  /** Календари на CalDAV-сервере (Яндекс, iCloud, Nextcloud) по логину и паролю приложения. */
+  discoverCalDav(input: CalDavCredentials): Promise<CalDavCalendar[]>
+  /** Подключить подписку .ics или CalDAV-календарь; сервер сразу загружает события. */
+  createIntegration(input: NewIntegration): Promise<Integration>
+  updateIntegration(id: string, patch: IntegrationPatch): Promise<Integration>
+  /** Отключить календарь: его события пропадают из приложения. */
+  deleteIntegration(id: string): Promise<void>
+  /** Синхронизировать сейчас; ошибка сервиса — в lastError. */
+  syncIntegration(id: string): Promise<Integration>
+  /** Ссылка на страницу входа Google/Microsoft — браузер уходит туда сам. */
+  startOAuth(provider: 'google' | 'outlook'): Promise<string>
+  /** Ссылка на ленту .ics пользователя; null — лента выключена. */
+  getFeed(): Promise<string | null>
+  /** Включить ленту или выдать новую ссылку (старая перестаёт работать). */
+  resetFeed(): Promise<string>
+  disableFeed(): Promise<void>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */

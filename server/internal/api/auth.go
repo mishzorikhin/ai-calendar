@@ -131,6 +131,13 @@ func publicUser(u model.User) model.User {
 	return u
 }
 
+// otherUser — чужой пользователь (участник задачи, поиск): без пароля и личных настроек.
+func otherUser(u model.User) model.User {
+	u.PassHash = ""
+	u.TimeZone = ""
+	return u
+}
+
 type authInput struct {
 	Username string `json:"username"`
 	Name     string `json:"name"`
@@ -232,6 +239,8 @@ func (s *server) me(w http.ResponseWriter, r *http.Request) error {
 
 type mePatchInput struct {
 	Name *string `json:"name"`
+	// TimeZone — IANA-пояс браузера (Europe/Moscow); приложение присылает его само.
+	TimeZone *string `json:"timeZone"`
 }
 
 func (s *server) updateMe(w http.ResponseWriter, r *http.Request) error {
@@ -244,14 +253,28 @@ func (s *server) updateMe(w http.ResponseWriter, r *http.Request) error {
 		if *in.Name == "" || utf8.RuneCountInString(*in.Name) > userNameMax {
 			return badRequest("Имя обязательно и не длиннее %d символов", userNameMax)
 		}
-		u, err := s.store.UpdateUser(r.Context(), *in.Name)
+	}
+	if in.TimeZone != nil {
+		*in.TimeZone = strings.TrimSpace(*in.TimeZone)
+		if _, err := time.LoadLocation(*in.TimeZone); err != nil || *in.TimeZone == "" || len(*in.TimeZone) > 64 || *in.TimeZone == "Local" {
+			return badRequest("Неизвестный часовой пояс: %q", *in.TimeZone)
+		}
+	}
+	u, _ := store.UserFrom(r.Context())
+	if in.Name != nil {
+		updated, err := s.store.UpdateUser(r.Context(), *in.Name)
 		if err != nil {
 			return err
 		}
-		writeJSON(w, http.StatusOK, publicUser(u))
-		return nil
+		u.Name = updated.Name
 	}
-	u, _ := store.UserFrom(r.Context())
+	if in.TimeZone != nil && *in.TimeZone != u.TimeZone {
+		updated, err := s.store.SetTimeZone(r.Context(), *in.TimeZone)
+		if err != nil {
+			return err
+		}
+		u.TimeZone = updated.TimeZone
+	}
 	writeJSON(w, http.StatusOK, publicUser(u))
 	return nil
 }
@@ -262,7 +285,7 @@ func (s *server) searchUsers(w http.ResponseWriter, r *http.Request) error {
 	users := s.store.SearchUsers(r.Context(), q, 10)
 	out := make([]model.User, 0, len(users))
 	for _, u := range users {
-		out = append(out, publicUser(u))
+		out = append(out, otherUser(u))
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

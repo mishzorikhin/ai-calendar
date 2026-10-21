@@ -1,0 +1,489 @@
+/* Шторка «Календари»: подключённые календари, подключение, лента .ics. */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.head h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.headBack {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lead {
+  margin: 6px 4px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.label {
+  margin: 22px 4px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.notice {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.noticeOk {
+  background: var(--success-bg);
+  color: var(--success-ink);
+}
+
+.noticeError {
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+}
+
+.error {
+  margin: 10px 4px 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--danger-ink);
+}
+
+.hint {
+  margin: 10px 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+/* --- Список подключённых ------------------------------------------------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  border-radius: 20px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.rowHead {
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  justify-content: flex-start;
+  gap: 12px;
+  text-align: left;
+}
+
+.tile {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  color: var(--ink-inverse);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tile_google {
+  background: var(--blue);
+}
+
+.tile_outlook {
+  background: var(--purple);
+}
+
+.tile_caldav {
+  background: var(--orange);
+}
+
+.tile_ics {
+  background: var(--green);
+}
+
+.rowText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.rowName > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.rowMeta,
+.rowError {
+  font-size: 12.5px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.rowMeta {
+  color: var(--ink-2);
+}
+
+.rowError {
+  color: var(--danger-ink);
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--ink-soft);
+}
+
+.details {
+  padding: 0 12px 12px;
+}
+
+.detailsInner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.switchRow {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 4px 0 14px;
+  justify-content: space-between;
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 14.5px;
+  text-align: left;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  margin: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  transition: background 0.2s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.switchOn {
+  background: var(--green);
+}
+
+.switchOn::after {
+  transform: translateX(18px);
+}
+
+.readOnlyNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.miniLabel {
+  margin: 0 4px -6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+.badges::-webkit-scrollbar {
+  display: none;
+}
+
+.badgePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.spin {
+  display: inline-flex;
+}
+
+.disconnect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  font-size: 14px;
+  color: var(--danger-ink);
+}
+
+.disconnectSure {
+  background: var(--danger-bg);
+}
+
+.empty {
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+/* --- Варианты подключения ------------------------------------------------ */
+
+.option {
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  justify-content: flex-start;
+  gap: 12px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.optionText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.optionTitle {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.optionSub {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* --- Формы ---------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldLabel {
+  margin: 14px 4px 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.input {
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  font-size: 16px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 0;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.submit {
+  width: 100%;
+  height: 54px;
+  margin-top: 20px;
+}
+
+.calList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.calItem {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  justify-content: flex-start;
+  gap: 12px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.calDot {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.inlineIcon {
+  margin-left: 4px;
+  vertical-align: -1px;
+}
+
+.check {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--surface-3);
+  color: var(--ink-inverse);
+  transition: background 0.18s;
+}
+
+.checkOn {
+  background: var(--ink);
+  box-shadow: none;
+}
+
+/* --- Лента .ics ------------------------------------------------------------ */
+
+.feed {
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--surface-2);
+}
+
+.feedText {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.feedUrl {
+  width: 100%;
+  height: 44px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+}
+
+.feedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.feedLink {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.feedMinor {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.textBtn {
+  height: 40px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.textBtnDanger {
+  color: var(--danger-ink);
+}

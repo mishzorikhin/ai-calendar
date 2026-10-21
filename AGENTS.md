@@ -15,6 +15,8 @@
 - **Аккаунты** — регистрация и вход по логину и паролю, Bearer-токен. События и чат личные; **задачи и цели** можно делить с другими (`@логин` в тексте или список участников), участники получают уведомления.
 - **Ассистент** — настоящий LLM с function calling (OpenAI-совместимый API, SSE-стрим), `server/internal/llm` + `POST /api/chat`. Без `LLM_API_KEY` отвечает заглушкой.
 - **Офлайн** — мутации событий и задач при обрыве сети ждут в очереди (`api/outbox.ts`, IndexedDB) и доигрываются сами.
+- **Внешние календари** — Google и Outlook (OAuth), CalDAV (Яндекс, iCloud, Nextcloud), подписки `.ics` и своя лента `.ics`
+  наружу (`server/internal/calsync`, UI — `screens/home/calendars`). Их события лежат рядом со своими (`source`).
 - **Два режима данных:** серверный и локальный (моки + `localStorage`, без аккаунта — для GitHub Pages и работы над UI).
 - **Поставка** — один Docker-образ: Go-бинарник со встроенным UI (`go:embed`); `docker-compose` поднимает ещё и PostgreSQL 17.
 - **Главное в продукте — дизайн и анимации.** Визуальное качество важнее количества функций.
@@ -64,7 +66,8 @@ src/
   components/ общие UI: ui.tsx (Pressable, Pill, CircleButton, Avatar…), BottomSheet, BottomBar,
               EventComposer, VoiceOverlay, Icons
   pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync
-  screens/    auth, home (задачи и цели, аккаунт), month, day, chat — у каждого экрана своя папка
+  screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари»), month, day, chat —
+              у каждого экрана своя папка
   styles/     global.css — дизайн-токены
   sw.ts       service worker (precache, runtime-кэш API, Background Sync очереди)
 server/       Go-бэкенд, см. server/AGENTS.md
@@ -96,13 +99,19 @@ React-компоненты; `mocks/` используются только в `a
    вложенных `AnimatePresence`.
 6. **Модальные окна — только через `components/BottomSheet`** (Escape, фокус-ловушка, `inert` фона,
    свайп вниз за любое место). Не копируйте разметку шторки.
-7. **Чат** — `screens/chat`: ответ приходит потоком `ChatEvent` (`delta`/`tool`/`done`/`error`) через
+7. **События внешних календарей** — `CalendarEvent.source` (id подключения), `readOnly`, `allDay`.
+   `useDayEvents` отдаёт события со временем в `events`, а на весь день — отдельно в `allDay`: шкала, окна
+   и «Далее» их не учитывают. `readOnly` открывается в `ReadOnlyEvent`, а не в редакторе. Подключения —
+   хуки `useIntegrations`/`useCreateIntegration`… в `queries.ts`; после их изменений инвалидируются и дни,
+   и месяцы. Новый вид календаря — сначала провайдер в `server/internal/calsync`, затем вариант в
+   `ConnectOptions`. В локальном режиме календари не подключаются (как и аккаунты).
+8. **Чат** — `screens/chat`: ответ приходит потоком `ChatEvent` (`delta`/`tool`/`done`/`error`) через
    `CalendarApi.sendChat`; реплики сохраняет сервер. Поток в офлайн-очередь **не** кладётся — у него свой
    UI ошибки и повтора. После вызова инструмента инвалидируйте кэш событий/задач.
-8. **Доменная логика — чистые функции в `domain/`** с тестами рядом (`*.test.ts`).
-9. **Даты:** в состоянии — `Date` начала суток (`startOfDay`), в API — строка `ГГГГ-ММ-ДД`
-   (`toISODate`/`fromISODate`). Время внутри дня — минуты от полуночи (`number`).
-10. **Склонения и подписи дней** — `lib/plural.ts` и `relativeDayLabel` из `lib/dates.ts`; не пишите
+9. **Доменная логика — чистые функции в `domain/`** с тестами рядом (`*.test.ts`).
+10. **Даты:** в состоянии — `Date` начала суток (`startOfDay`), в API — строка `ГГГГ-ММ-ДД`
+    (`toISODate`/`fromISODate`). Время внутри дня — минуты от полуночи (`number`).
+11. **Склонения и подписи дней** — `lib/plural.ts` и `relativeDayLabel` из `lib/dates.ts`; не пишите
     свои `n % 10`.
 
 ## React и TypeScript
