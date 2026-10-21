@@ -65,6 +65,19 @@ describe('outbox enqueue', () => {
     ])
   })
 
+  it('правка после правки серии не уезжает в более раннюю операцию', async () => {
+    const o = await freshOutbox()
+    await o.enqueue(makeOp({ body: { title: 'А' } }))
+    await o.enqueue(makeOp({ body: { repeat: '', occurrence: '2026-10-27' }, separate: true }))
+    await o.enqueue(makeOp({ body: { title: 'Б' } }))
+    // «Б» должна уйти после правки серии, иначе та затрёт её старыми значениями.
+    expect(o.list().map((op) => op.body)).toEqual([
+      { title: 'А' },
+      { repeat: '', occurrence: '2026-10-27' },
+      { title: 'Б' },
+    ])
+  })
+
   it('удаление неотправленного create отменяет операцию целиком', async () => {
     const o = await freshOutbox()
     await o.enqueue(createOp('offline-1', { title: 'А', date: '2026-10-21', start: 60, end: 90 }))

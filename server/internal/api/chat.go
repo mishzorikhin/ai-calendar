@@ -714,7 +714,7 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 		if err := seriesPatch(cur, occ, &patch); err != nil {
 			return toolErr(err, "не удалось перенести серию"), toolMeta{}
 		}
-	} else if cur.Repeat != model.RepeatNone && patch.Date != nil {
+	} else if cur.Repeat != model.RepeatNone && patch.Date != nil && (patch.Repeat == nil || *patch.Repeat != model.RepeatNone) {
 		// Без вхождения непонятно, на сколько сдвигать серию, — а сдвиг начала стёр бы прошлые вхождения.
 		return `{"error":"событие повторяется: передай occurrence — дату вхождения из get_day_schedule"}`, toolMeta{}
 	}

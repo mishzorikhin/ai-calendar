@@ -125,7 +125,9 @@ export function snoozedMessage(msg: PushMessage): PushMessage {
  * у которой в User-Agent нет даже «Safari/») и Firefox за такие отзывают подписку или урезают
  * квоту. Поэтому плашка — только в Chromium вне iOS (на iOS любой браузер — это WebKit).
  */
-export function showInApp(userAgent: string): boolean {
+export function showInApp(userAgent: string, endpoint: string | undefined): boolean {
+  // Подписка у Apple (iPad с «настольным» User-Agent выглядит как Mac) — это WebKit: только системное.
+  if (!endpoint || /\.push\.apple\.com\//.test(endpoint)) return false
   const ios = /iPhone|iPad|iPod/.test(userAgent)
   return !ios && /Chrome\/|Chromium\//.test(userAgent)
 }

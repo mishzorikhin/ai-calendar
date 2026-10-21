@@ -164,7 +164,8 @@ async function showPush(msg: PushMessage): Promise<void> {
   // Приложение открыто и в фокусе — показываем плашку в нём, без системного уведомления.
   const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
   const focused = windows.find((w) => w.focused && w.visibilityState === 'visible')
-  if (focused && showInApp(sw.navigator.userAgent)) {
+  const sub = focused ? await sw.registration.pushManager.getSubscription().catch(() => null) : null
+  if (focused && showInApp(sw.navigator.userAgent, sub?.endpoint)) {
     focused.postMessage({ type: 'push:show', message: msg })
     return
   }

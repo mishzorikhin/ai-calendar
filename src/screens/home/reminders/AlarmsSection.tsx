@@ -20,7 +20,8 @@ export function AlarmsSection() {
   const input = useRef<HTMLInputElement>(null)
   const error = create.error ?? remove.error
 
-  const add = (at: Date) => {
+  /** viaExact — из «Точного времени»: только тогда выбранное время сбрасывается. */
+  const add = (at: Date, viaExact = false) => {
     const value = text.trim()
     if (!value) {
       setMissing(true)
@@ -32,7 +33,7 @@ export function AlarmsSection() {
       {
         onSuccess: () => {
           setText('')
-          setExact('')
+          if (viaExact) setExact('')
         },
       },
     )
@@ -44,7 +45,7 @@ export function AlarmsSection() {
     if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return
     const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m)
     if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1)
-    add(at)
+    add(at, true)
   }
 
   return (

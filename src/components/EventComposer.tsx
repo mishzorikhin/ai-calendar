@@ -188,14 +188,15 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           patch: {
             title: name || editing.title,
             subtitle: subtitle.trim(),
-            date,
+            // У вхождения серии день передаём, только если его меняют (или снимают повтор):
+            // тогда сервер сдвигает серию от occurrence, а без них правка не трогает её начало.
+            ...(!series || !isSameDay(date, editing.date) || repeat === '' ? { date } : {}),
             start,
             end,
             badge,
             ...reminders,
             ...(repeat !== (editing.repeat ?? '') && { repeat }),
-            // Вхождение серии: перенос дня сдвигает всю серию, а не ставит её начало на этот день.
-            ...(series && { occurrence: editing.date }),
+            ...(series && (!isSameDay(date, editing.date) || repeat === '') && { occurrence: editing.date }),
           },
         },
         { onSuccess: onClose },

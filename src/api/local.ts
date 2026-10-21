@@ -170,6 +170,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const title = patch.title?.trim()
       const subtitle = patch.subtitle?.trim()
       if (patch.skip && !prev.repeat) return invalid('Убрать один день можно только из повторяющегося события')!
+      if (patch.skip && patch.occurrence) return invalid('Убрать день и перенести серию — разными правками')!
       const repeat = patch.repeat === undefined ? prev.repeat : patch.repeat || undefined
       // Правка вхождения серии — как seriesPatch на сервере: перенос сдвигает всю серию (с концом
       // и убранными днями), а снятый повтор оставляет событие в дне вхождения.

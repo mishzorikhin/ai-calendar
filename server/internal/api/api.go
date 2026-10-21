@@ -349,6 +349,9 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if in.Skip != nil {
+		if in.Occurrence != nil {
+			return badRequest("Убрать день и перенести серию — разными правками")
+		}
 		if current.Repeat == model.RepeatNone {
 			return badRequest("Убрать один день можно только из повторяющегося события")
 		}

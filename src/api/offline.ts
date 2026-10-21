@@ -184,6 +184,8 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         highlight: true,
         date: input.date,
         reminders: input.reminders ?? null,
+        repeat: input.repeat,
+        repeatUntil: input.repeatUntil,
       }
     },
 

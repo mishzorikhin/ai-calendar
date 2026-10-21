@@ -179,6 +179,20 @@ describe('local api', () => {
     expect(single.date).toEqual(new Date(2026, 10, 18))
     expect(single.repeat).toBeUndefined()
     await expect(api.updateNotifySettings({ quietFrom: 1380 })).rejects.toMatchObject({ status: 400 })
+    const again = await api.createEvent({
+      title: 'x',
+      date: new Date(2026, 9, 20),
+      start: 60,
+      end: 90,
+      repeat: 'daily',
+    })
+    await expect(
+      api.updateEvent(again.id, {
+        skip: new Date(2026, 9, 21),
+        occurrence: new Date(2026, 9, 22),
+        date: new Date(2026, 9, 23),
+      }),
+    ).rejects.toMatchObject({ status: 400 })
   })
 
   it('новые настройки уведомлений проверяются как на сервере', async () => {

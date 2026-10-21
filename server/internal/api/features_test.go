@@ -139,6 +139,9 @@ func TestRepeatingEventsAPI(t *testing.T) {
 			t.Errorf("%s: %d", body, rec.Code)
 		}
 	}
+	if rec := doAs(t, h, token, "PATCH", "/api/events/"+series.ID, `{"skip":"2026-11-25","occurrence":"2026-11-25","date":"2026-11-26"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("skip вместе со сдвигом: %d", rec.Code)
+	}
 	plain := decode[model.Event](t, doAs(t, h, token, "POST", "/api/events", `{"date":"2026-10-20","title":"Разово","start":600,"end":660}`))
 	if rec := doAs(t, h, token, "PATCH", "/api/events/"+plain.ID, `{"skip":"2026-10-20"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("skip у обычного: %d", rec.Code)
@@ -427,6 +430,12 @@ func TestChatReminderAndRepeatTools(t *testing.T) {
 	id := friday[0].ID
 	if out, _ := s.toolUpdateEvent(ctx, map[string]any{"event_id": id, "date": "2026-10-26"}); !strings.Contains(out, "occurrence") {
 		t.Fatalf("без occurrence: %s", out)
+	}
+	// Сделать разовой с новым днём можно и без occurrence: сдвигать уже нечего.
+	other, _ := s.toolCreateEvent(ctx, map[string]any{"date": "2026-10-20", "title": "Созвон", "start": "12:00", "end": "12:30", "repeat": "daily"})
+	otherID := strings.Split(strings.Split(other, `"id":"`)[1], `"`)[0]
+	if out, _ := s.toolUpdateEvent(ctx, map[string]any{"event_id": otherID, "repeat": "", "date": "2026-10-26"}); !strings.Contains(out, `"ok":true`) {
+		t.Fatalf("разовое с новой датой: %s", out)
 	}
 	// С occurrence: пятничное вхождение — на понедельник, серия сдвигается на 3 дня.
 	out, _ = s.toolUpdateEvent(ctx, map[string]any{"event_id": id, "occurrence": "2026-10-23", "date": "2026-10-26", "start": "11:00", "end": "11:30"})
