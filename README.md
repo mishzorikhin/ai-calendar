@@ -105,6 +105,13 @@ Workflow `.github/workflows/deploy.yml` публикует статическу�
 
 **Совместные задачи.** Задачу видят владелец и участники (`task_members`), обе стороны могут править поля. Поделиться можно двумя способами: `@логин` в названии или заметке (парсится сервером при создании и правке) и явный список `members` / маршрут участников. Участник получает уведомление, может выйти сам; владелец удаляет задачу у всех и снимает любых участников. События и история чата — всегда личные.
 
+Как работают упоминания:
+
+- Задачу делит только **новое** упоминание — которого не было в тексте до правки. Повторные сохранения не шлют уведомления снова, а того, кто вышел или кого убрал владелец, старое упоминание обратно не возвращает. Стёрли `@логин` и написали заново — это новое приглашение.
+- Упоминание начинается после пробела, начала строки или знака препинания: в «misha@bob.ru» и «иван@bob» упоминания нет. Точка, дефис или подчёркивание в конце («с @bob.») к логину не относятся, если такого логина нет.
+- Неизвестный `@логин` — просто текст. Упомянуть себя или владельца можно: участником они не становятся и ошибки нет. Явно добавить владельца через `members` — ошибка 400.
+- У упомянутого общая задача появляется без перезагрузки: приложение раз в минуту проверяет уведомления и при новом перечитывает задачи.
+
 | Метод и путь                                      | Что делает                                                                                          |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `GET /api/health`                                 | Проверка живости и версия                                                                           |
@@ -215,9 +222,15 @@ npm run typecheck   # tsc для приложения и конфигов
 npm run lint        # ESLint: typescript-eslint, react-hooks (правила React Compiler), jsx-a11y
 npm run test        # vitest: доменная логика, даты, склонения, API-клиенты, офлайн-очередь
 npm run check       # всё вместе + prettier --check
+
+cd server && gofmt -l . && go vet ./... && go test -race ./...
+# хранилище на настоящем PostgreSQL (нужна пустая тестовая база):
+TEST_DATABASE_URL=postgres://... go test ./internal/store -run TestPostgres
 ```
 
-Те же проверки запускаются в CI (`.github/workflows/ci.yml`) на каждый пуш и PR.
+Внешние сервисы в тестах не нужны: CalDAV, Google и Microsoft подменяются поддельными серверами из `server/internal/calsync/fakecal`.
+
+Те же проверки и сборка Docker запускаются в CI (`.github/workflows/ci.yml`) на каждый пуш и PR.
 
 ## Структура
 
@@ -242,17 +255,23 @@ src/
   lib/                 даты, склонения (Intl.PluralRules), распознавание речи, хуки таймеров,
                        флаги localStorage, анимационные пресеты
   components/          общие UI: кнопки, Device (оболочка + modal-root), BottomSheet и Sheet
-                       (Escape, фокус, inert фона), EventComposer, VoiceOverlay, иконки
+                       (Escape, фокус, inert фона), EventComposer, ReadOnlyEvent (событие
+                       внешнего календаря только для просмотра), VoiceOverlay, иконки
   screens/
     auth/              AuthScreen — вход и регистрация
     home/              Home, NextEvent, TasksGrid, PrepCard, AccountSheet, TaskSheet,
                        TaskPeople, tags
+      calendars/       шторка «Календари»: список подключений, CalDAV и подписка .ics,
+                       вход в Google/Outlook, личная лента .ics
     month/             Month, MonthGrid, MonthPicker, TodayCard
-    day/               Day, PartCard, EventCard, Agenda, WeekStrip, ModeToggle
+    day/               Day, PartCard, EventCard, Agenda, AllDayStrip (события на весь день),
+                       WeekStrip, ModeToggle
     chat/              Chat (стрим-ответ ассистента), ChatComposer, TasksPill, DayPreview
 server/
   cmd/server           точка входа: конфигурация из окружения, graceful shutdown, -healthcheck
-  internal/api         маршруты, валидация, аккаунты/сессии (auth.go), шаринг и упоминания (share.go), чат с инструментами (chat.go), middleware, раздача SPA
+  internal/api         маршруты, валидация, аккаунты/сессии (auth.go), шаринг и упоминания (share.go), чат с инструментами (chat.go), внешние календари (calendars.go, integrations.go), middleware, раздача SPA
+  internal/calsync     внешние календари: iCalendar, повторы, CalDAV, Google, Outlook; fakecal — подделки для тестов
+  internal/secret      шифрование паролей и токенов, подпись OAuth state
   internal/llm         клиент OpenAI-совместимого API (стриминг, tool calls)
   internal/store       хранилище (JSON-файл или PostgreSQL)
   internal/model       типы API
