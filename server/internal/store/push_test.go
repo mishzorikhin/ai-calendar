@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -115,17 +116,18 @@ func testPush(t *testing.T, s Store) {
 	}
 
 	// Настройки: по умолчанию, затем свои; у bob — свои.
-	if ns, err := s.NotifySettings(alice); err != nil || ns != model.DefaultNotifySettings {
+	if ns, err := s.NotifySettings(alice); err != nil || !reflect.DeepEqual(ns, model.DefaultNotifySettings) {
 		t.Fatalf("настройки по умолчанию: %+v %v", ns, err)
 	}
-	want := model.NotifySettings{EventReminder: -1, TaskTime: 600, Digest: 480}
+	want := model.NotifySettings{EventReminder: -1, TaskTime: 600, Digest: 480, Evening: 1200, QuietFrom: 1380, QuietTo: 420,
+		BadgeReminders: map[model.Badge]int{model.BadgeSport: 60, model.BadgeWork: -1}}
 	if err := s.SetNotifySettings(alice, want); err != nil {
 		t.Fatal(err)
 	}
-	if ns, _ := s.NotifySettings(alice); ns != want {
+	if ns, _ := s.NotifySettings(alice); !reflect.DeepEqual(ns, want) {
 		t.Fatalf("настройки: %+v", ns)
 	}
-	if ns, _ := s.NotifySettings(bctx); ns != model.DefaultNotifySettings {
+	if ns, _ := s.NotifySettings(bctx); !reflect.DeepEqual(ns, model.DefaultNotifySettings) {
 		t.Fatalf("настройки bob: %+v", ns)
 	}
 
@@ -150,10 +152,10 @@ func testPush(t *testing.T, s Store) {
 
 	// Отложенные уведомления: забираются по сроку один раз, у каждого свой предел.
 	msg := model.PushMessage{Kind: model.PushEvent, Title: "Звонок", URL: "/#day/2026-10-20", Tag: "evt-1"}
-	if err := s.AddSnooze(alice, now.Add(10*time.Minute), msg); err != nil {
+	if _, err := s.AddSnooze(alice, now.Add(10*time.Minute), msg); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddSnooze(bctx, now.Add(time.Hour), msg); err != nil {
+	if _, err := s.AddSnooze(bctx, now.Add(time.Hour), msg); err != nil {
 		t.Fatal(err)
 	}
 	if due := s.TakeDueSnoozes(ctx, now.Add(5*time.Minute)); len(due) != 0 {
@@ -167,15 +169,95 @@ func testPush(t *testing.T, s Store) {
 		t.Fatalf("забирается один раз: %+v", due)
 	}
 	for range MaxSnoozes - 1 {
-		if err := s.AddSnooze(bctx, now.Add(2*time.Hour), msg); err != nil {
+		if _, err := s.AddSnooze(bctx, now.Add(2*time.Hour), msg); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.AddSnooze(bctx, now, msg); !errors.Is(err, ErrLimit) {
+	if _, err := s.AddSnooze(bctx, now, msg); !errors.Is(err, ErrLimit) {
 		t.Fatalf("предел отложенных: %v", err)
 	}
-	if err := s.AddSnooze(alice, now, msg); err != nil {
+	if _, err := s.AddSnooze(alice, now, msg); err != nil {
 		t.Fatalf("предел у каждого свой: %v", err)
+	}
+
+	// Список отложенных — свои, ближайшие первыми; отмена — только своих.
+	list := s.Snoozes(alice)
+	if len(list) != 1 || list[0].Message.Title != "Звонок" {
+		t.Fatalf("отложенные alice: %+v", list)
+	}
+	z, err := s.AddSnooze(alice, now.Add(-time.Hour), model.PushMessage{Kind: model.PushReminder, Title: "Раньше"})
+	if err != nil || z.ID == 0 {
+		t.Fatalf("id отложенного: %+v %v", z, err)
+	}
+	if list := s.Snoozes(alice); len(list) != 2 || list[0].Message.Title != "Раньше" {
+		t.Fatalf("порядок отложенных: %+v", list)
+	}
+	if err := s.DeleteSnooze(bctx, z.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("чужое отложенное: %v", err)
+	}
+	if err := s.DeleteSnooze(alice, z.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSnooze(alice, z.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("повторная отмена: %v", err)
+	}
+
+	// Повторяющиеся события: правило, конец и убранные дни сохраняются; RepeatingEvents — по началу серии.
+	rep, err := s.CreateEvent(alice, model.Event{Date: "2026-10-20", Title: "Йога", Start: 1140, End: 1200, Badge: model.BadgeSport,
+		Repeat: model.RepeatWeekly, RepeatUntil: "2026-12-31"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	skip := "2026-10-27"
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{SkipDate: &skip}); err != nil {
+		t.Fatal(err)
+	}
+	ser, _ := s.Event(alice, rep.ID)
+	if ser.Repeat != model.RepeatWeekly || ser.RepeatUntil != "2026-12-31" || fmt.Sprint(ser.ExDates) != "[2026-10-27]" {
+		t.Fatalf("серия: %+v", ser)
+	}
+	if list := s.RepeatingEvents(alice, "2026-10-01", "2026-10-19"); len(list) != 0 {
+		t.Fatalf("серия ещё не началась: %+v", list)
+	}
+	if list := s.RepeatingEvents(alice, "2027-01-01", "2027-01-31"); len(list) != 0 {
+		t.Fatalf("серия уже закончилась: %+v", list)
+	}
+	if list := s.RepeatingEvents(alice, "2026-12-01", "2027-01-01"); len(list) != 1 || list[0].ID != rep.ID {
+		t.Fatalf("RepeatingEvents: %+v", list)
+	}
+	if list := s.RepeatingEvents(bctx, "2026-12-01", "2027-01-01"); len(list) != 0 {
+		t.Fatalf("чужие серии: %+v", list)
+	}
+	none := model.RepeatNone
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{Repeat: &none}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Event(alice, rep.ID); got.Repeat != "" || got.RepeatUntil != "" || got.ExDates != nil {
+		t.Fatalf("повтор снят: %+v", got)
+	}
+
+	// «Весь день» сохраняется и снимается правкой.
+	yes, no := true, false
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{AllDay: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Event(alice, rep.ID); !got.AllDay || got.Start != 0 || got.End != 1440 {
+		t.Fatalf("весь день: %+v", got)
+	}
+	start, end := 540, 600
+	if _, err := s.UpdateEvent(alice, rep.ID, model.EventPatch{AllDay: &no, Start: &start, End: &end}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Event(alice, rep.ID); got.AllDay || got.Start != 540 {
+		t.Fatalf("снова со временем: %+v", got)
+	}
+
+	// Подпись устройства сохраняется.
+	if err := s.SavePushSubscription(alice, model.PushSubscription{Endpoint: "https://push.example/label", P256DH: "k", Auth: "a", Label: "Chrome · Android"}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(s.PushSubscriptions(alice), func(p model.PushSubscription) bool { return p.Label == "Chrome · Android" }) {
+		t.Fatal("подпись устройства потерялась")
 	}
 
 	// Ключ сервера создаётся один раз.
@@ -229,4 +311,27 @@ func TestPostgresPush(t *testing.T) {
 	defer s.(*pgStore).pool.Close()
 	mustWipe(ctx, t, s)
 	testPush(t, s)
+}
+
+// Настройки, сохранённые до тихих часов и вечерней сводки, читаются со значениями по умолчанию,
+// а не с нулями («в 0:00»).
+func TestFileNotifySettingsUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	raw := `{"users":[{"id":1,"username":"alice","name":"Alice","passHash":"h"}],"nextUserId":2,
+		"notifySettings":{"1":{"eventReminder":5,"taskTime":540,"digest":480}}}`
+	if err := os.WriteFile(dir+"/data.json", []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns, err := s.NotifySettings(userCtx(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := model.NotifySettings{EventReminder: 5, TaskTime: 540, Digest: 480, Evening: -1, QuietFrom: -1, QuietTo: -1}
+	if !reflect.DeepEqual(ns, want) {
+		t.Fatalf("старые настройки: %+v", ns)
+	}
 }

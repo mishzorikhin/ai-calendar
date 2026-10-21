@@ -248,4 +248,42 @@ describe('сессия', () => {
     await createHttpApi().updateEvent('evt-1', { reminders: null })
     expect(fetch).toHaveBeenCalledWith('/api/events/evt-1', expect.objectContaining({ body: '{"reminders":null}' }))
   })
+
+  it('свои напоминания и устройства', async () => {
+    const api = createHttpApi()
+    const create = mockFetch(201, { id: 1, at: '2026-10-20T15:00:00Z', text: 'Позвонить', kind: 'reminder' })
+    await api.createAlarm({ text: 'Позвонить', at: new Date('2026-10-20T15:00:00Z') })
+    expect(create).toHaveBeenCalledWith(
+      '/api/reminders',
+      expect.objectContaining({ method: 'POST', body: '{"text":"Позвонить","at":"2026-10-20T15:00:00.000Z"}' }),
+    )
+    const del = mockFetch(204, null)
+    await api.deleteAlarm(7)
+    expect(del).toHaveBeenCalledWith('/api/reminders/7', expect.objectContaining({ method: 'DELETE' }))
+    mockFetch(200, [{ id: 'ab12', label: 'Chrome · Android', createdAt: '2026-10-20T10:00:00Z' }])
+    expect((await api.getDevices())[0]?.label).toBe('Chrome · Android')
+    const delDevice = mockFetch(204, null)
+    await api.deleteDevice('ab12')
+    expect(delDevice).toHaveBeenCalledWith('/api/push/devices/ab12', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('правка вхождения серии: даты occurrence и skip в формате ГГГГ-ММ-ДД', async () => {
+    const fetch = mockFetch(200, {
+      id: 'evt-1',
+      date: '2026-10-21',
+      title: 'Йога',
+      start: 1140,
+      end: 1200,
+      badge: 'sport',
+    })
+    await createHttpApi().updateEvent('evt-1', {
+      date: new Date(2026, 10, 11),
+      occurrence: new Date(2026, 10, 10),
+      skip: new Date(2026, 10, 3),
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/events/evt-1',
+      expect.objectContaining({ body: '{"date":"2026-11-11","occurrence":"2026-11-10","skip":"2026-11-03"}' }),
+    )
+  })
 })

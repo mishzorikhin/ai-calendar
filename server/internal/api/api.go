@@ -112,6 +112,11 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("DELETE /api/push/subscriptions", s.authed(s.unsubscribePush))
 	mux.Handle("POST /api/push/test", s.authed(s.testPush))
 	mux.Handle("POST /api/push/snooze", s.authed(s.snoozePush))
+	mux.Handle("GET /api/push/devices", s.authed(s.listDevices))
+	mux.Handle("DELETE /api/push/devices/{id}", s.authed(s.deleteDevice))
+	mux.Handle("GET /api/reminders", s.authed(s.listAlarms))
+	mux.Handle("POST /api/reminders", s.authed(s.createAlarmHandler))
+	mux.Handle("DELETE /api/reminders/{id}", s.authed(s.deleteAlarm))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
@@ -155,7 +160,8 @@ const highlightFresh = 24 * time.Hour
 
 // eventsOn — события пользователя на дату, по времени начала.
 func (s *server) eventsOn(ctx context.Context, date time.Time) []model.Event {
-	events := s.store.EventsOn(ctx, date.Format(time.DateOnly))
+	day := date.Format(time.DateOnly)
+	events := s.eventsBetween(ctx, day, day)
 	slices.SortStableFunc(events, func(a, b model.Event) int { return a.Start - b.Start })
 	for i := range events {
 		events[i].Highlight = events[i].Highlight && time.Since(events[i].CreatedAt) < highlightFresh
@@ -181,6 +187,11 @@ type eventInput struct {
 	Badge    model.Badge `json:"badge"`
 	// Reminders — за сколько минут напомнить; нет поля или null — как в настройках, [] — не напоминать.
 	Reminders []int `json:"reminders"`
+	// Repeat — повтор (daily, weekdays, weekly, monthly, yearly), RepeatUntil — последний день серии.
+	Repeat      model.Repeat `json:"repeat"`
+	RepeatUntil string       `json:"repeatUntil"`
+	// AllDay — на весь день: Start и End не нужны (станут 0 и 1440).
+	AllDay bool `json:"allDay"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -233,6 +244,9 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateSubtitle(in.Subtitle); err != nil {
 		return err
 	}
+	if in.AllDay {
+		in.Start, in.End = 0, dayMinutes
+	}
 	if err := validateRange(in.Start, in.End); err != nil {
 		return err
 	}
@@ -246,9 +260,12 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := validateRepeat(in.Repeat, in.RepeatUntil, in.Date); err != nil {
+		return err
+	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
-		Reminders: reminders,
+		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
 	})
 	if err != nil {
 		return err
@@ -267,6 +284,15 @@ type eventPatchInput struct {
 	Badge    *model.Badge `json:"badge"`
 	// Reminders: null — вернуть напоминание по умолчанию, [] — не напоминать.
 	Reminders json.RawMessage `json:"reminders"`
+	// Repeat: "" — убрать повтор (и дату окончания с убранными днями); RepeatUntil: "" — бессрочно.
+	Repeat      *model.Repeat `json:"repeat"`
+	RepeatUntil *string       `json:"repeatUntil"`
+	// Occurrence — день вхождения серии, которое правят: перенос его на Date сдвигает всю серию.
+	Occurrence *string `json:"occurrence"`
+	// Skip — убрать из серии один день (удалить «только это»).
+	Skip *string `json:"skip"`
+	// AllDay: true — на весь день; false — снова со временем (передайте start и end).
+	AllDay *bool `json:"allDay"`
 }
 
 // remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
@@ -314,6 +340,13 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	for _, d := range []*string{in.Occurrence, in.Skip} {
+		if d != nil {
+			if _, err := parseDate(*d); err != nil {
+				return err
+			}
+		}
+	}
 	id := r.PathValue("id")
 	current, err := s.store.Event(r.Context(), id)
 	if err != nil {
@@ -322,16 +355,36 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	if in.Skip != nil {
+		if in.Occurrence != nil {
+			return badRequest("Убрать день и перенести серию — разными правками")
+		}
+		if current.Repeat == model.RepeatNone {
+			return badRequest("Убрать один день можно только из повторяющегося события")
+		}
+		if len(current.ExDates) >= model.MaxExDates {
+			return badRequest("Из серии убрано слишком много дней — измените или удалите её")
+		}
+	}
 	// Интервал проверяем по итоговым значениям до записи.
+	patch := model.EventPatch{
+		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
+		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip, AllDay: in.AllDay,
+	}
+	if in.Occurrence != nil {
+		if err := seriesPatch(current, *in.Occurrence, &patch); err != nil {
+			return err
+		}
+	}
 	merged := current
-	merged.Apply(model.EventPatch{Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge})
+	merged.Apply(patch)
 	if err := validateRange(merged.Start, merged.End); err != nil {
 		return err
 	}
-	patched, err := s.updateEventSynced(r.Context(), current, model.EventPatch{
-		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
-		Reminders: reminders,
-	})
+	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {
+		return err
+	}
+	patched, err := s.updateEventSynced(r.Context(), current, patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return notFound("Событие")
@@ -372,7 +425,8 @@ func (s *server) monthDots(w http.ResponseWriter, r *http.Request) error {
 			dots[d.Day()] = append(dots[d.Day()], b)
 		}
 	}
-	for _, e := range s.store.EventsInMonth(r.Context(), prefix) {
+	last := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Format(time.DateOnly)
+	for _, e := range s.eventsBetween(r.Context(), prefix+"-01", last) {
 		add(e.Date, e.Badge)
 	}
 	// Ключи JSON — строки: {"8": ["work", "food"]}.
@@ -512,17 +566,14 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 	if len(unknown) > 0 {
 		return badRequest("Нет пользователей: @%s", strings.Join(unknown, ", @"))
 	}
-	// Текст до правки — чтобы делиться только по новым упоминаниям (галочке он не нужен).
+	// Задача до правки: делиться только по новым упоминаниям и сообщить участникам, что изменилось.
 	textChanged := in.Title != nil || in.Subtitle != nil
-	var before model.Task
-	if textChanged {
-		var err error
-		if before, err = s.store.Task(r.Context(), r.PathValue("id")); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return notFound("Задача")
-			}
-			return err
+	before, err := s.store.Task(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return notFound("Задача")
 		}
+		return err
 	}
 	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), model.TaskPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind,
@@ -543,6 +594,7 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 			return shareErr(err)
 		}
 	}
+	s.notifyTaskChange(r.Context(), before, t)
 	writeJSON(w, http.StatusOK, t)
 	return nil
 }

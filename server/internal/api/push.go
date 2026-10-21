@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -124,6 +125,16 @@ type notifySettingsInput struct {
 	EventReminder *int `json:"eventReminder"`
 	TaskTime      *int `json:"taskTime"`
 	Digest        *int `json:"digest"`
+	Evening       *int `json:"evening"`
+	QuietFrom     *int `json:"quietFrom"`
+	QuietTo       *int `json:"quietTo"`
+	// BadgeReminders заменяет весь список «тип события → минуты» (пустой объект — сбросить).
+	BadgeReminders *map[model.Badge]int `json:"badgeReminders"`
+}
+
+// validReminderMinutes — минуты до начала или -1 («не напоминать»).
+func validReminderMinutes(v int) bool {
+	return v == -1 || (v >= 0 && v <= model.MaxReminderMinutes)
 }
 
 func (s *server) updateNotifySettings(w http.ResponseWriter, r *http.Request) error {
@@ -136,16 +147,36 @@ func (s *server) updateNotifySettings(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	if in.EventReminder != nil {
-		if v := *in.EventReminder; v != -1 && (v < 0 || v > model.MaxReminderMinutes) {
+		if !validReminderMinutes(*in.EventReminder) {
 			return badRequest("Напоминание о событии — от 0 до %d минут или -1", model.MaxReminderMinutes)
 		}
 		ns.EventReminder = *in.EventReminder
+	}
+	if in.BadgeReminders != nil {
+		for b, v := range *in.BadgeReminders {
+			if !b.Valid() {
+				return badRequest("Неизвестный тип события: %q", b)
+			}
+			if !validReminderMinutes(v) {
+				return badRequest("Напоминание о событии — от 0 до %d минут или -1", model.MaxReminderMinutes)
+			}
+		}
+		ns.BadgeReminders = *in.BadgeReminders
+		if len(ns.BadgeReminders) == 0 {
+			ns.BadgeReminders = nil
+		}
 	}
 	for _, f := range []struct {
 		v    *int
 		dst  *int
 		name string
-	}{{in.TaskTime, &ns.TaskTime, "Время напоминания о задачах"}, {in.Digest, &ns.Digest, "Время сводки"}} {
+	}{
+		{in.TaskTime, &ns.TaskTime, "Время напоминания о задачах"},
+		{in.Digest, &ns.Digest, "Время сводки"},
+		{in.Evening, &ns.Evening, "Время плана на завтра"},
+		{in.QuietFrom, &ns.QuietFrom, "Начало тихих часов"},
+		{in.QuietTo, &ns.QuietTo, "Конец тихих часов"},
+	} {
 		if f.v == nil {
 			continue
 		}
@@ -153,6 +184,10 @@ func (s *server) updateNotifySettings(w http.ResponseWriter, r *http.Request) er
 			return badRequest("%s — минуты от полуночи (0–1439) или -1", f.name)
 		}
 		*f.dst = *f.v
+	}
+	// Тихие часы — оба края или ни одного.
+	if (ns.QuietFrom < 0) != (ns.QuietTo < 0) {
+		return badRequest("У тихих часов нужны и начало, и конец")
 	}
 	if err := s.store.SetNotifySettings(r.Context(), ns); err != nil {
 		return err
@@ -197,7 +232,7 @@ func (s *server) subscribePush(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("Подписка браузера неверная: %v", err)
 	}
 	err := s.store.SavePushSubscription(r.Context(), model.PushSubscription{
-		Endpoint: in.Endpoint, P256DH: in.Keys.P256DH, Auth: in.Keys.Auth,
+		Endpoint: in.Endpoint, P256DH: in.Keys.P256DH, Auth: in.Keys.Auth, Label: deviceLabel(r.UserAgent()),
 	})
 	if err != nil {
 		return err
@@ -259,7 +294,7 @@ type snoozeInput struct {
 // validPushMessage — уведомление от клиента: свои виды, разумные длины, только адреса приложения.
 func validPushMessage(m model.PushMessage) error {
 	switch m.Kind {
-	case model.PushEvent, model.PushTask, model.PushDigest, model.PushShare, model.PushTest:
+	case model.PushEvent, model.PushTask, model.PushDigest, model.PushShare, model.PushTest, model.PushReminder:
 	default:
 		return badRequest("Неизвестный вид уведомления: %q", m.Kind)
 	}
@@ -287,7 +322,8 @@ func (s *server) snoozePush(w http.ResponseWriter, r *http.Request) error {
 	if err := validPushMessage(in.Message); err != nil {
 		return err
 	}
-	err := s.store.AddSnooze(r.Context(), s.cal.now().Add(time.Duration(in.Minutes)*time.Minute), in.Message)
+	in.Message.Badge = nil // число на иконке к тому времени устареет
+	_, err := s.store.AddSnooze(r.Context(), s.cal.now().Add(time.Duration(in.Minutes)*time.Minute), in.Message)
 	if errors.Is(err, store.ErrLimit) {
 		return &apiError{Status: http.StatusConflict, Message: "Слишком много отложенных напоминаний"}
 	}
@@ -345,7 +381,8 @@ func (s *server) pushTo(ctx context.Context, msg model.PushMessage, o pushOpts) 
 }
 
 // pushToUser — уведомление другому пользователю (например, о задаче, которой с ним поделились).
-// Отправка идёт в фоне: ответ на запрос не ждёт сервиса доставки.
+// Отправка идёт в фоне: ответ на запрос не ждёт сервиса доставки. В тихие часы получателя
+// не отправляется — в шторке аккаунта уведомление всё равно есть.
 func (s *server) pushToUser(to model.User, msg model.PushMessage, o pushOpts) {
 	ctx := s.push.opts.Background
 	if ctx == nil {
@@ -354,6 +391,102 @@ func (s *server) pushToUser(to model.User, msg model.PushMessage, o pushOpts) {
 	go func() {
 		ctx, cancel := context.WithTimeout(store.WithUser(ctx, to), time.Minute)
 		defer cancel()
+		if u, err := s.store.UserByID(ctx, to.ID); err == nil {
+			to = u // пояс получателя — для тихих часов
+		}
+		if ns, err := s.store.NotifySettings(ctx); err == nil {
+			local := s.cal.now().In(s.cal.location(to))
+			if ns.Quiet(local.Hour()*60 + local.Minute()) {
+				return
+			}
+		}
 		_, _ = s.pushTo(ctx, msg, o)
 	}()
+}
+
+// --- Устройства -----------------------------------------------------------------
+
+// deviceView — подписанное устройство для списка: без адреса подписки (он даёт право слать уведомления).
+type deviceView struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// deviceID — короткий id устройства: начало sha256 адреса подписки. Браузер считает его так же,
+// чтобы найти себя в списке.
+func deviceID(endpoint string) string {
+	sum := sha256.Sum256([]byte(endpoint))
+	return hex.EncodeToString(sum[:8])
+}
+
+func (s *server) listDevices(w http.ResponseWriter, r *http.Request) error {
+	subs := s.store.PushSubscriptions(r.Context())
+	out := make([]deviceView, 0, len(subs))
+	for _, p := range subs {
+		label := p.Label
+		if label == "" {
+			label = "Устройство"
+		}
+		out = append(out, deviceView{ID: deviceID(p.Endpoint), Label: label, CreatedAt: p.CreatedAt})
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (s *server) deleteDevice(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	for _, p := range s.store.PushSubscriptions(r.Context()) {
+		if deviceID(p.Endpoint) == id {
+			if err := s.store.DeletePushSubscription(r.Context(), p.Endpoint); err != nil {
+				return err
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return nil
+		}
+	}
+	return notFound("Устройство")
+}
+
+// deviceLabel — «Chrome · Android» из User-Agent: только чтобы отличать устройства в списке.
+func deviceLabel(ua string) string {
+	os := ""
+	switch {
+	case strings.Contains(ua, "iPhone"):
+		os = "iPhone"
+	case strings.Contains(ua, "iPad"):
+		os = "iPad"
+	case strings.Contains(ua, "Android"):
+		os = "Android"
+	case strings.Contains(ua, "Windows"):
+		os = "Windows"
+	case strings.Contains(ua, "Mac OS X"), strings.Contains(ua, "Macintosh"):
+		os = "Mac"
+	case strings.Contains(ua, "Linux"):
+		os = "Linux"
+	}
+	browser := ""
+	switch {
+	case strings.Contains(ua, "YaBrowser"):
+		browser = "Яндекс Браузер"
+	case strings.Contains(ua, "Edg/"):
+		browser = "Edge"
+	case strings.Contains(ua, "OPR/"):
+		browser = "Opera"
+	case strings.Contains(ua, "Firefox/"), strings.Contains(ua, "FxiOS"):
+		browser = "Firefox"
+	case strings.Contains(ua, "Chrome/"), strings.Contains(ua, "CriOS"):
+		browser = "Chrome"
+	case strings.Contains(ua, "Safari/"):
+		browser = "Safari"
+	}
+	switch {
+	case browser != "" && os != "":
+		return browser + " · " + os
+	case browser != "":
+		return browser
+	case os != "":
+		return os
+	}
+	return "Устройство"
 }

@@ -537,3 +537,10 @@ button.event {
   height: 8px;
   border-radius: 50%;
 }
+
+/* Значок повторяющегося события перед названием. */
+.repeatMark {
+  margin-right: 4px;
+  vertical-align: -1px;
+  opacity: 0.6;
+}

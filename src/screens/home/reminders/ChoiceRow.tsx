@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { Pill } from '../../../components/ui'
 import styles from './Reminders.module.css'
 
@@ -9,15 +9,19 @@ type Props = {
   value: number
   label: (v: number) => string
   onChange: (v: number) => void
+  /** Без своей подложки — внутри другой группы. */
+  compact?: boolean
+  /** Дополнительное под вариантами (раскрывающиеся подробности). */
+  children?: ReactNode
 }
 
 /** Группа вариантов одной настройки — переключатели-«таблетки» в ряд (radiogroup). */
-export function ChoiceRow({ title, hint, options, value, label, onChange }: Props) {
+export function ChoiceRow({ title, hint, options, value, label, onChange, compact, children }: Props) {
   const id = useId()
   // Значение не из списка (задано ассистентом или с другого устройства) тоже показываем выбранным.
   const list = options.includes(value) ? options : [...options, value].sort((a, b) => a - b)
   return (
-    <div className={styles.group}>
+    <div className={compact ? styles.groupCompact : styles.group}>
       <p className={styles.groupTitle} id={`${id}-title`}>
         {title}
       </p>
@@ -37,6 +41,7 @@ export function ChoiceRow({ title, hint, options, value, label, onChange }: Prop
           </Pill>
         ))}
       </div>
+      {children}
     </div>
   )
 }

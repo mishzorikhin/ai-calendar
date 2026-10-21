@@ -74,6 +74,39 @@ describe('withOfflineQueue: мутации офлайн', () => {
     expect(outbox.list()[1]?.body).toMatchObject({ reminders: null })
   })
 
+  it('«только этот день» офлайн: вхождение пропадает из своего дня', async () => {
+    netDown()
+    const a = api()
+    await a.updateEvent('evt-9', { skip: new Date(2026, 9, 27) })
+    expect(outbox.list()[0]?.body).toMatchObject({ skip: '2026-10-27' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json([
+          { id: 'evt-9', title: 'Йога', start: 60, end: 90, badge: 'sport', date: '2026-10-27', repeat: 'weekly' },
+        ]),
+      ),
+    )
+    expect(await a.getEvents(new Date(2026, 9, 27))).toHaveLength(0)
+  })
+
+  it('«весь день» офлайн: и в созданном, и в отложенной правке', async () => {
+    netDown()
+    const a = api()
+    const e = await a.createEvent({ title: 'Отпуск', date: new Date(2026, 9, 21), start: 0, end: 1440, allDay: true })
+    expect(e.allDay).toBe(true)
+    await a.updateEvent('evt-1', { allDay: true, start: 0, end: 1440 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json([{ id: 'evt-1', title: 'Звонок', start: 60, end: 90, badge: 'work', date: '2026-10-21' }]),
+      ),
+    )
+    const events = await a.getEvents(new Date(2026, 9, 21))
+    expect(events.find((x) => x.id === 'evt-1')).toMatchObject({ allDay: true, start: 0, end: 1440 })
+    expect(events.find((x) => x.title === 'Отпуск')?.allDay).toBe(true)
+  })
+
   it('серверная ошибка 400 не складывается в очередь — пробрасывается', async () => {
     vi.stubGlobal(
       'fetch',

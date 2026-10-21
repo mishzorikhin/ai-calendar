@@ -16,7 +16,7 @@ export function ReadOnlyEvent({ event, onClose }: { event: DatedEvent; onClose: 
   const update = useUpdateEvent()
   // Напоминание — настройка приложения: его можно задать и событию, которое здесь не изменить.
   const remindersOn = useApi().mode === 'server' && !event.allDay
-  const defaultReminder = useDefaultReminder()
+  const defaultReminder = useDefaultReminder(event.badge)
   const [reminders, setReminders] = useState(event.reminders)
   const pickReminder = (minutes: number) => {
     const next = minutes < 0 ? [] : [minutes]

@@ -1,4 +1,5 @@
 import type {
+  Alarm,
   AppNotification,
   CalendarEvent,
   ChatMessage,
@@ -14,6 +15,7 @@ import type {
   NewIntegration,
   NewTask,
   NotifySettings,
+  PushDevice,
   PushInfo,
   PushSubscriptionData,
   Task,
@@ -111,6 +113,13 @@ export interface CalendarApi {
   unsubscribePush(endpoint: string): Promise<void>
   /** Прислать пробное уведомление; возвращает, на сколько устройств оно ушло. */
   testPush(): Promise<number>
+  /** Устройства с уведомлениями и отключение одного из них. */
+  getDevices(): Promise<PushDevice[]>
+  deleteDevice(id: string): Promise<void>
+  /** Свои напоминания без события и отложенные из уведомлений, ближайшие первыми. */
+  getAlarms(): Promise<Alarm[]>
+  createAlarm(input: { text: string; at: Date }): Promise<Alarm>
+  deleteAlarm(id: number): Promise<void>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */

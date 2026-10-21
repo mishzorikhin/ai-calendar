@@ -61,13 +61,14 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           badge: (body.badge as CalendarEvent['badge']) ?? 'routine',
           highlight: true,
           reminders: remindersOf(body.reminders),
+          allDay: body.allDay === true || undefined,
         })
       }
     } else if (op.action === 'update') {
       const i = findIdx(op.entityId)
       if (i >= 0) {
-        // Правка перенесла событие в другой день — из списка этого дня оно уходит.
-        if (typeof body.date === 'string' && body.date !== iso) {
+        // Правка перенесла событие в другой день или убрала этот день из серии — из списка оно уходит.
+        if ((typeof body.date === 'string' && body.date !== iso && !list[i]?.repeat) || body.skip === iso) {
           list.splice(i, 1)
           continue
         }
@@ -80,6 +81,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           end: typeof body.end === 'number' ? body.end : e.end,
           badge: (body.badge as CalendarEvent['badge']) ?? e.badge,
           reminders: 'reminders' in body ? remindersOf(body.reminders) : e.reminders,
+          allDay: typeof body.allDay === 'boolean' ? body.allDay || undefined : e.allDay,
         }
       }
     } else {
@@ -184,6 +186,9 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         highlight: true,
         date: input.date,
         reminders: input.reminders ?? null,
+        repeat: input.repeat,
+        repeatUntil: input.repeatUntil,
+        allDay: input.allDay,
       }
     },
 
@@ -195,7 +200,19 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
       }
       const body: Record<string, unknown> = { ...patch }
       if (patch.date) body.date = toISODate(patch.date)
-      await enqueue({ entity: 'event', action: 'update', entityId: id, method: 'PATCH', path: '/api/events/:id', body })
+      if (patch.occurrence) body.occurrence = toISODate(patch.occurrence)
+      if (patch.skip) body.skip = toISODate(patch.skip)
+      // Правки серии не склеиваются: второй «убрать день» затёр бы первый, а перенос — свой occurrence.
+      const separate = patch.skip !== undefined || patch.occurrence !== undefined
+      await enqueue({
+        entity: 'event',
+        action: 'update',
+        entityId: id,
+        method: 'PATCH',
+        path: '/api/events/:id',
+        body,
+        separate,
+      })
       // Возврат не используется: оптимистичный кэш уже обновил onMutate в useUpdateEvent.
       return { id, ...patch } as DatedEvent
     },

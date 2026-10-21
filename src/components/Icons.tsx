@@ -189,6 +189,15 @@ export const CalendarIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const RepeatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M17 2.5 20 5.5l-3 3" />
+    <path d="M4 11.5v-1a5 5 0 0 1 5-5h11" />
+    <path d="M7 21.5 4 18.5l3-3" />
+    <path d="M20 12.5v1a5 5 0 0 1-5 5H4" />
+  </Svg>
+)
+
 export const BellIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z" />

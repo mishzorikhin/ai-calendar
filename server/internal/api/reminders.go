@@ -53,7 +53,7 @@ func (s *server) remindAll(ctx context.Context, now time.Time) {
 		if err != nil {
 			continue
 		}
-		_, _ = s.pushTo(store.WithUser(ctx, u), z.Message, pushOpts{ttl: time.Hour, urgency: webpush.UrgencyHigh})
+		_, _ = s.pushTo(store.WithUser(ctx, u), z.Message, alarmOpts)
 	}
 	for _, id := range s.store.PushUserIDs(ctx) {
 		if ctx.Err() != nil {
@@ -77,7 +77,7 @@ func (s *server) remindUser(ctx context.Context, u model.User, now time.Time) {
 	// События — от дня начала окна до недели вперёд (самое раннее напоминание — за неделю).
 	first := from.In(loc).Format(time.DateOnly)
 	last := now.In(loc).AddDate(0, 0, 8).Format(time.DateOnly)
-	events := s.store.EventsBetween(ctx, first, last)
+	events := s.eventsBetween(ctx, first, last)
 	tasks := s.store.Tasks(ctx)
 	for _, r := range planReminders(loc, ns, events, tasks, from, now) {
 		ok, err := s.store.ClaimReminder(ctx, r.key, now)
@@ -100,9 +100,16 @@ func localTime(date string, minutes int, loc *time.Location) (time.Time, bool) {
 
 // planReminders — напоминания со временем в (from, to]. Чистая функция: всё, что
 // нужно, передаётся аргументами.
+//
+// В тихие часы приходят только напоминания, заданные явно (свои у события); напоминания
+// по умолчанию, о задачах и сводки в это время пропускаются — не переносятся.
 func planReminders(loc *time.Location, ns model.NotifySettings, events []model.Event, tasks []model.Task, from, to time.Time) []reminder {
 	var out []reminder
 	inWindow := func(at time.Time) bool { return at.After(from) && !at.After(to) }
+	quiet := func(at time.Time) bool {
+		local := at.In(loc)
+		return ns.Quiet(local.Hour()*60 + local.Minute())
+	}
 
 	for _, e := range events {
 		if e.AllDay {
@@ -112,13 +119,16 @@ func planReminders(loc *time.Location, ns model.NotifySettings, events []model.E
 		if !ok {
 			continue
 		}
+		explicit := e.Reminders != nil
 		offsets := e.Reminders
-		if offsets == nil && ns.EventReminder >= 0 {
-			offsets = []int{ns.EventReminder}
+		if !explicit {
+			if def := ns.DefaultReminder(e.Badge); def >= 0 {
+				offsets = []int{def}
+			}
 		}
 		for _, off := range offsets {
 			at := start.Add(-time.Duration(off) * time.Minute)
-			if !inWindow(at) {
+			if !inWindow(at) || (!explicit && quiet(at)) {
 				continue
 			}
 			out = append(out, reminder{
@@ -143,7 +153,7 @@ func planReminders(loc *time.Location, ns model.NotifySettings, events []model.E
 				continue
 			}
 			at, ok := localTime(t.Due, ns.TaskTime, loc)
-			if !ok || !inWindow(at) {
+			if !ok || !inWindow(at) || quiet(at) {
 				continue
 			}
 			body := "Срок сегодня"
@@ -164,28 +174,59 @@ func planReminders(loc *time.Location, ns model.NotifySettings, events []model.E
 		}
 	}
 
-	if ns.Digest >= 0 {
-		// Окно может переходить через полночь — проверяем оба дня.
-		days := []string{from.In(loc).Format(time.DateOnly), to.In(loc).Format(time.DateOnly)}
-		for _, day := range slices.Compact(days) {
-			at, ok := localTime(day, ns.Digest, loc)
-			if !ok || !inWindow(at) {
-				continue
+	// Сводки: утром — сегодня (с просроченными задачами), вечером — завтра.
+	// Окно может переходить через полночь — проверяем оба дня.
+	days := slices.Compact([]string{from.In(loc).Format(time.DateOnly), to.In(loc).Format(time.DateOnly)})
+	for _, day := range days {
+		if at, ok := localTime(day, ns.Digest, loc); ns.Digest >= 0 && ok && inWindow(at) && !quiet(at) {
+			if body, ok := digestBody(day, events, tasks, true); ok {
+				out = append(out, reminder{
+					key: "digest:" + day,
+					at:  at,
+					msg: model.PushMessage{Kind: model.PushDigest, Title: "План на сегодня", Body: body, URL: "/#day/" + day, Tag: "digest"},
+					opt: pushOpts{ttl: 6 * time.Hour, urgency: webpush.UrgencyNormal},
+				})
 			}
-			body, ok := digestBody(day, events, tasks)
-			if !ok {
-				continue // пустой день — не беспокоим
+		}
+		if at, ok := localTime(day, ns.Evening, loc); ns.Evening >= 0 && ok && inWindow(at) && !quiet(at) {
+			tomorrow := at.AddDate(0, 0, 1).Format(time.DateOnly)
+			if body, ok := digestBody(tomorrow, events, tasks, false); ok {
+				out = append(out, reminder{
+					key: "evening:" + day,
+					at:  at,
+					msg: model.PushMessage{Kind: model.PushDigest, Title: "План на завтра", Body: body, URL: "/#day/" + tomorrow, Tag: "evening"},
+					opt: pushOpts{ttl: 6 * time.Hour, urgency: webpush.UrgencyNormal},
+				})
 			}
-			out = append(out, reminder{
-				key: "digest:" + day,
-				at:  at,
-				msg: model.PushMessage{Kind: model.PushDigest, Title: "План на сегодня", Body: body, URL: "/#day/" + day, Tag: "digest"},
-				opt: pushOpts{ttl: 6 * time.Hour, urgency: webpush.UrgencyNormal},
-			})
 		}
 	}
 	slices.SortStableFunc(out, func(a, b reminder) int { return a.at.Compare(b.at) })
+	// Число на иконке: сколько встреч и задач ещё осталось сегодня на момент отправки.
+	for i := range out {
+		n := badgeCount(loc, events, tasks, out[i].at)
+		out[i].msg.Badge = &n
+	}
 	return out
+}
+
+// badgeCount — встречи, которые сегодня ещё не начались, плюс незакрытые задачи со сроком
+// сегодня или раньше. Это число приложение показывает на иконке.
+func badgeCount(loc *time.Location, events []model.Event, tasks []model.Task, at time.Time) int {
+	local := at.In(loc)
+	today := local.Format(time.DateOnly)
+	now := local.Hour()*60 + local.Minute()
+	n := 0
+	for _, e := range events {
+		if e.Date == today && !e.AllDay && e.Start >= now {
+			n++
+		}
+	}
+	for _, t := range tasks {
+		if !t.Done && t.Due != "" && t.Due <= today {
+			n++
+		}
+	}
+	return n
 }
 
 func clock(minutes int) string {
@@ -216,8 +257,9 @@ func eventReminderBody(e model.Event, off int) string {
 	return strings.Join(parts, " · ")
 }
 
-// digestBody — «3 встречи, первая в 10:00 — Звонок. 2 задачи на сегодня»; false — день пуст.
-func digestBody(day string, events []model.Event, tasks []model.Task) (string, bool) {
+// digestBody — «3 встречи, первая в 10:00 — Звонок. 2 задачи со сроком сегодня»; false — день пуст.
+// today — утренняя сводка на сегодня (с просроченными задачами), иначе — вечерняя на завтра.
+func digestBody(day string, events []model.Event, tasks []model.Task, today bool) (string, bool) {
 	var timed []model.Event
 	allDay := 0
 	for _, e := range events {
@@ -230,10 +272,14 @@ func digestBody(day string, events []model.Event, tasks []model.Task) (string, b
 			timed = append(timed, e)
 		}
 	}
-	due := 0
+	due, late := 0, 0
 	for _, t := range tasks {
-		if !t.Done && t.Due == day {
+		switch {
+		case t.Done || t.Due == "":
+		case t.Due == day:
 			due++
+		case today && t.Due < day:
+			late++
 		}
 	}
 	var parts []string
@@ -251,7 +297,14 @@ func digestBody(day string, events []model.Event, tasks []model.Task) (string, b
 		parts = append(parts, plural(allDay, "событие", "события", "событий")+" на весь день")
 	}
 	if due > 0 {
-		parts = append(parts, plural(due, "задача", "задачи", "задач")+" со сроком сегодня")
+		when := " со сроком завтра"
+		if today {
+			when = " со сроком сегодня"
+		}
+		parts = append(parts, plural(due, "задача", "задачи", "задач")+when)
+	}
+	if late > 0 {
+		parts = append(parts, "Просрочено: "+plural(late, "задача", "задачи", "задач"))
 	}
 	if len(parts) == 0 {
 		return "", false

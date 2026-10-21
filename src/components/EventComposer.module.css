@@ -240,3 +240,17 @@
   font-size: 12.5px;
   color: var(--ink-2);
 }
+
+/* Удаление вхождения серии: только этот день или вся серия. */
+.deleteChoice {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.deleteChoice > .delete {
+  flex: 1;
+  justify-content: center;
+  padding: 0 10px;
+  white-space: nowrap;
+}

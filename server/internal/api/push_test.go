@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -124,7 +125,7 @@ func TestPushAPI(t *testing.T) {
 	if key, err := b64.DecodeString(view.PublicKey); err != nil || len(key) != 65 {
 		t.Fatalf("открытый ключ: %q", view.PublicKey)
 	}
-	if view.Settings != model.DefaultNotifySettings || view.Devices != 0 {
+	if !reflect.DeepEqual(view.Settings, model.DefaultNotifySettings) || view.Devices != 0 {
 		t.Fatalf("начальное состояние: %+v", view)
 	}
 	// Ключ один и тот же между запросами.

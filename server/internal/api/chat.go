@@ -201,7 +201,9 @@ func chatSystemPrompt(now time.Time) string {
 - Приветствия, вопросы и обычный разговор — просто отвечай, инструменты не нужны.
 - Просят что-то запланировать — сначала посмотри день (get_day_schedule или find_free_slots), потом create_event. Если день или время не указаны, выбери разумное свободное окно сам и сообщи, что выбрал; уточняй, только когда совсем непонятно.
 - Просят изменить или перенести событие — update_event с id из get_day_schedule.
-- «Напомни за час до встречи» — reminders в create_event/update_event (минуты до начала). Напоминания приходят пуш-уведомлением на устройства, где пользователь включил уведомления в настройках аккаунта.
+- День рождения, отпуск, «весь день» — create_event с all_day: true, без start и end.
+- «Напомни за час до встречи» — reminders в create_event/update_event (минуты до начала). «Напомни позвонить маме в 18:00» без встречи — create_reminder. Напоминания приходят пуш-уведомлением на устройства, где пользователь включил уведомления в настройках аккаунта.
+- «Каждый вторник», «по будням», «каждый месяц» — repeat в create_event. Правка повторяющегося события меняет всю серию; удалить один день можно только в приложении.
 - Даты в инструментах — ГГГГ-ММ-ДД, время — ЧЧ:ММ.
 - Просят добавить задачу или цель — create_task; «задача» — одно дело, «цель» — то, к чему идут (с дедлайном due, если назвали срок). Отметить выполненной или поменять — update_task, id бери из list_tasks.
 - Совместная задача: чтобы поделиться, передай логины в members (create_task/update_task) или впиши @логин в название — участник увидит задачу у себя и получит уведомление. Логины всех пользователей — list_users; «задача для Анны» — найди её логин через list_users.
@@ -248,24 +250,30 @@ var chatTools = []llm.Tool{
 			"properties": map[string]any{
 				"date":     map[string]any{"type": "string", "description": "Дата в формате ГГГГ-ММ-ДД"},
 				"title":    map[string]any{"type": "string", "description": "Короткое название, например «Завтрак с Глебом»"},
-				"start":    map[string]any{"type": "string", "description": "Начало, ЧЧ:ММ"},
-				"end":      map[string]any{"type": "string", "description": "Конец, ЧЧ:ММ"},
+				"start":    map[string]any{"type": "string", "description": "Начало, ЧЧ:ММ (не нужно при all_day)"},
+				"end":      map[string]any{"type": "string", "description": "Конец, ЧЧ:ММ (не нужно при all_day)"},
+				"all_day":  map[string]any{"type": "boolean", "description": "На весь день: день рождения, отпуск, переезд — без времени"},
 				"badge":    map[string]any{"type": "string", "enum": []string{"routine", "work", "food", "sport", "read", "sleep"}, "description": "Тип события"},
 				"subtitle": map[string]any{"type": "string", "description": "Место или детали, необязательно"},
 				"reminders": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 10080}, "maxItems": 3,
 					"description": "За сколько минут до начала напомнить пуш-уведомлением: [60] — за час, [0] — в момент начала, [] — не напоминать. Не указывай, если пользователь не просил — сработает его напоминание по умолчанию"},
+				"repeat": map[string]any{"type": "string", "enum": []string{"", "daily", "weekdays", "weekly", "monthly", "yearly"},
+					"description": "Повтор: daily — каждый день, weekdays — по будням, weekly — каждую неделю в этот день, monthly — каждый месяц, yearly — каждый год"},
+				"repeat_until": map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
 			},
-			"required":             []string{"date", "title", "start", "end"},
+			"required":             []string{"date", "title"},
 			"additionalProperties": false,
 		},
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "update_event",
-		Description: "Изменить событие пользователя: название, время, день, тип, напоминания. id — из get_day_schedule. Напоминания можно менять и у событий read_only.",
+		Description: "Изменить событие пользователя: название, время, день, тип, напоминания, повтор. id — из get_day_schedule. Напоминания можно менять и у событий read_only. У повторяющегося события правка меняет всю серию; при переносе дня передай occurrence.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"event_id": map[string]any{"type": "string", "description": "id события из get_day_schedule"},
+				"occurrence": map[string]any{"type": "string",
+					"description": "Для повторяющегося события — дата вхождения из get_day_schedule (ГГГГ-ММ-ДД), которое правят: перенос его на date сдвигает всю серию"},
 				"title":    map[string]any{"type": "string", "description": "Новое название"},
 				"date":     map[string]any{"type": "string", "description": "Перенести на дату, ГГГГ-ММ-ДД"},
 				"start":    map[string]any{"type": "string", "description": "Новое начало, ЧЧ:ММ"},
@@ -274,6 +282,9 @@ var chatTools = []llm.Tool{
 				"subtitle": map[string]any{"type": "string", "description": "Место или детали; пустая строка убирает"},
 				"reminders": map[string]any{"type": "array", "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 10080}, "maxItems": 3,
 					"description": "Новые напоминания: за сколько минут до начала ([15], [1440, 60]); [] — не напоминать"},
+				"repeat": map[string]any{"type": "string", "enum": []string{"", "daily", "weekdays", "weekly", "monthly", "yearly"},
+					"description": "Новый повтор; пустая строка — убрать повтор"},
+				"repeat_until": map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
 			},
 			"required":             []string{"event_id"},
 			"additionalProperties": false,
@@ -294,6 +305,30 @@ var chatTools = []llm.Tool{
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "list_tasks",
 		Description: "Задачи и цели пользователя с их id, категорией и статусом.",
+		Parameters: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "create_reminder",
+		Description: "Поставить напоминание без события: пуш-уведомление с текстом в нужное время («напомни позвонить маме в 18:00», «через 20 минут»).",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"text":       map[string]any{"type": "string", "description": "О чём напомнить, коротко: «Позвонить маме»"},
+				"date":       map[string]any{"type": "string", "description": "День, ГГГГ-ММ-ДД; без него — сегодня"},
+				"time":       map[string]any{"type": "string", "description": "Время, ЧЧ:ММ"},
+				"in_minutes": map[string]any{"type": "integer", "minimum": 1, "maximum": 10080, "description": "Через сколько минут — вместо date/time"},
+			},
+			"required":             []string{"text"},
+			"additionalProperties": false,
+		},
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "list_reminders",
+		Description: "Напоминания без события, которые ещё не пришли (свои и отложенные из уведомлений).",
 		Parameters: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
@@ -389,6 +424,10 @@ func (s *server) runTool(ctx context.Context, turn chatTurn, call llm.ToolCall) 
 		return s.toolListTasks(ctx)
 	case "list_users":
 		return s.toolListUsers(ctx)
+	case "create_reminder":
+		return s.toolCreateReminder(ctx, turn, args)
+	case "list_reminders":
+		return s.toolListReminders(ctx, turn)
 	case "create_task":
 		return s.toolCreateTask(ctx, args)
 	case "update_task":
@@ -452,12 +491,14 @@ type toolEvent struct {
 	Reminders []int `json:"reminders,omitempty"`
 	// NoReminders — напоминания у события выключены.
 	NoReminders bool `json:"no_reminders,omitempty"`
+	// Repeat — событие повторяется (вхождение серии: id общий, правка меняет всю серию).
+	Repeat string `json:"repeat,omitempty"`
 }
 
 func toToolEvent(e model.Event) toolEvent {
 	t := toolEvent{ID: e.ID, Title: e.Title, Subtitle: e.Subtitle, Badge: string(e.Badge),
 		AllDay: e.AllDay, ReadOnly: e.ReadOnly, External: e.Source != "",
-		Reminders: e.Reminders, NoReminders: e.Reminders != nil && len(e.Reminders) == 0}
+		Reminders: e.Reminders, NoReminders: e.Reminders != nil && len(e.Reminders) == 0, Repeat: string(e.Repeat)}
 	if !e.AllDay {
 		t.Start, t.End = hm(e.Start), hm(e.End)
 	}
@@ -540,10 +581,14 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if title == "" || utf8.RuneCountInString(title) > maxTitle {
 		return fmt.Sprintf(`{"error":"title обязателен и не длиннее %d символов"}`, maxTitle), toolMeta{}
 	}
+	allDay, _ := args["all_day"].(bool)
 	start, okS := parseHM(strArg(args, "start"))
 	end, okE := parseHM(strArg(args, "end"))
+	if allDay {
+		start, end, okS, okE = 0, dayMinutes, true, true
+	}
 	if !okS || !okE || validateRange(start, end) != nil {
-		return `{"error":"start/end должны быть ЧЧ:ММ, конец позже начала"}`, toolMeta{}
+		return `{"error":"start/end должны быть ЧЧ:ММ, конец позже начала (или all_day: true)"}`, toolMeta{}
 	}
 	badge := model.Badge(strArg(args, "badge"))
 	if badge == "" {
@@ -556,14 +601,23 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if errText != "" {
 		return errText, toolMeta{}
 	}
+	repeat, until := model.Repeat(strArg(args, "repeat")), strArg(args, "repeat_until")
+	if err := validateRepeat(repeat, until, day.Format(time.DateOnly)); err != nil {
+		return toolErr(err, "неверный повтор"), toolMeta{}
+	}
 	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
 		Start: start, End: end, Badge: badge, Highlight: true, Reminders: reminders,
+		Repeat: repeat, RepeatUntil: until, AllDay: allDay,
 	})
 	if err != nil {
 		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
 	}
-	meta := toolMeta{detail: fmt.Sprintf("%s · %s–%s", title, hm(start), hm(end)), date: day.Format(time.DateOnly)}
+	when := hm(start) + "–" + hm(end)
+	if allDay {
+		when = "весь день"
+	}
+	meta := toolMeta{detail: title + " · " + when, date: day.Format(time.DateOnly)}
 	return toolJSON(map[string]any{"ok": true, "event": toToolEvent(ev)}), meta
 }
 
@@ -651,14 +705,36 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 		}
 		patch.Reminders = &reminders
 	}
+	if _, ok := args["repeat"]; ok {
+		r := model.Repeat(strArg(args, "repeat"))
+		patch.Repeat = &r
+	}
+	if _, ok := args["repeat_until"]; ok {
+		u := strArg(args, "repeat_until")
+		patch.RepeatUntil = &u
+	}
 	cur, err := s.store.Event(ctx, id)
 	if err != nil {
 		return `{"error":"событие не найдено"}`, toolMeta{}
+	}
+	if occ := strArg(args, "occurrence"); occ != "" {
+		if _, err := time.Parse(time.DateOnly, occ); err != nil {
+			return `{"error":"occurrence должен быть в формате ГГГГ-ММ-ДД"}`, toolMeta{}
+		}
+		if err := seriesPatch(cur, occ, &patch); err != nil {
+			return toolErr(err, "не удалось перенести серию"), toolMeta{}
+		}
+	} else if cur.Repeat != model.RepeatNone && patch.Date != nil && (patch.Repeat == nil || *patch.Repeat != model.RepeatNone) {
+		// Без вхождения непонятно, на сколько сдвигать серию, — а сдвиг начала стёр бы прошлые вхождения.
+		return `{"error":"событие повторяется: передай occurrence — дату вхождения из get_day_schedule"}`, toolMeta{}
 	}
 	merged := cur
 	merged.Apply(patch)
 	if validateRange(merged.Start, merged.End) != nil {
 		return `{"error":"конец должен быть позже начала"}`, toolMeta{}
+	}
+	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {
+		return toolErr(err, "неверный повтор"), toolMeta{}
 	}
 	ev, err := s.updateEventSynced(ctx, cur, patch)
 	if err != nil {
@@ -847,12 +923,9 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 		}
 	}
 	textChanged := patch.Title != nil || patch.Subtitle != nil
-	var before model.Task
-	if textChanged {
-		var err error
-		if before, err = s.store.Task(ctx, id); err != nil {
-			return `{"error":"задача не найдена"}`, toolMeta{}
-		}
+	before, err := s.store.Task(ctx, id)
+	if err != nil {
+		return `{"error":"задача не найдена"}`, toolMeta{}
 	}
 	t, err := s.store.UpdateTask(ctx, id, patch)
 	if err != nil {
@@ -868,6 +941,7 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 			return `{"error":"задача обновлена, но поделиться не вышло"}`, toolMeta{}
 		}
 	}
+	s.notifyTaskChange(ctx, before, t)
 	return toolJSON(map[string]any{"ok": true, "task": toToolTask(t)}), toolMeta{detail: t.Title}
 }
 
@@ -968,4 +1042,48 @@ func isConsent(text string) bool {
 		yes = yes || consentWords[w]
 	}
 	return yes
+}
+
+// toolCreateReminder — напоминание без события: в date+time (пояс пользователя) или через in_minutes.
+func (s *server) toolCreateReminder(ctx context.Context, turn chatTurn, args map[string]any) (string, toolMeta) {
+	text := strArg(args, "text")
+	var at time.Time
+	if mins := intArg(args, "in_minutes", 0); mins > 0 {
+		at = turn.now.Add(time.Duration(mins) * time.Minute)
+	} else {
+		minutes, ok := parseHM(strArg(args, "time"))
+		if !ok {
+			return `{"error":"нужно time (ЧЧ:ММ) или in_minutes"}`, toolMeta{}
+		}
+		date := strArg(args, "date")
+		if date == "" {
+			date = turn.now.Format(time.DateOnly)
+		}
+		local, ok := localTime(date, minutes, turn.now.Location())
+		if !ok {
+			return `{"error":"date должен быть в формате ГГГГ-ММ-ДД"}`, toolMeta{}
+		}
+		at = local
+	}
+	z, err := s.createAlarm(ctx, text, at)
+	if err != nil {
+		return toolErr(err, "не удалось поставить напоминание"), toolMeta{}
+	}
+	when := z.At.In(turn.now.Location())
+	return toolJSON(map[string]any{"ok": true, "reminder": map[string]string{
+			"text": z.Message.Title, "date": when.Format(time.DateOnly), "time": when.Format("15:04"),
+		}}), toolMeta{
+			detail: fmt.Sprintf("%s · %s", z.Message.Title, when.Format("02.01 15:04")),
+		}
+}
+
+func (s *server) toolListReminders(ctx context.Context, turn chatTurn) (string, toolMeta) {
+	list := []map[string]string{}
+	for _, z := range s.store.Snoozes(ctx) {
+		when := z.At.In(turn.now.Location())
+		list = append(list, map[string]string{
+			"text": z.Message.Title, "date": when.Format(time.DateOnly), "time": when.Format("15:04"),
+		})
+	}
+	return toolJSON(map[string]any{"reminders": list}), toolMeta{}
 }

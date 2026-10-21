@@ -36,6 +36,8 @@ export function usePushDevice() {
       d ? { ...d, enabled, permission: typeof Notification === 'undefined' ? null : Notification.permission } : d,
     )
     void qc.invalidateQueries({ queryKey: keys.push })
+    void qc.invalidateQueries({ queryKey: keys.devices })
+    void qc.invalidateQueries({ queryKey: keys.pushDeviceId })
   }
 
   const enable = useMutation({

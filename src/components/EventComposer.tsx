@@ -28,12 +28,15 @@ import {
 } from '../lib/dates'
 import { BADGE_OPTIONS } from '../lib/badges'
 import { BADGE_ICON } from './Icons'
-import type { Badge } from '../domain/types'
+import { LIMITS } from '../domain/limits'
+import { repeatLabel } from '../domain/repeat'
+import type { Badge, Repeat } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
-import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
+import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, RepeatIcon, TrashIcon } from './Icons'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
+import { RepeatPicker } from './RepeatPicker'
 import { CircleButton, Pill, Pressable } from './ui'
 import styles from './EventComposer.module.css'
 
@@ -107,14 +110,24 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const [subtitle, setSubtitle] = useState(editing?.subtitle ?? '')
   const [date, setDate] = useState(request.date)
   const [pickedStart, setStart] = useState<number | null>(
-    editing ? editing.start : request.start !== null ? nearestTimeOption(request.start) : null,
+    // У события на весь день своего начала нет: если вернуть время — предложим первое свободное.
+    editing && !editing.allDay
+      ? editing.start
+      : request.start !== null && !editing
+        ? nearestTimeOption(request.start)
+        : null,
   )
-  const [duration, setDuration] = useState<number>(editing ? editing.end - editing.start : 60)
+  const [duration, setDuration] = useState<number>(editing && !editing.allDay ? editing.end - editing.start : 60)
+  // На весь день: время не занимает, лежит полосой над шкалой. Только у своих событий.
+  const [allDay, setAllDay] = useState(editing?.allDay ?? false)
   const [badge, setBadge] = useState<Badge>(editing?.badge ?? 'routine')
   // Напоминание: null — не трогали (у нового события сработает настройка по умолчанию), −1 — не напоминать.
   const [reminder, setReminder] = useState<number | null>(null)
   const remindersOn = useApi().mode === 'server'
-  const defaultReminder = useDefaultReminder()
+  const defaultReminder = useDefaultReminder(badge)
+  // Повтор — только у своих событий: у подключённых календарей он задаётся там.
+  const [repeat, setRepeat] = useState<Repeat | ''>(editing?.repeat ?? '')
+  const series = editing?.repeat
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
   const titleInput = useRef<HTMLInputElement>(null)
@@ -141,14 +154,16 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   }
 
   // Точное время из системного выбора или «сдвига» встаёт в ленту отдельной пилюлей.
-  const startOptions = withExtra(withExtra(TIME_OPTIONS, editing?.start), start)
+  const startOptions = withExtra(withExtra(TIME_OPTIONS, editing?.allDay ? null : editing?.start), start)
   const durations = withExtra(
     DURATIONS.map((d) => d.value),
-    editing ? editing.end - editing.start : null,
+    editing && !editing.allDay ? editing.end - editing.start : null,
   )
 
-  const conflicts = slotAt(others, start, length).conflicts
+  const conflicts = allDay ? [] : slotAt(others, start, length).conflicts
   const shift = conflicts.length ? nextFreeTime(others, start, length) : null
+  // Что уходит на сервер: у события на весь день — сутки целиком.
+  const range = allDay ? { start: 0, end: LIMITS.dayMinutes } : { start, end }
 
   // Выбранные день и время всегда на виду: при открытии ленты сразу стоят на них,
   // а после выбора (в том числе из системного календаря) плавно доезжают.
@@ -183,11 +198,15 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           patch: {
             title: name || editing.title,
             subtitle: subtitle.trim(),
-            date,
-            start,
-            end,
+            // У вхождения серии день передаём, только если его меняют (или снимают повтор):
+            // тогда сервер сдвигает серию от occurrence, а без них правка не трогает её начало.
+            ...(!series || !isSameDay(date, editing.date) || repeat === '' ? { date } : {}),
+            ...range,
+            ...(allDay !== (editing.allDay ?? false) && { allDay }),
             badge,
             ...reminders,
+            ...(repeat !== (editing.repeat ?? '') && { repeat }),
+            ...(series && (!isSameDay(date, editing.date) || repeat === '') && { occurrence: editing.date }),
           },
         },
         { onSuccess: onClose },
@@ -195,7 +214,16 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       return
     }
     createEvent.mutate(
-      { title: name, subtitle: subtitle.trim(), start, end, date, badge, ...reminders },
+      {
+        title: name,
+        subtitle: subtitle.trim(),
+        ...range,
+        date,
+        badge,
+        ...reminders,
+        ...(repeat && { repeat }),
+        ...(allDay && { allDay }),
+      },
       {
         onSuccess: () => {
           setSelectedDate(date)
@@ -215,6 +243,11 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
     deleteEvent.mutate(editing, { onSuccess: onClose })
   }
 
+  /** Убрать из серии только этот день. */
+  const skipDay = () => {
+    if (editing) updateEvent.mutate({ event: editing, patch: { skip: editing.date } }, { onSuccess: onClose })
+  }
+
   const delegate = () => {
     setDraft(title.trim() ? `Запланируй: ${title.trim()}` : '')
     onClose()
@@ -227,22 +260,40 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       onClose={onClose}
       footer={
         <div className={styles.actions}>
-          <ComposerStatus start={start} end={end} conflicts={conflicts} shift={shift} onShift={setStart} />
+          <ComposerStatus
+            start={start}
+            end={end}
+            allDay={allDay}
+            conflicts={conflicts}
+            shift={shift}
+            onShift={setStart}
+          />
           {error && (
             <p className={styles.error} role="alert">
               {apiErrorText(error)}
             </p>
           )}
-          {editing && (
-            <Pressable
-              className={`${styles.delete} ${confirmDelete ? styles.deleteSure : ''}`}
-              onClick={remove}
-              disabled={pending}
-              aria-label={confirmDelete ? 'Подтвердить удаление' : 'Удалить событие'}
-            >
-              <TrashIcon size={17} />
-              {confirmDelete ? 'Точно удалить?' : 'Удалить'}
-            </Pressable>
+          {editing && series && confirmDelete ? (
+            <div className={styles.deleteChoice} role="group" aria-label="Что удалить">
+              <Pressable className={`${styles.delete} ${styles.deleteSure}`} onClick={skipDay} disabled={pending}>
+                Только этот день
+              </Pressable>
+              <Pressable className={`${styles.delete} ${styles.deleteSure}`} onClick={remove} disabled={pending}>
+                Всю серию
+              </Pressable>
+            </div>
+          ) : (
+            editing && (
+              <Pressable
+                className={`${styles.delete} ${confirmDelete ? styles.deleteSure : ''}`}
+                onClick={remove}
+                disabled={pending}
+                aria-label={confirmDelete ? 'Подтвердить удаление' : 'Удалить событие'}
+              >
+                <TrashIcon size={17} />
+                {confirmDelete ? 'Точно удалить?' : 'Удалить'}
+              </Pressable>
+            )
           )}
           <Pill tone="dark" type="submit" form={FORM_ID} className={styles.create} disabled={pending}>
             {pending ? 'Сохраняю…' : editing ? 'Сохранить' : 'Создать событие'}
@@ -270,10 +321,16 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           </CircleButton>
         </div>
 
-        {syncTarget && (
+        {syncTarget && !repeat && !allDay && (
           <p className={styles.syncNote}>
             <CalendarIcon size={14} />
             {editing ? `Изменения уйдут в «${syncTarget}»` : `Сохранится и в «${syncTarget}»`}
+          </p>
+        )}
+        {series && (
+          <p className={styles.syncNote}>
+            <RepeatIcon size={14} />
+            {repeatLabel(series)} — изменения для всей серии
           </p>
         )}
 
@@ -335,50 +392,62 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           ))}
         </div>
 
-        <div className={styles.labelRow}>
-          <p className={styles.label} id="composer-start">
-            Начало
-          </p>
-          <NativePicker
-            type="time"
-            value={formatMinutes(start)}
-            label="Указать точное время"
-            icon={<ClockIcon size={14} />}
-            onPick={(v) => {
-              const mins = parseMinutes(v)
-              if (mins !== null) setStart(mins)
-            }}
-          >
-            Точное время
-          </NativePicker>
-        </div>
-        <div ref={times} className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-start">
-          {startOptions.map((t) => (
-            <Pill
-              key={t}
-              small
-              tone={t === start ? 'dark' : 'ghost'}
-              aria-pressed={t === start}
-              onClick={() => setStart(t)}
-              // Прошедшее сегодня приглушаем, но не запрещаем: задним числом записать тоже бывает нужно.
-              className={`tnum ${t !== start && t + 30 <= passed ? styles.past : ''}`}
-            >
-              {formatMinutes(t)}
-            </Pill>
-          ))}
-        </div>
+        {!allDay && (
+          <>
+            <div className={styles.labelRow}>
+              <p className={styles.label} id="composer-start">
+                Начало
+              </p>
+              <NativePicker
+                type="time"
+                value={formatMinutes(start)}
+                label="Указать точное время"
+                icon={<ClockIcon size={14} />}
+                onPick={(v) => {
+                  const mins = parseMinutes(v)
+                  if (mins !== null) setStart(mins)
+                }}
+              >
+                Точное время
+              </NativePicker>
+            </div>
+            <div ref={times} className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-start">
+              {startOptions.map((t) => (
+                <Pill
+                  key={t}
+                  small
+                  tone={t === start ? 'dark' : 'ghost'}
+                  aria-pressed={t === start}
+                  onClick={() => setStart(t)}
+                  // Прошедшее сегодня приглушаем, но не запрещаем: задним числом записать тоже бывает нужно.
+                  className={`tnum ${t !== start && t + 30 <= passed ? styles.past : ''}`}
+                >
+                  {formatMinutes(t)}
+                </Pill>
+              ))}
+            </div>
+          </>
+        )}
 
         <p className={styles.label} id="composer-duration">
           Длительность
         </p>
         <div className={`${styles.row} scroll-x`} role="group" aria-labelledby="composer-duration">
+          {!editing?.source && (
+            <Pill small tone={allDay ? 'dark' : 'ghost'} aria-pressed={allDay} onClick={() => setAllDay(true)}>
+              Весь день
+            </Pill>
+          )}
           {durations.map((d) => (
             <Pill
               key={d}
               small
-              tone={d === duration ? 'dark' : 'ghost'}
-              aria-pressed={d === duration}
-              onClick={() => setDuration(d)}
+              tone={!allDay && d === duration ? 'dark' : 'ghost'}
+              aria-pressed={!allDay && d === duration}
+              onClick={() => {
+                setDuration(d)
+                setAllDay(false)
+              }}
             >
               {durationLabel(d)}
             </Pill>
@@ -406,7 +475,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           })}
         </div>
 
-        {remindersOn && (
+        {!editing?.source && <RepeatPicker value={repeat} onChange={setRepeat} />}
+
+        {/* У события на весь день нет времени начала — оно попадает в план на день. */}
+        {remindersOn && !allDay && (
           <ReminderPicker
             value={reminder ?? reminderValue(editing?.reminders, defaultReminder)}
             isDefault={reminder === null && editing?.reminders == null}
