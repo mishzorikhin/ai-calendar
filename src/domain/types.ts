@@ -15,6 +15,11 @@ export type CalendarEvent = {
   readOnly?: boolean
   /** На весь день: start 0, end 1440, время не занимает. */
   allDay?: boolean
+  /**
+   * За сколько минут до начала напомнить (раньше — первее). null или нет поля — как в
+   * настройках уведомлений, [] — не напоминать.
+   */
+  reminders?: number[] | null
 }
 
 /** Событие, созданное пользователем вручную, привязано к дате. */
@@ -43,6 +48,8 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   date: Date
   subtitle?: string
   badge?: Badge
+  /** Нет поля — напоминание по умолчанию из настроек, [] — не напоминать. */
+  reminders?: number[]
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -53,6 +60,8 @@ export type EventPatch = {
   start?: number
   end?: number
   badge?: Badge
+  /** null — вернуть напоминание по умолчанию, [] — не напоминать. */
+  reminders?: number[] | null
 }
 
 /** Значки событий по числам месяца. */
@@ -158,3 +167,31 @@ export type NewIntegration =
   | ({ kind: 'caldav'; name?: string; badge?: Badge; writable: boolean; primary?: boolean } & CalDavCredentials)
 
 export type IntegrationPatch = { name?: string; badge?: Badge; primary?: boolean }
+
+/**
+ * Настройки напоминаний аккаунта. Время — минуты от полуночи в поясе пользователя;
+ * -1 — выключено.
+ */
+export type NotifySettings = {
+  /** За сколько минут напоминать о событиях без своих напоминаний (и о внешних календарях). */
+  eventReminder: number
+  /** Во сколько напомнить о задаче или цели в день срока. */
+  taskTime: number
+  /** Во сколько присылать сводку дня. */
+  digest: number
+}
+
+/** Уведомления аккаунта: ключ для подписки браузера, настройки и число подписанных устройств. */
+export type PushInfo = {
+  /** applicationServerKey (base64url); null — уведомления недоступны (локальный режим). */
+  publicKey: string | null
+  settings: NotifySettings
+  devices: number
+}
+
+/** Подписка браузера на Web Push — PushSubscription.toJSON(). */
+export type PushSubscriptionData = {
+  endpoint: string
+  expirationTime?: number | null
+  keys: { p256dh: string; auth: string }
+}

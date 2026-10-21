@@ -199,4 +199,53 @@ describe('сессия', () => {
     await createHttpApi().setTimeZone('Asia/Tokyo')
     expect(getSession()?.user.timeZone).toBe('Asia/Tokyo')
   })
+
+  it('уведомления: ключ, настройки, подписка и отписка', async () => {
+    const fetch = mockFetch(200, {
+      publicKey: 'BKEY',
+      settings: { eventReminder: 10, taskTime: 540, digest: -1 },
+      devices: 1,
+    })
+    const api = createHttpApi()
+    expect((await api.getPush()).publicKey).toBe('BKEY')
+    expect(fetch).toHaveBeenLastCalledWith('/api/push', expect.anything())
+
+    mockFetch(200, { eventReminder: 30, taskTime: 540, digest: -1 })
+    expect(await api.updateNotifySettings({ eventReminder: 30 })).toMatchObject({ eventReminder: 30 })
+
+    const sub = { endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' } }
+    const subscribe = mockFetch(204, null)
+    await api.subscribePush(sub)
+    expect(subscribe).toHaveBeenCalledWith(
+      '/api/push/subscriptions',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(sub) }),
+    )
+    const unsubscribe = mockFetch(204, null)
+    await api.unsubscribePush(sub.endpoint)
+    expect(unsubscribe).toHaveBeenCalledWith(
+      '/api/push/subscriptions',
+      expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ endpoint: sub.endpoint }) }),
+    )
+    mockFetch(200, { sent: 2 })
+    expect(await api.testPush()).toBe(2)
+  })
+
+  it('напоминания события: null с сервера — «по умолчанию», PATCH передаёт null как есть', async () => {
+    mockFetch(200, [
+      { id: 'evt-1', date: '2026-10-21', title: 'Звонок', start: 540, end: 600, badge: 'work', reminders: null },
+    ])
+    const [e] = await createHttpApi().getEvents(new Date(2026, 9, 21))
+    expect(e?.reminders).toBeNull()
+    const fetch = mockFetch(200, {
+      id: 'evt-1',
+      date: '2026-10-21',
+      title: 'Звонок',
+      start: 540,
+      end: 600,
+      badge: 'work',
+      reminders: null,
+    })
+    await createHttpApi().updateEvent('evt-1', { reminders: null })
+    expect(fetch).toHaveBeenCalledWith('/api/events/evt-1', expect.objectContaining({ body: '{"reminders":null}' }))
+  })
 })

@@ -1,5 +1,13 @@
-import type { ChatMessage, DatedEvent, Task, User } from '../domain/types'
-import { isValidRange, messageError, subtitleError, titleError } from '../domain/limits'
+import type { ChatMessage, DatedEvent, NotifySettings, Task, User } from '../domain/types'
+import {
+  isValidRange,
+  messageError,
+  normalizeReminders,
+  remindersError,
+  subtitleError,
+  titleError,
+} from '../domain/limits'
+import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
 import { fromISODate, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
@@ -13,6 +21,8 @@ type Snapshot = {
   messages: ChatMessage[]
   tasks: Task[]
   nextId: number
+  /** Настройки напоминаний: без сервера уведомлений нет, но выбор «по умолчанию» в редакторе тот же. */
+  notify?: NotifySettings
 }
 
 /** Первая ошибка проверки или null; отвечает так же, как сервер (400). */
@@ -27,6 +37,19 @@ const GREETING: ChatMessage = { id: 0, role: 'ai', text: 'Чем могу пом
 const LOCAL_USER: User = { id: 0, username: 'local', name: 'Локальный режим' }
 const NO_ACCOUNTS = new ApiError(400, 'Аккаунты и общие задачи работают только с сервером')
 const NO_CALENDARS = new ApiError(400, 'Подключение календарей работает только с сервером')
+const NO_PUSH = new ApiError(400, 'Уведомления работают только с сервером')
+
+/** Проверка настроек напоминаний — те же границы, что на сервере. */
+function notifySettingsError(patch: Partial<NotifySettings>): string | null {
+  const { eventReminder, taskTime, digest } = patch
+  if (eventReminder !== undefined && eventReminder !== -1 && remindersError([eventReminder]))
+    return 'Напоминание о событии — от 0 до 10080 минут или -1'
+  for (const v of [taskTime, digest]) {
+    if (v !== undefined && v !== -1 && !(Number.isInteger(v) && v >= 0 && v < 1440))
+      return 'Время — минуты от полуночи (0–1439) или -1'
+  }
+  return null
+}
 
 function emptySnapshot(): Snapshot {
   return { events: [], messages: [GREETING], tasks: [], nextId: 3 }
@@ -82,7 +105,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const title = input.title.trim()
       const subtitle = input.subtitle?.trim()
       const bad =
-        invalid(titleError(title), subtitleError(subtitle)) ??
+        invalid(titleError(title), subtitleError(subtitle), remindersError(input.reminders)) ??
         (isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       const event: DatedEvent = {
@@ -94,6 +117,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         badge: input.badge ?? 'routine',
         highlight: true,
         date: input.date,
+        reminders: input.reminders ? normalizeReminders(input.reminders) : null,
       }
       data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
@@ -113,10 +137,16 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         end: patch.end ?? prev.end,
         badge: patch.badge ?? prev.badge,
         date: patch.date ? toISODate(patch.date) : prev.date,
+        // undefined — не трогаем, null — по умолчанию, [] — без напоминаний.
+        reminders:
+          patch.reminders === undefined ? prev.reminders : patch.reminders && normalizeReminders(patch.reminders),
       }
       const bad =
-        invalid(title === undefined ? null : titleError(title), subtitleError(subtitle)) ??
-        (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
+        invalid(
+          title === undefined ? null : titleError(title),
+          subtitleError(subtitle),
+          remindersError(patch.reminders),
+        ) ?? (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       data.events[i] = next
       save()
@@ -216,5 +246,18 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getFeed: () => reply(null),
     resetFeed: () => Promise.reject(NO_CALENDARS),
     disableFeed: () => reply(undefined),
+
+    // Без сервера некому слать уведомления: настройки храним, подписаться нельзя.
+    getPush: () => reply({ publicKey: null, settings: data.notify ?? DEFAULT_NOTIFY_SETTINGS, devices: 0 }),
+    updateNotifySettings(patch) {
+      const bad = invalid(notifySettingsError(patch))
+      if (bad) return bad
+      data.notify = { ...(data.notify ?? DEFAULT_NOTIFY_SETTINGS), ...patch }
+      save()
+      return reply(data.notify)
+    },
+    subscribePush: () => Promise.reject(NO_PUSH),
+    unsubscribePush: () => reply(undefined),
+    testPush: () => Promise.reject(NO_PUSH),
   }
 }

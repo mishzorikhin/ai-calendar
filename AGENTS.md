@@ -29,6 +29,9 @@
 - **Офлайн** — мутации событий и задач при обрыве сети ждут в очереди (`api/outbox.ts`, IndexedDB) и доигрываются сами.
 - **Внешние календари** — Google и Outlook (OAuth), CalDAV (Яндекс, iCloud, Nextcloud), подписки `.ics` и своя лента `.ics`
   наружу (`server/internal/calsync`, UI — `screens/home/calendars`). Их события лежат рядом со своими (`source`).
+- **Уведомления** — Web Push со своего сервера без сторонних аккаунтов: VAPID и шифрование в `server/internal/webpush`,
+  напоминания о встречах, сроках задач и план на день — `server/internal/api/reminders.go`, показ и кнопки — `src/sw.ts`,
+  UI — `screens/home/reminders` и лента «Напомнить» в шторке события.
 - **Два режима данных:** серверный и локальный (моки + `localStorage`, без аккаунта — для GitHub Pages и работы над UI).
 - **Поставка** — один Docker-образ: Go-бинарник со встроенным UI (`go:embed`); `docker-compose` поднимает ещё и PostgreSQL 17.
 - **Главное в продукте — дизайн и анимации.** Визуальное качество важнее количества функций.
@@ -70,17 +73,20 @@ PostgreSQL-тесты очищают таблицы: используйте от
 src/
   api/        источник данных: api.ts (интерфейс CalendarApi), http.ts (Go-сервер), local.ts (браузер),
               connect.ts (выбор режима), offline.ts + outbox.ts (офлайн-очередь мутаций, IndexedDB),
-              session.ts (токен и пользователь в localStorage), provider.tsx, queries.ts (хуки TanStack Query и ключи кэша)
+              session.ts (токен и пользователь в localStorage), provider.tsx, queries.ts (хуки TanStack Query и ключи кэша),
+              push.ts (подписка этого браузера на Web Push)
   app/        состояние интерфейса — узкие контексты: navigation, calendar (выбранный день),
               assistant (запрос, голос), composer (шторка события), bar (нижняя панель), session-gate (вход)
-  domain/     чистая логика без React: types.ts, calendar.ts (слоты), limits.ts (лимиты и валидация)
+  domain/     чистая логика без React: types.ts, calendar.ts (слоты), limits.ts (лимиты и валидация),
+              reminders.ts (варианты и подписи напоминаний)
   mocks/      демо-данные локального режима (calendar.ts) и подсказки чата (assistant.ts)
   lib/        dates, plural (Intl.PluralRules), hooks (useTimeout/useInterval/useNow), motion-пресеты,
               speech (Web Speech API), storage, badges, sheetDrag
   components/ общие UI: ui.tsx (Pressable, Pill, CircleButton, Avatar…), BottomSheet, BottomBar,
               EventComposer, ReadOnlyEvent, VoiceOverlay, Icons
-  pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync
-  screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари»), month, day, chat —
+  pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync,
+              pushMessage.ts (содержимое push и кнопки), usePushDevice, usePushEvents (сверка подписки, переходы)
+  screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари», reminders/ — «Напоминания»), month, day, chat —
               у каждого экрана своя папка
   styles/     global.css — дизайн-токены
   sw.ts       service worker (precache, runtime-кэш API, Background Sync очереди)
@@ -133,6 +139,11 @@ React-компоненты; `mocks/` используются только в `a
     (`toISODate`/`fromISODate`). Время внутри дня — минуты от полуночи (`number`).
 11. **Склонения и подписи дней** — `lib/plural.ts` и `relativeDayLabel` из `lib/dates.ts`; не пишите
     свои `n % 10`.
+12. **Уведомления.** Содержимое push — `model.PushMessage` на сервере ↔ `src/pwa/pushMessage.ts`; меняете поле — меняйте
+    обе стороны. `CalendarEvent.reminders`: `null`/нет поля — как в настройках (`NotifySettings.eventReminder`),
+    `[]` — не напоминать; в `PATCH` `null` возвращает значение по умолчанию. Подписка устройства привязана к аккаунту
+    (`api/push.ts`): выход снимает её, а при входе другого человека чужая подписка не переходит к нему.
+    Запросы из service worker (кнопки уведомления) берут токен из метаданных очереди (`outbox.authToken()`).
 
 ## React и TypeScript
 
@@ -197,6 +208,9 @@ React-компоненты; `mocks/` используются только в `a
 - Повтор из страницы (`useOutboxSync`) работает на старте, по `online`, изменению очереди и таймеру 30 секунд.
   Он доступен и в dev. Service worker и его Background Sync проверяйте на обычной production-сборке.
   В Safari/Firefox опирайтесь на повтор из открытой страницы, а не на Background Sync.
+- Push: service worker обязан показать уведомление на каждый push (иначе Chrome покажет своё, а Safari отзовёт подписку),
+  поэтому «тихих» пушей для синхронизации нет. Подписка требует зарегистрированного worker: в `npm run dev` и
+  однофайловой сборке её нет, проверяйте на `npm run build` + `npm run preview` или Go-сервере. iOS — только у PWA на экране «Домой».
 - Иконки PNG генерируются из `public/icon.svg` (размеры 192, 512, maskable 512, apple-touch 180).
 
 ## Текущие ограничения, которые нельзя считать гарантиями
@@ -217,6 +231,11 @@ React-компоненты; `mocks/` используются только в `a
   его предложили в прошлом ходе, а текущая реплика — согласие по списку слов. Состояние хранится в памяти
   процесса (TTL 10 минут) и теряется при перезапуске; согласие распознаётся по словам, а не по смыслу.
   Меняя это, сохраняйте тест отказа без подтверждения.
+- **Уведомления:** доставка проверяется тестами с поддельным сервисом доставки и расшифровкой (Go), а в браузере —
+  только подписка/UI и обработчики service worker; настоящую доставку через FCM/APNs CI не проверяет. Напоминания
+  считаются опросом раз в `REMINDER_INTERVAL` с запасом 10 минут: пропущенные дольше (сервер лежал) не придут.
+  Несколько процессов сервера не задублируют напоминание (отметка `ClaimReminder` атомарна), но каждое устройство
+  получает уведомление и при открытом приложении. Worker шлёт запросы кнопок на свой origin (`VITE_API_URL` не поддержан).
 - **PostgreSQL в CI:** в текущем `ci.yml` нет сервиса БД и `TEST_DATABASE_URL`;
   зелёные Go-тесты не доказывают прохождение PostgreSQL-сценариев.
 

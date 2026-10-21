@@ -12,12 +12,15 @@ import type {
   NewEvent,
   NewIntegration,
   NewTask,
+  NotifySettings,
+  PushInfo,
   Task,
   TaskPatch,
 } from '../domain/types'
 import { isSameDay, toISODate } from '../lib/dates'
 import { apiErrorText } from './api'
 import { useApi } from './provider'
+import { disablePush } from './push'
 import { useSession } from './session'
 
 /** Ключи кэша — в одном месте, чтобы инвалидация не расходилась с запросами. */
@@ -33,6 +36,9 @@ export const keys = {
   notifications: ['notifications'] as const,
   integrations: ['integrations'] as const,
   feed: ['feed'] as const,
+  push: ['push'] as const,
+  /** Подписка этого браузера (зависит от того, кто вошёл). */
+  pushDevice: (userId: number | undefined) => ['push-device', userId] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -168,7 +174,14 @@ export function useLogout() {
   const api = useApi()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.logout(),
+    mutationFn: async () => {
+      // Уведомления этого аккаунта на устройстве больше не нужны. Без сети не ждём дольше пары секунд:
+      // подписка браузера снимется всё равно, а сервер забудет её по ответу 410.
+      if (api.mode === 'server') {
+        await Promise.race([disablePush(api).catch(() => {}), new Promise((r) => setTimeout(r, 2500))])
+      }
+      await api.logout()
+    },
     // Чистим кэш всегда: даже если запрос выхода не дошёл, данные показывать нельзя.
     onSettled: () => qc.clear(),
   })
@@ -570,4 +583,38 @@ export function useFeed() {
     onSuccess: () => qc.setQueryData(keys.feed, null),
   })
   return { url: query.data ?? null, isLoading: query.isLoading, reset, disable }
+}
+
+/** Уведомления аккаунта: ключ сервера, настройки напоминаний, сколько устройств подписано. */
+export function usePush() {
+  const api = useApi()
+  const session = useSession()
+  return useQuery({
+    queryKey: keys.push,
+    queryFn: () => api.getPush(),
+    enabled: api.mode === 'local' || !!session,
+    staleTime: 5 * 60_000,
+  })
+}
+
+/** Настройки напоминаний — сразу в кэше, откат при ошибке. */
+export function useUpdateNotifySettings() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: Partial<NotifySettings>) => api.updateNotifySettings(patch),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: keys.push })
+      const previous = qc.getQueryData<PushInfo>(keys.push)
+      if (previous) qc.setQueryData<PushInfo>(keys.push, { ...previous, settings: { ...previous.settings, ...patch } })
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.push, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.push }),
+  })
+}
+
+export function useTestPush() {
+  const api = useApi()
+  return useMutation({ mutationFn: () => api.testPush() })
 }

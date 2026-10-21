@@ -30,6 +30,10 @@ services:
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       CALENDAR_ALLOW_PRIVATE: ${CALENDAR_ALLOW_PRIVATE:-}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Moscow}
+      # Уведомления Web Push: ключ VAPID сервер создаёт сам и хранит в базе; задавать — по желанию.
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      REMINDER_INTERVAL: ${REMINDER_INTERVAL:-30s}
     depends_on:
       db:
         condition: service_healthy

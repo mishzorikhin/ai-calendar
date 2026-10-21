@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../api/api'
+import { useApi } from '../api/provider'
 import {
   useCalendarName,
   useCreateEvent,
@@ -32,6 +33,7 @@ import { BottomSheet } from './BottomSheet'
 import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, TrashIcon } from './Icons'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
+import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
 import { CircleButton, Pill, Pressable } from './ui'
 import styles from './EventComposer.module.css'
 
@@ -109,6 +111,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   )
   const [duration, setDuration] = useState<number>(editing ? editing.end - editing.start : 60)
   const [badge, setBadge] = useState<Badge>(editing?.badge ?? 'routine')
+  // Напоминание: null — не трогали (у нового события сработает настройка по умолчанию), −1 — не напоминать.
+  const [reminder, setReminder] = useState<number | null>(null)
+  const remindersOn = useApi().mode === 'server'
+  const defaultReminder = useDefaultReminder()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
   const titleInput = useRef<HTMLInputElement>(null)
@@ -160,6 +166,8 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const pending = createEvent.isPending || updateEvent.isPending || deleteEvent.isPending
   const error = createEvent.error ?? updateEvent.error ?? deleteEvent.error
 
+  const reminders = reminder === null ? {} : { reminders: reminder < 0 ? [] : [reminder] }
+
   const save = () => {
     const name = title.trim()
     // Безымянное событие в календаре потом не опознать — просим название, а не подставляем заглушку.
@@ -179,6 +187,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             start,
             end,
             badge,
+            ...reminders,
           },
         },
         { onSuccess: onClose },
@@ -186,7 +195,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       return
     }
     createEvent.mutate(
-      { title: name, subtitle: subtitle.trim(), start, end, date, badge },
+      { title: name, subtitle: subtitle.trim(), start, end, date, badge, ...reminders },
       {
         onSuccess: () => {
           setSelectedDate(date)
@@ -396,6 +405,14 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             )
           })}
         </div>
+
+        {remindersOn && (
+          <ReminderPicker
+            value={reminder ?? reminderValue(editing?.reminders, defaultReminder)}
+            isDefault={reminder === null && editing?.reminders == null}
+            onChange={setReminder}
+          />
+        )}
       </form>
     </BottomSheet>
   )

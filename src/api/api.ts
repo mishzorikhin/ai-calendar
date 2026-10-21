@@ -13,6 +13,9 @@ import type {
   NewEvent,
   NewIntegration,
   NewTask,
+  NotifySettings,
+  PushInfo,
+  PushSubscriptionData,
   Task,
   TaskPatch,
   User,
@@ -97,6 +100,17 @@ export interface CalendarApi {
   /** Включить ленту или выдать новую ссылку (старая перестаёт работать). */
   resetFeed(): Promise<string>
   disableFeed(): Promise<void>
+
+  /** Уведомления: ключ для подписки браузера, настройки напоминаний, сколько устройств подписано. */
+  getPush(): Promise<PushInfo>
+  /** Изменить настройки напоминаний (переданные поля). */
+  updateNotifySettings(patch: Partial<NotifySettings>): Promise<NotifySettings>
+  /** Сохранить подписку этого браузера за аккаунтом. */
+  subscribePush(sub: PushSubscriptionData): Promise<void>
+  /** Забыть подписку этого браузера. */
+  unsubscribePush(endpoint: string): Promise<void>
+  /** Прислать пробное уведомление; возвращает, на сколько устройств оно ушло. */
+  testPush(): Promise<number>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */

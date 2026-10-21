@@ -16,6 +16,7 @@ import { screenVariants } from './lib/motion'
 import { OfflineBadge } from './pwa/OfflineBadge'
 import { UpdatePrompt } from './pwa/UpdatePrompt'
 import { useLaunchAction } from './pwa/useLaunchAction'
+import { usePushEvents } from './pwa/usePushEvents'
 import { Chat } from './screens/chat/Chat'
 import { Day } from './screens/day/Day'
 import { Home } from './screens/home/Home'
@@ -58,6 +59,7 @@ function Screens() {
   const { route, dir } = useNavigation()
   useLaunchAction()
   useSyncTimeZone()
+  usePushEvents()
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>
