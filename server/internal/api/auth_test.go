@@ -408,8 +408,24 @@ func TestMentionsEdgeCases(t *testing.T) {
 		t.Fatalf("e-mail поделил задачу: %+v", task.Members)
 	}
 
+	// Кириллица перед @ — тоже часть слова, а точка — граница.
+	register(t, h, "carol")
+	if task := create(`{"title":"Написать иван@bob"}`); len(task.Members) != 0 {
+		t.Fatalf("«иван@bob» поделил задачу: %+v", task.Members)
+	}
+	if task := create(`{"title":"Купить хлеб.@carol и @bob.@carol"}`); len(task.Members) != 2 {
+		t.Fatalf("упоминания после точки: %+v", task.Members)
+	}
+	// Логин с подчёркиванием на конце и без него — разные люди.
+	register(t, h, "bob_")
+	task := create(`{"title":"Позвать @bob_"}`)
+	got := decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Позвать @bob_ и @bob"}`))
+	if len(got.Members) != 2 {
+		t.Fatalf("@bob после @bob_: %+v", got.Members)
+	}
+
 	// Повторные сохранения того же текста не шлют уведомления снова.
-	task := create(`{"title":"Поход с @bob"}`)
+	task = create(`{"title":"Поход с @bob"}`)
 	before := bobNotifs()
 	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в субботу","subtitle":""}`)
 	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в субботу","subtitle":"взять палатку"}`)
@@ -419,7 +435,7 @@ func TestMentionsEdgeCases(t *testing.T) {
 
 	// Вышел — правка текста со старым упоминанием его не возвращает.
 	doAs(t, h, bob, "DELETE", "/api/tasks/"+task.ID, "")
-	got := decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в воскресенье"}`))
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Поход с @bob в воскресенье"}`))
 	if len(got.Members) != 0 {
 		t.Fatalf("вышедшего вернули: %+v", got.Members)
 	}
@@ -450,5 +466,17 @@ func TestMentionsEdgeCases(t *testing.T) {
 	}
 	if bobNotifs() != before {
 		t.Fatal("уведомление за повторное добавление")
+	}
+	// А явное приглашение владельца — понятная ошибка, а не тихое «ничего».
+	if rec := doAs(t, h, bob, "POST", "/api/tasks/"+task.ID+"/members", `{"username":"alice"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("явное добавление владельца: %d %s", rec.Code, rec.Body)
+	}
+	// Стёрли упоминание и написали заново — это новое приглашение.
+	task = create(`{"title":"Кино с @bob"}`)
+	doAs(t, h, bob, "DELETE", "/api/tasks/"+task.ID, "")
+	doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино"}`)
+	got = decode[model.Task](t, doAs(t, h, alice, "PATCH", "/api/tasks/"+task.ID, `{"title":"Кино с @bob"}`))
+	if len(got.Members) != 1 {
+		t.Fatalf("новое приглашение после выхода: %+v", got.Members)
 	}
 }
