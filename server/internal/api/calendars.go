@@ -331,7 +331,8 @@ func (s *server) itemOf(ctx context.Context, e model.Event) (calsync.Item, *time
 // календарь — сначала создаёт событие там. Не получилось — событие остаётся
 // в приложении, а ошибка видна в настройках календаря.
 func (s *server) createEventSynced(ctx context.Context, e model.Event) (model.Event, error) {
-	if target, ok := s.primaryTarget(ctx); ok {
+	// Серия остаётся в приложении: у внешних календарей свои правила повторов.
+	if target, ok := s.primaryTarget(ctx); ok && e.Repeat == model.RepeatNone {
 		it, loc, err := s.itemOf(ctx, e)
 		if err != nil {
 			return model.Event{}, err
@@ -368,6 +369,9 @@ func (s *server) updateEventSynced(ctx context.Context, cur model.Event, patch m
 	onlyReminders := patch.OnlyReminders()
 	if cur.ReadOnly && !onlyReminders {
 		return model.Event{}, errReadOnlyEvent
+	}
+	if cur.Source != "" && (patch.Repeat != nil && *patch.Repeat != model.RepeatNone || patch.SkipDate != nil) {
+		return model.Event{}, badRequest("Повтор можно задать только событию приложения — у подключённого календаря он задаётся там")
 	}
 	newETag, pushed := "", false
 	if cur.Source != "" && !onlyReminders {

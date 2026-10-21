@@ -188,6 +188,17 @@ var schema = []string{
 		message JSONB NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS snoozes_at ON snoozes (at)`,
+	// Повторы своих событий, тихие часы, вечерняя сводка, напоминания по типу событий, подписи устройств.
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS repeat TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS repeat_until TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS exdates JSONB`,
+	`CREATE INDEX IF NOT EXISTS events_repeat ON events (user_id) WHERE repeat <> ''`,
+	`ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS evening INT NOT NULL DEFAULT -1`,
+	`ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS quiet_from INT NOT NULL DEFAULT -1`,
+	`ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS quiet_to INT NOT NULL DEFAULT -1`,
+	`ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS badge_reminders JSONB`,
+	`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS snoozes_user ON snoozes (user_id, at)`,
 	`CREATE TABLE IF NOT EXISTS server_keys (
 		name  TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -308,21 +319,34 @@ func uid(ctx context.Context) (int64, error) {
 }
 
 const eventColumns = `id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-	source, external_id, etag, read_only, all_day, reminders::text`
+	source, external_id, etag, read_only, all_day, reminders::text, repeat, repeat_until, exdates::text`
 
 func scanEvent(row pgx.Row) (model.Event, error) {
 	var e model.Event
 	var userID *int64
-	var reminders *string
+	var reminders, exdates *string
 	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt,
-		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders)
+		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders, &e.Repeat, &e.RepeatUntil, &exdates)
 	if userID != nil {
 		e.UserID = *userID
 	}
 	if err == nil && reminders != nil {
 		err = json.Unmarshal([]byte(*reminders), &e.Reminders)
 	}
+	if err == nil && exdates != nil {
+		err = json.Unmarshal([]byte(*exdates), &e.ExDates)
+	}
 	return e, err
+}
+
+// exdatesJSON — значение колонки exdates: пустой список — NULL.
+func exdatesJSON(d []string) (*string, error) {
+	if len(d) == 0 {
+		return nil, nil
+	}
+	raw, err := json.Marshal(d)
+	v := string(raw)
+	return &v, err
 }
 
 // remindersJSON — значение колонки reminders: nil-срез (по умолчанию) — NULL.
@@ -392,12 +416,16 @@ func (s *pgStore) CreateEvent(ctx context.Context, e model.Event) (model.Event, 
 	if err != nil {
 		return model.Event{}, err
 	}
+	exdates, err := exdatesJSON(e.ExDates)
+	if err != nil {
+		return model.Event{}, err
+	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-			source, external_id, etag, read_only, all_day, reminders)
-		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
+			source, external_id, etag, read_only, all_day, reminders, repeat, repeat_until, exdates)
+		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18::jsonb)
 		RETURNING id`,
 		e.UserID, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, e.Highlight, e.CreatedAt,
-		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay, reminders).Scan(&e.ID)
+		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay, reminders, e.Repeat, e.RepeatUntil, exdates).Scan(&e.ID)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("создание события: %w", err)
 	}
@@ -430,9 +458,14 @@ func (s *pgStore) UpdateEvent(ctx context.Context, id string, patch model.EventP
 	if err != nil {
 		return model.Event{}, err
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE events SET date=$3, title=$4, subtitle=$5, start_min=$6, end_min=$7, badge=$8, reminders=$9::jsonb
+	exdates, err := exdatesJSON(e.ExDates)
+	if err != nil {
+		return model.Event{}, err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE events SET date=$3, title=$4, subtitle=$5, start_min=$6, end_min=$7, badge=$8, reminders=$9::jsonb,
+			repeat=$10, repeat_until=$11, exdates=$12::jsonb
 		WHERE id=$1 AND user_id=$2`,
-		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders)
+		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders, e.Repeat, e.RepeatUntil, exdates)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("обновление события: %w", err)
 	}
@@ -946,6 +979,15 @@ func (s *pgStore) EventsBetween(ctx context.Context, from, to string) []model.Ev
 	return collectEvents(rows, err)
 }
 
+func (s *pgStore) RepeatingEvents(ctx context.Context, until string) []model.Event {
+	u, err := uid(ctx)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events WHERE user_id = $1 AND repeat <> '' AND date <= $2`, u, until)
+	return collectEvents(rows, err)
+}
+
 func (s *pgStore) SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error) {
 	u, err := uid(ctx)
 	if err != nil {
@@ -1215,10 +1257,10 @@ func (s *pgStore) SavePushSubscription(ctx context.Context, sub model.PushSubscr
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, created_at)
-		VALUES ($1, $2, $3, $4, now())
-		ON CONFLICT (endpoint) DO UPDATE SET user_id = $2, p256dh = $3, auth = $4, created_at = now()`,
-		sub.Endpoint, u, sub.P256DH, sub.Auth); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, label, created_at)
+		VALUES ($1, $2, $3, $4, $5, now())
+		ON CONFLICT (endpoint) DO UPDATE SET user_id = $2, p256dh = $3, auth = $4, label = $5, created_at = now()`,
+		sub.Endpoint, u, sub.P256DH, sub.Auth, sub.Label); err != nil {
 		return fmt.Errorf("подписка на уведомления: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint NOT IN (
@@ -1245,14 +1287,14 @@ func (s *pgStore) PushSubscriptions(ctx context.Context) []model.PushSubscriptio
 	if err != nil {
 		return nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT endpoint, user_id, p256dh, auth, created_at FROM push_subscriptions
+	rows, err := s.pool.Query(ctx, `SELECT endpoint, user_id, p256dh, auth, label, created_at FROM push_subscriptions
 		WHERE user_id = $1 ORDER BY created_at`, u)
 	if err != nil {
 		return nil
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.PushSubscription, error) {
 		var p model.PushSubscription
-		err := row.Scan(&p.Endpoint, &p.UserID, &p.P256DH, &p.Auth, &p.CreatedAt)
+		err := row.Scan(&p.Endpoint, &p.UserID, &p.P256DH, &p.Auth, &p.Label, &p.CreatedAt)
 		return p, err
 	})
 	if err != nil {
@@ -1279,10 +1321,15 @@ func (s *pgStore) NotifySettings(ctx context.Context) (model.NotifySettings, err
 		return model.NotifySettings{}, err
 	}
 	var ns model.NotifySettings
-	err = s.pool.QueryRow(ctx, `SELECT event_reminder, task_time, digest FROM notify_settings WHERE user_id = $1`, u).
-		Scan(&ns.EventReminder, &ns.TaskTime, &ns.Digest)
+	var badges *string
+	err = s.pool.QueryRow(ctx, `SELECT event_reminder, task_time, digest, evening, quiet_from, quiet_to, badge_reminders::text
+		FROM notify_settings WHERE user_id = $1`, u).
+		Scan(&ns.EventReminder, &ns.TaskTime, &ns.Digest, &ns.Evening, &ns.QuietFrom, &ns.QuietTo, &badges)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.DefaultNotifySettings, nil
+	}
+	if err == nil && badges != nil {
+		err = json.Unmarshal([]byte(*badges), &ns.BadgeReminders)
 	}
 	if err != nil {
 		return model.NotifySettings{}, fmt.Errorf("настройки уведомлений: %w", err)
@@ -1295,9 +1342,20 @@ func (s *pgStore) SetNotifySettings(ctx context.Context, ns model.NotifySettings
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO notify_settings (user_id, event_reminder, task_time, digest) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (user_id) DO UPDATE SET event_reminder = $2, task_time = $3, digest = $4`,
-		u, ns.EventReminder, ns.TaskTime, ns.Digest)
+	var badges *string
+	if len(ns.BadgeReminders) > 0 {
+		raw, err := json.Marshal(ns.BadgeReminders)
+		if err != nil {
+			return err
+		}
+		v := string(raw)
+		badges = &v
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO notify_settings (user_id, event_reminder, task_time, digest, evening, quiet_from, quiet_to, badge_reminders)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		ON CONFLICT (user_id) DO UPDATE SET event_reminder = $2, task_time = $3, digest = $4, evening = $5,
+			quiet_from = $6, quiet_to = $7, badge_reminders = $8::jsonb`,
+		u, ns.EventReminder, ns.TaskTime, ns.Digest, ns.Evening, ns.QuietFrom, ns.QuietTo, badges)
 	if err != nil {
 		return fmt.Errorf("настройки уведомлений: %w", err)
 	}
@@ -1320,23 +1378,65 @@ func (s *pgStore) ClaimReminder(ctx context.Context, key string, now time.Time) 
 	return tag.RowsAffected() == 1, nil
 }
 
-func (s *pgStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) error {
+func (s *pgStore) AddSnooze(ctx context.Context, at time.Time, msg model.PushMessage) (model.Snooze, error) {
+	u, err := uid(ctx)
+	if err != nil {
+		return model.Snooze{}, err
+	}
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		return model.Snooze{}, err
+	}
+	z := model.Snooze{UserID: u, At: at, Message: msg}
+	err = s.pool.QueryRow(ctx, `INSERT INTO snoozes (user_id, at, message)
+		SELECT $1, $2, $3::jsonb WHERE (SELECT count(*) FROM snoozes WHERE user_id = $1) < $4
+		RETURNING id`,
+		u, at, string(raw), MaxSnoozes).Scan(&z.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Snooze{}, ErrLimit
+	}
+	if err != nil {
+		return model.Snooze{}, fmt.Errorf("отложенное уведомление: %w", err)
+	}
+	return z, nil
+}
+
+func scanSnooze(row pgx.CollectableRow) (model.Snooze, error) {
+	var z model.Snooze
+	var raw string
+	if err := row.Scan(&z.ID, &z.UserID, &z.At, &raw); err != nil {
+		return z, err
+	}
+	return z, json.Unmarshal([]byte(raw), &z.Message)
+}
+
+func (s *pgStore) Snoozes(ctx context.Context) []model.Snooze {
+	u, err := uid(ctx)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id, user_id, at, message::text FROM snoozes WHERE user_id = $1 ORDER BY at, id`, u)
+	if err != nil {
+		return nil
+	}
+	out, err := pgx.CollectRows(rows, scanSnooze)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *pgStore) DeleteSnooze(ctx context.Context, id int64) error {
 	u, err := uid(ctx)
 	if err != nil {
 		return err
 	}
-	raw, err := json.Marshal(msg)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM snoozes WHERE id = $1 AND user_id = $2`, id, u)
 	if err != nil {
-		return err
-	}
-	tag, err := s.pool.Exec(ctx, `INSERT INTO snoozes (user_id, at, message)
-		SELECT $1, $2, $3::jsonb WHERE (SELECT count(*) FROM snoozes WHERE user_id = $1) < $4`,
-		u, at, string(raw), MaxSnoozes)
-	if err != nil {
-		return fmt.Errorf("отложенное уведомление: %w", err)
+		return fmt.Errorf("отмена напоминания: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrLimit
+		return ErrNotFound
 	}
 	return nil
 }
@@ -1347,14 +1447,7 @@ func (s *pgStore) TakeDueSnoozes(ctx context.Context, now time.Time) []model.Sno
 	if err != nil {
 		return nil
 	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.Snooze, error) {
-		var z model.Snooze
-		var raw string
-		if err := row.Scan(&z.ID, &z.UserID, &z.At, &raw); err != nil {
-			return z, err
-		}
-		return z, json.Unmarshal([]byte(raw), &z.Message)
-	})
+	out, err := pgx.CollectRows(rows, scanSnooze)
 	if err != nil {
 		return nil
 	}
