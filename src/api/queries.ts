@@ -588,6 +588,8 @@ export function useSendChat() {
           qc.invalidateQueries({ queryKey: keys.memories }),
           qc.invalidateQueries({ queryKey: keys.people }),
           qc.invalidateQueries({ queryKey: keys.profile }),
+          // …или запомнить, как зовут пользователя (имя аккаунта).
+          qc.invalidateQueries({ queryKey: keys.me }),
         ])
       } finally {
         active.current = null

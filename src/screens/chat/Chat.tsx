@@ -1,4 +1,4 @@
-import { m } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useApi } from '../../api/provider'
 import { IMAGE_MARK, useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
@@ -8,6 +8,7 @@ import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
 import { Dots, Pressable } from '../../components/ui'
 import { fromISODate } from '../../lib/dates'
+import { useTimeout } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
 import { ChatComposer } from './ChatComposer'
 import { DayPreview } from './DayPreview'
@@ -16,6 +17,9 @@ import styles from './Chat.module.css'
 
 /** Насколько близко к низу ленты считаем, что человек «следит» за ответом. */
 const STICK_PX = 80
+
+/** Сенсорный экран — там при наборе открывается клавиатура и места становится вдвое меньше. */
+const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true
 
 const TOOL_LABELS: Record<string, string> = {
   get_day_schedule: 'Смотрю расписание',
@@ -67,6 +71,28 @@ export function Chat() {
     if (stick.current) list.current?.scrollTo({ top: list.current.scrollHeight })
   }, [messages.length, stream?.text, stream?.tools.length, failed.length])
 
+  // Лента меняет высоту (открылась клавиатура, свернулась шапка) — остаёмся у последнего сообщения.
+  useEffect(() => {
+    const el = list.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Режим набора: пока поле в фокусе на телефоне, превью дня и заголовок сворачиваются —
+  // над клавиатурой остаются сообщения. Разворачиваем с задержкой: короткая потеря фокуса
+  // (нажатие на подсказку) не должна дёргать экран.
+  const [focused, setFocused] = useState(false)
+  const [compact, setCompact] = useState(false)
+  useTimeout(() => setCompact(false), !focused && compact ? 250 : null)
+  const onTyping = (on: boolean) => {
+    setFocused(on)
+    if (on && touch) setCompact(true)
+  }
+
   /** Своё сообщение всегда показываем: прокрутка возвращается вниз. */
   const sendAndFollow = (text: string, image?: string) => {
     stick.current = true
@@ -87,11 +113,26 @@ export function Chat() {
     <div className={styles.screen}>
       <BarSlot id="chat" hidden />
       <TasksPill />
-      <DayPreview />
-
-      <m.h1 variants={itemVariants} className={styles.title}>
-        Сегодня
-      </m.h1>
+      <div className={styles.top}>
+        <AnimatePresence initial={false}>
+          {!compact && (
+            <m.div
+              key="head"
+              className={styles.head}
+              // Обрезаем только пока сворачиваемся: иначе срезался бы вход «день уменьшается в карточку».
+              initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
+              animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+              exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+              transition={spring}
+            >
+              <DayPreview />
+              <m.h1 variants={itemVariants} className={styles.title}>
+                Сегодня
+              </m.h1>
+            </m.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <div
         ref={list}
@@ -128,6 +169,8 @@ export function Chat() {
         initialText={initialText}
         focusOnMount={Boolean(initialText)}
         busy={busy}
+        compact={compact && messages.length > 1}
+        onTyping={onTyping}
         canAttach={api.mode === 'server'}
         onSend={sendAndFollow}
       />
