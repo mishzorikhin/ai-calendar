@@ -147,10 +147,13 @@ React-компоненты; `mocks/` используются только в `a
     Запросы из service worker (кнопки уведомления) берут токен из метаданных очереди (`outbox.authToken()`).
     Если окно приложения в фокусе, worker в Chromium (вне iOS) не показывает системное уведомление, а шлёт `push:show`
     (`pwa/PushToast`); Chromium это допускает. В Safari, PWA на iPhone и Firefox системное показывается всегда.
-13. **Персонализация** — профиль (`Profile`), память (`Memory`) и люди (`Person`): Go `model/personal.go` ↔ TS `domain/types.ts`,
+13. **Участники встреч** — `CalendarEvent.attendees` (у своих) и `invite` (у чужих, куда позвали; `readOnly`, открывается
+    в `ReadOnlyEvent` с «Приду / Не приду», `useRsvp`). Сервер: `api/attendees.go`, приглашения входят в `eventsBetween`,
+    отклонённые — нет. Уведомление о встрече несёт `eventId`/`date` — по нажатию открывается день.
+14. **Персонализация** — профиль (`Profile`), память (`Memory`) и люди (`Person`): Go `model/personal.go` ↔ TS `domain/types.ts`,
     проверки — `domain/profile.ts` ↔ `api/profile.go`/`memory.go`/`people.go`. Факты в память пишет ассистент только со слов
     пользователя (`evidence`, см. `server/AGENTS.md`). Анкета знакомства открывается сама, пока `profile.onboarded` — false.
-14. **Повторяющиеся события** (`repeat`, `repeatUntil`, `exdates`): вхождения приходят с id серии и своей датой.
+15. **Повторяющиеся события** (`repeat`, `repeatUntil`, `exdates`): вхождения приходят с id серии и своей датой.
     Правка по id меняет серию; при правке вхождения передавайте `occurrence` (его день), «только этот день» — `skip`.
     Локальный режим повторяет правила сервера в `domain/repeat.ts`. Повтор есть только у своих событий (без `source`).
 
