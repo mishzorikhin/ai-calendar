@@ -112,6 +112,8 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 		t.Fatalf("событие под задачу: %+v", evs)
 	}
 
+	// Событие следующего дня сдвиг и освобождение этого дня не трогают.
+	doAs(t, h, tok, "POST", "/api/events", fmt.Sprintf(`{"date":%q,"title":"Ужин","start":1200,"end":1260}`, next))
 	// Ещё четыре события — сдвиг пяти требует согласия.
 	for i := range 4 {
 		doAs(t, h, tok, "POST", "/api/events", fmt.Sprintf(`{"date":%q,"title":"Встреча %d","start":%d,"end":%d}`, day, i, 660+i*60, 720+i*60))
@@ -124,6 +126,9 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 	if evs := events(day); evs[0].Start != 600 || evs[4].Start != 900 {
 		t.Fatalf("после согласия: %+v", evs)
 	}
+	if evs := events(next); len(evs) != 1 || evs[0].Start != 1200 {
+		t.Fatalf("сдвиг задел следующий день: %+v", evs)
+	}
 
 	// Освободить день — всегда через согласие; события уезжают на вторник.
 	doAs(t, h, tok, "POST", "/api/chat", `{"text":"освободи понедельник"}`)
@@ -135,7 +140,7 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 		t.Fatalf("день не освобождён: %d", n)
 	}
 	moved := events(next)
-	if len(moved) != 5 || moved[0].Start != 540 || moved[0].Title != "Отчёт" || moved[0].TaskID != task.ID {
+	if len(moved) != 6 || moved[0].Start != 540 || moved[0].Title != "Отчёт" || moved[0].TaskID != task.ID || moved[5].Title != "Ужин" || moved[5].Start != 1200 {
 		t.Fatalf("на вторнике: %+v", moved)
 	}
 }

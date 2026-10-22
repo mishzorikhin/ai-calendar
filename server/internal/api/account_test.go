@@ -146,3 +146,20 @@ func TestExportAndDeleteAccount(t *testing.T) {
 		t.Fatalf("память досталась новому: %+v", mem)
 	}
 }
+
+func TestLogoutOthersDropsPush(t *testing.T) {
+	_, h, st := newPushServer(t)
+	tok := register(t, h, "alice")
+	dev := newFakeDevice(t)
+	doAs(t, h, tok, "POST", "/api/push/subscriptions", dev.subscription("/lost-phone"))
+	ctx := store.WithUser(context.Background(), mustUser(t, st, "alice"))
+	if len(st.PushSubscriptions(ctx)) != 1 {
+		t.Fatal("подписка не сохранилась")
+	}
+	if rec := doAs(t, h, tok, "POST", "/api/auth/logout-others", ""); rec.Code != 204 {
+		t.Fatalf("выйти на остальных: %d", rec.Code)
+	}
+	if n := len(st.PushSubscriptions(ctx)); n != 0 {
+		t.Fatalf("потерянное устройство всё ещё получает push: %d", n)
+	}
+}

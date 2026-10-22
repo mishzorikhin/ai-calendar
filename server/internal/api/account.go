@@ -33,14 +33,25 @@ func (s *server) deleteSession(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	s.dropPush(r)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// dropPush снимает все push-подписки пользователя: подписка не привязана к сессии, а вышедшее
+// устройство (потерянный телефон) не должно получать напоминания. Это устройство подписку вернёт
+// само — приложение сверяет её с сервером (usePushDevice) и после ответа обновляет.
+func (s *server) dropPush(r *http.Request) {
+	for _, p := range s.store.PushSubscriptions(r.Context()) {
+		_ = s.store.DeletePushSubscription(r.Context(), p.Endpoint)
+	}
 }
 
 func (s *server) logoutOthers(w http.ResponseWriter, r *http.Request) error {
 	if err := s.store.DeleteOtherSessions(r.Context(), currentHash(r)); err != nil {
 		return err
 	}
+	s.dropPush(r)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -95,6 +106,7 @@ func (s *server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err := s.store.DeleteOtherSessions(r.Context(), currentHash(r)); err != nil {
 		return err
 	}
+	s.dropPush(r)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

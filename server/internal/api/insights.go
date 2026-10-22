@@ -78,7 +78,8 @@ func weekInsights(start string, events []model.Event, tasks []model.Task, p mode
 		}
 	}
 	for _, t := range tasks {
-		if t.DoneAt.IsZero() {
+		// Совместную задачу мог закрыть другой участник — считаем только свои.
+		if t.DoneAt.IsZero() || t.Role == model.TaskRoleMember {
 			continue
 		}
 		if day := t.DoneAt.In(loc).Format(time.DateOnly); day >= start && day < end {

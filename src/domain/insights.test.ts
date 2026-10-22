@@ -32,6 +32,14 @@ describe('weekInsights', () => {
       { id: 'b', title: 'b', kind: 'task' as const, done: true, doneAt: local(2026, 9, 19, 1) },
       { id: 'c', title: 'c', kind: 'task' as const, done: true, doneAt: local(2026, 9, 18, 23) },
       { id: 'd', title: 'd', kind: 'task' as const, done: false },
+      {
+        id: 'e',
+        title: 'e',
+        kind: 'task' as const,
+        done: true,
+        role: 'member' as const,
+        doneAt: local(2026, 9, 20, 9),
+      },
     ]
     const r = weekInsights(new Date(2026, 9, 22), events, tasks, DEFAULT_PROFILE)
     expect(r).toMatchObject({ start: '2026-10-19', minutes: 360, average: 120, done: 2, busiest: '2026-10-19' })

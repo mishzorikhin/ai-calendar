@@ -256,6 +256,8 @@ export function useEndSessions() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string | null) => (id === null ? api.logoutOthers() : api.deleteSession(id)),
+    // Сервер снял push-подписки всех устройств — это устройство подписывается заново при сверке.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['push-device'] }),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.sessions }),
   })
 }
@@ -265,7 +267,10 @@ export function useChangePassword() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ current, next }: { current: string; next: string }) => api.changePassword(current, next),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.sessions })
+      void qc.invalidateQueries({ queryKey: ['push-device'] })
+    },
   })
 }
 

@@ -78,7 +78,8 @@ export function weekInsights(
     return { date, minutes: dayMinutes, events: list.length }
   })
   const done = tasks.filter((t) => {
-    if (!t.doneAt) return false
+    // Совместную задачу мог закрыть другой участник — считаем только свои.
+    if (!t.doneAt || t.role === 'member') return false
     const day = toISODate(new Date(t.doneAt))
     return day >= start && day < end
   }).length

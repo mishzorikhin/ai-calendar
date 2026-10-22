@@ -498,8 +498,13 @@ func (s *server) acceptSuggestion(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	// Сначала отмечаем ответ (атомарно, только у ждущего), потом выполняем: двойное «Да» — из
+	// уведомления и с карточки — не создаст два события. Сбой создания тогда съедает предложение,
+	// и это меньшее зло, чем дубль.
 	res := acceptResult{}
-	// Сначала выполняем действие, потом отмечаем: сбой создания оставит предложение в силе.
+	if res.Suggestion, err = s.store.AnswerSuggestion(ctx, id, model.SuggestionAccepted); err != nil {
+		return suggestionErr(err)
+	}
 	switch sg.Action.Type {
 	case model.ActionEvent:
 		ev, err := s.createEventSynced(ctx, model.Event{
@@ -516,9 +521,6 @@ func (s *server) acceptSuggestion(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		res.Task = &t
-	}
-	if res.Suggestion, err = s.store.AnswerSuggestion(ctx, id, model.SuggestionAccepted); err != nil {
-		return suggestionErr(err)
 	}
 	writeJSON(w, http.StatusOK, res)
 	return nil

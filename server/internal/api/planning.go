@@ -235,7 +235,8 @@ func (s *server) toolPlanTasks(ctx context.Context, turn chatTurn, args map[stri
 
 // eventsToMove — свои события дня, которые можно двигать: по списку id или все, что начинаются не раньше from.
 func (s *server) eventsToMove(ctx context.Context, date string, ids []string, from int) (move, skipped []model.Event) {
-	for _, e := range s.withAttendees(ctx, s.eventsBetween(ctx, date, addDays(date, 1))) {
+	// Границы выборки включительны: только этот день.
+	for _, e := range s.withAttendees(ctx, s.eventsBetween(ctx, date, date)) {
 		if e.AllDay || (len(ids) > 0 && !slices.Contains(ids, e.ID)) || (len(ids) == 0 && e.Start < from) {
 			continue
 		}
@@ -345,7 +346,8 @@ func (s *server) toolShiftEvents(ctx context.Context, turn chatTurn, args map[st
 		}
 	}
 	key := batchKey("shift", date, to, fmt.Sprint(minutes), strings.Join(idsOf(move), ","))
-	if !s.confirmBatch(ctx, turn, key, len(move), false) {
+	// Перенос на другой день — всегда с согласия, как и сдвиг больше трёх событий.
+	if !s.confirmBatch(ctx, turn, key, len(move), to != "" && to != date) {
 		titles := make([]string, len(move))
 		for i, e := range move {
 			titles[i] = e.Title

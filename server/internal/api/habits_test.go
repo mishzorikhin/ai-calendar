@@ -78,6 +78,8 @@ func TestWeekInsights(t *testing.T) {
 		{ID: "b", Done: true, DoneAt: time.Date(2026, 10, 18, 22, 0, 0, 0, time.UTC)},  // 19-е по Москве — тоже эта неделя
 		{ID: "c", Done: true, DoneAt: time.Date(2026, 10, 18, 20, 0, 0, 0, time.UTC)},  // 18-е — прошлая
 		{ID: "d"},
+		// Совместную задачу закрыл другой участник — не наша.
+		{ID: "e", Done: true, Role: model.TaskRoleMember, DoneAt: time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)},
 	}
 	r := weekInsights("2026-10-19", events, tasks, p, loc)
 	if r.Minutes != 360 || r.Average != 120 || r.Done != 2 || r.Busiest != "2026-10-19" {
