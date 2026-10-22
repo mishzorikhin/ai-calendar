@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 )
@@ -152,4 +153,27 @@ func (s *fileStore) SetRSVP(ctx context.Context, eventID string, status model.RS
 	}
 	list[i].Status = status
 	return s.save()
+}
+
+// containsFold — подстрока без учёта регистра (и «ё» = «е»).
+func containsFold(s, sub string) bool {
+	fold := func(v string) string { return strings.ReplaceAll(strings.ToLower(v), "ё", "е") }
+	return strings.Contains(fold(s), fold(sub))
+}
+
+func (s *fileStore) SearchEvents(ctx context.Context, query string, limit int) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Event
+	for i := len(s.d.Events) - 1; i >= 0 && len(out) < limit; i-- {
+		e := s.d.Events[i]
+		if e.UserID == uid && (containsFold(e.Title, query) || containsFold(e.Subtitle, query) || containsFold(e.Notes, query)) {
+			out = append(out, e)
+		}
+	}
+	return out
 }

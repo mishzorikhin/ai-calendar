@@ -105,6 +105,10 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     },
     deleteEvent: (id) => request<void>(`/api/events/${id}`, { method: 'DELETE' }),
     rsvpEvent: (id, status) => post<Invite>(`/api/events/${id}/rsvp`, { status }),
+    async search(query) {
+      const res = await request<{ events: EventDTO[]; tasks: Task[] }>(`/api/search?q=${encodeURIComponent(query)}`)
+      return { events: res.events.map(toEvent), tasks: res.tasks }
+    },
     async getMonthDots(year, month) {
       const raw = await request<Record<string, Badge[]>>(`/api/month?year=${year}&month=${month + 1}`)
       return Object.fromEntries(Object.entries(raw).map(([day, badges]) => [Number(day), badges]))

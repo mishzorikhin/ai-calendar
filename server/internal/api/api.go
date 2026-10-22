@@ -103,6 +103,7 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("DELETE /api/events/{id}", s.authed(s.deleteEvent))
 	mux.Handle("POST /api/events/{id}/rsvp", s.authed(s.rsvp))
 	mux.Handle("GET /api/month", s.authed(s.monthDots))
+	mux.Handle("GET /api/search", s.authed(s.search))
 	mux.Handle("GET /api/tasks", s.authed(s.listTasks))
 	mux.Handle("POST /api/tasks", s.authed(s.createTask))
 	mux.Handle("PATCH /api/tasks/{id}", s.authed(s.updateTask))

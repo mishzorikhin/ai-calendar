@@ -1,6 +1,7 @@
 import { AnimatePresence } from 'framer-motion'
 import { Suspense, lazy, useState, type ReactNode } from 'react'
 import { useProfile } from '../../api/queries'
+import type { Task } from '../../domain/types'
 import type { OAuthReturn } from './calendars/oauthReturn'
 
 // Шторки настроек открываются редко — их код грузится по первому открытию.
@@ -9,21 +10,28 @@ const CalendarsSheet = lazy(() => import('./calendars/CalendarsSheet').then((mod
 const RemindersSheet = lazy(() => import('./reminders/RemindersSheet').then((mod) => ({ default: mod.RemindersSheet })))
 const ProfileSheet = lazy(() => import('./assistant/ProfileSheet').then((mod) => ({ default: mod.ProfileSheet })))
 const MemorySheet = lazy(() => import('./assistant/MemorySheet').then((mod) => ({ default: mod.MemorySheet })))
+const SearchSheet = lazy(() => import('./search/SearchSheet').then((mod) => ({ default: mod.SearchSheet })))
 const OnboardingSheet = lazy(() =>
   import('./assistant/OnboardingSheet').then((mod) => ({ default: mod.OnboardingSheet })),
 )
 
-export type HomeSheet = 'account' | 'calendars' | 'reminders' | 'profile' | 'memory'
+export type HomeSheet = 'account' | 'calendars' | 'reminders' | 'profile' | 'memory' | 'search'
 
 /** Шторки аккаунта и настроек главной; анкета знакомства открывается сама, пока профиль не заполнен. */
 export function HomeSheets({
   sheet,
   onSheet,
   oauthReturn,
+  onDay,
+  onTask,
 }: {
   sheet: HomeSheet | null
   onSheet: (sheet: HomeSheet | null) => void
   oauthReturn: OAuthReturn | null
+  /** Открыть день (из поиска). */
+  onDay: (date: Date) => void
+  /** Открыть задачу (из поиска). */
+  onTask: (task: Task) => void
 }) {
   const { data: profile } = useProfile()
   // Закрытую анкету не показываем снова, пока сервер подтверждает «пройдено».
@@ -54,6 +62,21 @@ export function HomeSheets({
       {sheet === 'calendars' && lazySheet('calendars-sheet', <CalendarsSheet notice={oauthReturn} onClose={close} />)}
       {sheet === 'profile' && lazySheet('profile-sheet', <ProfileSheet onClose={close} />)}
       {sheet === 'memory' && lazySheet('memory-sheet', <MemorySheet onClose={close} />)}
+      {sheet === 'search' &&
+        lazySheet(
+          'search-sheet',
+          <SearchSheet
+            onClose={close}
+            onDay={(d) => {
+              close()
+              onDay(d)
+            }}
+            onTask={(t) => {
+              close()
+              onTask(t)
+            }}
+          />,
+        )}
       {onboarding &&
         lazySheet('onboarding-sheet', <OnboardingSheet profile={profile} onClose={() => setOnboardingClosed(true)} />)}
     </AnimatePresence>

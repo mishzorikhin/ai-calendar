@@ -139,3 +139,36 @@ func TestChatMultiDayTool(t *testing.T) {
 		t.Fatalf("многодневное от ассистента: %+v", list)
 	}
 }
+
+func TestSearch(t *testing.T) {
+	h, tok := newAuthedServer(t)
+	today := time.Now().UTC()
+	day := func(d int) string { return today.AddDate(0, 0, d).Format(time.DateOnly) }
+	doAs(t, h, tok, "POST", "/api/events", `{"date":"`+day(-3)+`","title":"Встреча с Глебом","start":600,"end":660}`)
+	doAs(t, h, tok, "POST", "/api/events", `{"date":"`+day(5)+`","title":"Обед","subtitle":"Кафе у Глеба","start":780,"end":840}`)
+	doAs(t, h, tok, "POST", "/api/events", `{"date":"`+day(-30)+`","title":"Йога с ГЛЕБОМ","start":540,"end":600,"repeat":"weekly"}`)
+	doAs(t, h, tok, "POST", "/api/events", `{"date":"`+day(1)+`","title":"Другое","start":540,"end":600,"notes":"позвонить Глёбу"}`)
+	doAs(t, h, tok, "POST", "/api/tasks", `{"title":"Подарок Глебу"}`)
+	doAs(t, h, tok, "POST", "/api/tasks", `{"title":"Купить хлеб"}`)
+	res := decode[searchResult](t, doAs(t, h, tok, "GET", "/api/search?q=%D0%B3%D0%BB%D0%B5%D0%B1", ""))
+	if len(res.Events) != 4 || len(res.Tasks) != 1 {
+		t.Fatalf("найдено: %+v", res)
+	}
+	// Предстоящие по порядку (серия — ближайшим вхождением), прошедшие — в конце.
+	if res.Events[0].Title != "Йога с ГЛЕБОМ" && res.Events[0].Title != "Другое" {
+		t.Fatalf("порядок: %+v", res.Events)
+	}
+	last := res.Events[len(res.Events)-1]
+	if last.Title != "Встреча с Глебом" || res.Events[0].Date < today.Format(time.DateOnly) {
+		t.Fatalf("прошедшие в конце, серия — ближайшим вхождением: %+v", res.Events)
+	}
+	for _, bad := range []string{"", "a", strings.Repeat("я", 101)} {
+		if rec := doAs(t, h, tok, "GET", "/api/search?q="+bad, ""); rec.Code != 400 {
+			t.Errorf("%q: %d", bad, rec.Code)
+		}
+	}
+	other := register(t, h, "bob")
+	if res := decode[searchResult](t, doAs(t, h, other, "GET", "/api/search?q=%D0%B3%D0%BB%D0%B5%D0%B1", "")); len(res.Events)+len(res.Tasks) != 0 {
+		t.Fatalf("чужое находится: %+v", res)
+	}
+}

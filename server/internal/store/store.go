@@ -131,6 +131,9 @@ type Store interface {
 	InvitedEvent(ctx context.Context, id string) (model.Event, error)
 	// SetRSVP — ответ текущего пользователя на приглашение.
 	SetRSVP(ctx context.Context, eventID string, status model.RSVP) error
+	// SearchEvents — свои события (записи, серия — одной), где query встречается в названии,
+	// месте или заметках без учёта регистра; не больше limit, новые записи первыми.
+	SearchEvents(ctx context.Context, query string, limit int) []model.Event
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)

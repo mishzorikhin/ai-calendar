@@ -23,6 +23,7 @@ import type {
   ProfilePatch,
   PushInfo,
   Rsvp,
+  SearchResult,
   Task,
   TaskPatch,
 } from '../domain/types'
@@ -53,6 +54,7 @@ export const keys = {
   pushDeviceId: ['push-device-id'] as const,
   alarms: ['alarms'] as const,
   profile: ['profile'] as const,
+  search: (q: string) => ['search', q] as const,
   memories: ['memories'] as const,
   people: ['people'] as const,
 }
@@ -848,4 +850,20 @@ export function useDeletePerson() {
     onError: (_err, _id, ctx) => qc.setQueryData(keys.people, ctx?.previous),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
   })
+}
+
+const NO_RESULT: SearchResult = { events: [], tasks: [] }
+
+/** Поиск по событиям и задачам: от 2 символов, пока печатают — прошлый результат. */
+export function useSearch(query: string) {
+  const api = useApi()
+  const q = query.trim()
+  const query_ = useQuery({
+    queryKey: keys.search(q),
+    queryFn: () => api.search(q),
+    enabled: [...q].length >= 2,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  })
+  return { ...query_, result: [...q].length >= 2 ? (query_.data ?? NO_RESULT) : NO_RESULT }
 }

@@ -31,7 +31,23 @@ func testEventDetails(t *testing.T, s Store) {
 	if l := s.MultiDayEvents(ctx, "2026-10-01", "2026-10-20"); len(l) != 0 {
 		t.Fatalf("до начала: %+v", l)
 	}
-	empty, travel := "", 0
+	// Поиск: по заметкам, без учёта регистра и «ё», спецсимволы LIKE — как текст.
+	if got := s.SearchEvents(ctx, "БЕЙДЖ", 10); len(got) != 1 || got[0].ID != e.ID {
+		t.Fatalf("поиск по заметкам: %+v", got)
+	}
+	if got := s.SearchEvents(ctx, "%", 10); len(got) != 0 {
+		t.Fatalf("%% — не шаблон: %+v", got)
+	}
+	if _, err := s.CreateEvent(ctx, model.Event{Date: "2026-10-01", Title: "Ёлка", Start: 600, End: 660, Badge: model.BadgeRoutine}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.SearchEvents(ctx, "елк", 10); len(got) != 1 {
+		t.Fatalf("ё = е: %+v", got)
+	}
+	if got := s.SearchEvents(WithUser(context.Background(), model.User{ID: 999}), "Ёлка", 10); len(got) != 0 {
+		t.Fatalf("чужой поиск: %+v", got)
+	}
+		empty, travel := "", 0
 	upd, err := s.UpdateEvent(ctx, e.ID, model.EventPatch{EndDate: &empty, URL: &empty, Travel: &travel})
 	if err != nil || upd.EndDate != "" || upd.URL != "" || upd.Travel != 0 || upd.Notes != "Бейдж на входе" {
 		t.Fatalf("правка: %+v %v", upd, err)

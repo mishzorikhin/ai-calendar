@@ -90,6 +90,22 @@ function quietError(s: NotifySettings): string | null {
   return s.quietFrom < 0 !== s.quietTo < 0 ? 'У тихих часов нужны и начало, и конец' : null
 }
 
+/** Без учёта регистра и «ё» — как поиск на сервере. */
+const fold = (s: string) => s.toLowerCase().replaceAll('ё', 'е')
+
+/** День, к которому вести из поиска: у серии — ближайшее вхождение с today (или последнее прошедшее). */
+function nearestDay(e: DatedEvent, today: string): string {
+  const first = toISODate(e.date)
+  if (!e.repeat) return first
+  const series = { ...e, date: first, repeat: e.repeat }
+  const start = new Date(Math.max(Date.parse(first), Date.parse(today)))
+  for (let i = 0; i < 400; i++) {
+    const day = toISODate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i))
+    if (occursOn(series, day)) return day
+  }
+  return first
+}
+
 function emptySnapshot(): Snapshot {
   return { events: [], messages: [GREETING], tasks: [], nextId: 3 }
 }
@@ -275,6 +291,24 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       return reply(undefined)
     },
     rsvpEvent: () => Promise.reject(NO_ACCOUNTS),
+    search(query) {
+      const q = query.trim()
+      if ([...q].length < 2 || [...q].length > 100) return invalid('Запрос — от 2 до 100 символов')!
+      const has = (s: string | undefined) => !!s && fold(s).includes(fold(q))
+      const today = toISODate(new Date())
+      const found = events()
+        .filter((e) => has(e.title) || has(e.subtitle) || has(e.notes))
+        .map((e) => ({ ...e, date: fromISODate(nearestDay(e, today)) }))
+        .sort((a, b) => {
+          const [da, db] = [toISODate(a.date), toISODate(b.date)]
+          const [fa, fb] = [da >= today, db >= today]
+          if (fa !== fb) return fa ? -1 : 1
+          return (fa ? da.localeCompare(db) : db.localeCompare(da)) || a.start - b.start
+        })
+        .slice(0, 30)
+      const tasks = data.tasks.filter((t) => has(t.title) || has(t.subtitle) || has(t.category)).slice(0, 20)
+      return reply({ events: found, tasks })
+    },
     getMonthDots: (year, month) => reply(monthDotsFor(year, month, monthEvents(year, month))),
     getTasks: () => reply([...data.tasks]),
     createTask(input) {

@@ -179,3 +179,17 @@ func (s *pgStore) SetRSVP(ctx context.Context, eventID string, status model.RSVP
 	}
 	return nil
 }
+
+func (s *pgStore) SearchEvents(ctx context.Context, query string, limit int) []model.Event {
+	u, err := uid(ctx)
+	if err != nil || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	// Подстрока без учёта регистра; «ё» и «е» не различаем. Спецсимволы LIKE экранируем.
+	q := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(strings.ReplaceAll(strings.ToLower(query), "ё", "е"))
+	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events WHERE user_id = $1 AND (
+			replace(lower(title), 'ё', 'е') LIKE '%' || $2 || '%' OR replace(lower(subtitle), 'ё', 'е') LIKE '%' || $2 || '%'
+			OR replace(lower(notes), 'ё', 'е') LIKE '%' || $2 || '%')
+		ORDER BY created_at DESC, id DESC LIMIT $3`, u, q, limit)
+	return collectEvents(rows, err)
+}

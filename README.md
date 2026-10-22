@@ -138,6 +138,7 @@ Workflow `.github/workflows/deploy.yml` публикует статическу�
 | `DELETE /api/events/{id}`                         | Удалить событие                                                                                                                           |
 | `POST /api/events/{id}/rsvp`                      | Ответ приглашённого `{status: accepted\|declined\|pending}`; позвать — `attendees: ["логин"]` в POST/PATCH события                        |
 | `GET /api/month?year=&month=`                     | Значки событий по дням месяца (месяц с 1)                                                                                                 |
+| `GET /api/search?q=`                              | Поиск по своим событиям (название, место, заметки; серия — ближайшим вхождением) и задачам                                                |
 | `GET/POST /api/tasks`                             | Задачи и цели: `{title, subtitle?, kind?, category?, due?, members?}` — `members` добавляет логинов                                       |
 | `PATCH /api/tasks/{id}`                           | Обновить поля; `members` дособирает участников; новые `@логины` в тексте тоже делят                                                       |
 | `DELETE /api/tasks/{id}`                          | Владелец — удаляет для всех, участник — выходит                                                                                           |

@@ -271,4 +271,18 @@ describe('local api', () => {
       api.createEvent({ title: 'x', date: day, start: 600, end: 660, url: 'ftp://x' }),
     ).rejects.toBeInstanceOf(ApiError)
   })
+
+  it('поиск: по названию, месту и заметкам, без регистра и «ё», серия — ближайшим днём', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const today = new Date()
+    const past = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 20)
+    await api.createEvent({ title: 'Йога с ГЛЕБОМ', date: past, start: 540, end: 600, repeat: 'weekly' })
+    await api.createEvent({ title: 'Обед', subtitle: 'Кафе у Глёба', date: past, start: 780, end: 840 })
+    await api.createTask({ title: 'Подарок Глебу' })
+    const res = await api.search('глеб')
+    expect(res.events.map((e) => e.title)).toEqual(['Йога с ГЛЕБОМ', 'Обед'])
+    expect(res.events[0]!.date >= new Date(today.getFullYear(), today.getMonth(), today.getDate())).toBe(true)
+    expect(res.tasks).toHaveLength(1)
+    await expect(api.search('г')).rejects.toBeInstanceOf(ApiError)
+  })
 })

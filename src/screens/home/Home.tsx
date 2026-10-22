@@ -8,7 +8,7 @@ import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { TapToSay } from '../../components/BottomBar'
-import { ArrowRightIcon, CalendarIcon, PlusIcon, SlidersIcon } from '../../components/Icons'
+import { ArrowRightIcon, CalendarIcon, PlusIcon, SearchIcon, SlidersIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
 import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import type { DatedEvent, Task } from '../../domain/types'
@@ -77,6 +77,9 @@ export function Home() {
           </span>
         </Pressable>
         <div className={styles.topRight}>
+          <CircleButton tone="white" size={44} onClick={() => setSheet('search')} aria-label="Поиск">
+            <SearchIcon size={19} />
+          </CircleButton>
           {api.mode === 'local' && (
             <CircleButton tone="white" size={44} onClick={() => setSheet('account')} aria-label="Настройки">
               <SlidersIcon size={19} />
@@ -161,7 +164,7 @@ export function Home() {
           />
         )}
       </AnimatePresence>
-      <HomeSheets sheet={sheet} onSheet={setSheet} oauthReturn={oauthReturn} />
+      <HomeSheets sheet={sheet} onSheet={setSheet} oauthReturn={oauthReturn} onDay={openDay} onTask={setTaskSheet} />
     </Sheet>
   )
 }

@@ -27,6 +27,7 @@ import type {
   PushInfo,
   PushSubscriptionData,
   Rsvp,
+  SearchResult,
   Task,
   TaskPatch,
   User,
@@ -63,6 +64,8 @@ export interface CalendarApi {
   rsvpEvent(id: string, status: Rsvp): Promise<Invite>
   /** Месяц с 0, как в Date. */
   getMonthDots(year: number, month: number): Promise<MonthDots>
+  /** Поиск по своим событиям (название, место, заметки) и задачам; запрос от 2 символов. */
+  search(query: string): Promise<SearchResult>
   /** Задачи и цели в порядке создания. */
   getTasks(): Promise<Task[]>
   createTask(input: NewTask): Promise<Task>

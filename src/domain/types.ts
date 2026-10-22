@@ -352,3 +352,6 @@ export type Person = {
 }
 
 export type PersonInput = Omit<Person, 'id'>
+
+/** Результат поиска: события (серия — ближайшим вхождением, предстоящие первыми) и задачи. */
+export type SearchResult = { events: DatedEvent[]; tasks: Task[] }
