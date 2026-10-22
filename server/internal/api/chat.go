@@ -253,6 +253,7 @@ func chatRules(now time.Time) string {
 - Просят что-то запланировать — сначала посмотри день (get_day_schedule или find_free_slots), потом create_event. Если день или время не указаны, выбери разумное свободное окно сам и сообщи, что выбрал; уточняй, только когда совсем непонятно.
 - Просят изменить или перенести событие — update_event с id из get_day_schedule.
 - День рождения, отпуск, «весь день» — create_event с all_day: true, без start и end.
+- Несколько дней (конференция, поездка, отпуск) — end_date: последний день; start — время в первый день, end — в последний. Дорога до места — travel_minutes (время до начала тоже займётся, придёт «пора выезжать»). Ссылка на созвон или билет — url, подробности — notes.
 - «Напомни за час до встречи» — reminders в create_event/update_event (минуты до начала). «Напомни позвонить маме в 18:00» без встречи — create_reminder. Напоминания приходят пуш-уведомлением на устройства, где пользователь включил уведомления в настройках аккаунта.
 - «Каждый вторник», «по будням», «каждый месяц» — repeat в create_event. Правка повторяющегося события меняет всю серию; удалить один день можно только в приложении.
 - Даты в инструментах — ГГГГ-ММ-ДД, время — ЧЧ:ММ.
@@ -314,7 +315,11 @@ var chatTools = []llm.Tool{
 					"description": "За сколько минут до начала напомнить пуш-уведомлением: [60] — за час, [0] — в момент начала, [] — не напоминать. Не указывай, если пользователь не просил — сработает его напоминание по умолчанию"},
 				"repeat": map[string]any{"type": "string", "enum": []string{"", "daily", "weekdays", "weekly", "monthly", "yearly"},
 					"description": "Повтор: daily — каждый день, weekdays — по будням, weekly — каждую неделю в этот день, monthly — каждый месяц, yearly — каждый год"},
-				"repeat_until": map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
+				"repeat_until":   map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
+				"notes":          map[string]any{"type": "string", "description": "Заметки к событию"},
+				"url":            map[string]any{"type": "string", "description": "Ссылка: созвон, билет, страница"},
+				"travel_minutes": map[string]any{"type": "integer", "minimum": 0, "maximum": 240, "description": "Сколько минут добираться до места: время до начала тоже займётся, придёт «пора выезжать»"},
+				"end_date":       map[string]any{"type": "string", "description": "Последний день многодневного события (конференция, отпуск), ГГГГ-ММ-ДД; end — время в этот день"},
 			},
 			"required":             []string{"date", "title"},
 			"additionalProperties": false,
@@ -339,7 +344,11 @@ var chatTools = []llm.Tool{
 					"description": "Новые напоминания: за сколько минут до начала ([15], [1440, 60]); [] — не напоминать"},
 				"repeat": map[string]any{"type": "string", "enum": []string{"", "daily", "weekdays", "weekly", "monthly", "yearly"},
 					"description": "Новый повтор; пустая строка — убрать повтор"},
-				"repeat_until": map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
+				"repeat_until":   map[string]any{"type": "string", "description": "Последний день повтора, ГГГГ-ММ-ДД; пусто — бессрочно"},
+				"notes":          map[string]any{"type": "string", "description": "Заметки; пустая строка убирает"},
+				"url":            map[string]any{"type": "string", "description": "Ссылка; пустая строка убирает"},
+				"travel_minutes": map[string]any{"type": "integer", "minimum": 0, "maximum": 240, "description": "Минуты дороги; 0 — без дороги"},
+				"end_date":       map[string]any{"type": "string", "description": "Последний день многодневного события; пусто — однодневное"},
 			},
 			"required":             []string{"event_id"},
 			"additionalProperties": false,
@@ -561,13 +570,23 @@ type toolEvent struct {
 	// NoReminders — напоминания у события выключены.
 	NoReminders bool `json:"no_reminders,omitempty"`
 	// Repeat — событие повторяется (вхождение серии: id общий, правка меняет всю серию).
-	Repeat string `json:"repeat,omitempty"`
+	Repeat  string `json:"repeat,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Travel  int    `json:"travel_minutes,omitempty"`
+	EndDate string `json:"end_date,omitempty"`
+	// SpanStart — у дня многодневного события: когда оно началось (ГГГГ-ММ-ДД ЧЧ:ММ).
+	SpanStart string `json:"span_start,omitempty"`
 }
 
 func toToolEvent(e model.Event) toolEvent {
 	t := toolEvent{ID: e.ID, Title: e.Title, Subtitle: e.Subtitle, Badge: string(e.Badge),
 		AllDay: e.AllDay, ReadOnly: e.ReadOnly, External: e.Source != "",
-		Reminders: e.Reminders, NoReminders: e.Reminders != nil && len(e.Reminders) == 0, Repeat: string(e.Repeat)}
+		Reminders: e.Reminders, NoReminders: e.Reminders != nil && len(e.Reminders) == 0, Repeat: string(e.Repeat),
+		Notes: e.Notes, URL: e.URL, Travel: e.Travel, EndDate: e.EndDate}
+	if e.Span != nil {
+		t.SpanStart = e.Span.Date + " " + hm(e.Span.Start)
+	}
 	if !e.AllDay {
 		t.Start, t.End = hm(e.Start), hm(e.End)
 	}
@@ -644,8 +663,20 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if allDay {
 		start, end, okS, okE = 0, dayMinutes, true, true
 	}
-	if !okS || !okE || validateRange(start, end) != nil {
-		return `{"error":"start/end должны быть ЧЧ:ММ, конец позже начала (или all_day: true)"}`, toolMeta{}
+	endDate := strArg(args, "end_date")
+	if !okS || !okE {
+		return `{"error":"start/end должны быть ЧЧ:ММ (или all_day: true)"}`, toolMeta{}
+	}
+	if end == 0 && endDate != "" {
+		end = dayMinutes // «до 00:00» последнего дня — до конца суток
+	}
+	shape := model.Event{Date: day.Format(time.DateOnly), Start: start, End: end, EndDate: endDate, Repeat: model.Repeat(strArg(args, "repeat"))}
+	if err := validateEventShape(shape); err != nil {
+		return toolErr(err, "конец должен быть позже начала"), toolMeta{}
+	}
+	notes, link, travel := strArg(args, "notes"), strArg(args, "url"), intArg(args, "travel_minutes", 0)
+	if err := validateDetails(notes, link, travel); err != nil {
+		return toolErr(err, "неверные детали события"), toolMeta{}
 	}
 	badge := model.Badge(strArg(args, "badge"))
 	if badge == "" {
@@ -665,7 +696,7 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
 		Start: start, End: end, Badge: badge, Highlight: true, Reminders: reminders,
-		Repeat: repeat, RepeatUntil: until, AllDay: allDay,
+		Repeat: repeat, RepeatUntil: until, AllDay: allDay, Notes: notes, URL: link, Travel: travel, EndDate: endDate,
 	})
 	if err != nil {
 		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
@@ -770,6 +801,16 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 		u := strArg(args, "repeat_until")
 		patch.RepeatUntil = &u
 	}
+	for key, dst := range map[string]**string{"notes": &patch.Notes, "url": &patch.URL, "end_date": &patch.EndDate} {
+		if _, ok := args[key]; ok {
+			v := strArg(args, key)
+			*dst = &v
+		}
+	}
+	if _, ok := args["travel_minutes"]; ok {
+		v := intArg(args, "travel_minutes", 0)
+		patch.Travel = &v
+	}
 	cur, err := s.store.Event(ctx, id)
 	if err != nil {
 		return `{"error":"событие не найдено"}`, toolMeta{}
@@ -787,8 +828,11 @@ func (s *server) toolUpdateEvent(ctx context.Context, args map[string]any) (stri
 	}
 	merged := cur
 	merged.Apply(patch)
-	if validateRange(merged.Start, merged.End) != nil {
-		return `{"error":"конец должен быть позже начала"}`, toolMeta{}
+	if err := validateDetails(merged.Notes, merged.URL, merged.Travel); err != nil {
+		return toolErr(err, "неверные детали события"), toolMeta{}
+	}
+	if err := validateEventShape(merged); err != nil {
+		return toolErr(err, "конец должен быть позже начала"), toolMeta{}
 	}
 	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {
 		return toolErr(err, "неверный повтор"), toolMeta{}

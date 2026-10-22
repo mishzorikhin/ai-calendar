@@ -115,9 +115,29 @@ func planReminders(loc *time.Location, ns model.NotifySettings, events []model.E
 		if e.AllDay {
 			continue // у событий на весь день нет времени — они попадают в сводку
 		}
+		if e.Span != nil && e.Date != e.Span.Date {
+			continue // многодневное событие напоминает о себе только в первый день
+		}
 		start, ok := localTime(e.Date, e.Start, loc)
 		if !ok {
 			continue
+		}
+		// Дорога: в момент выезда — «пора выезжать». Задана явно, поэтому приходит и в тихие часы.
+		if e.Travel > 0 {
+			if at := start.Add(-time.Duration(e.Travel) * time.Minute); inWindow(at) {
+				out = append(out, reminder{
+					key: fmt.Sprintf("travel:%s:%s:%d:%d", e.ID, e.Date, e.Start, e.Travel),
+					at:  at,
+					msg: model.PushMessage{
+						Kind:  model.PushEvent,
+						Title: "Пора выезжать: " + e.Title,
+						Body:  travelBody(e),
+						URL:   "/#day/" + e.Date,
+						Tag:   "travel:" + e.ID,
+					},
+					opt: pushOpts{ttl: max(start.Sub(at), time.Minute), urgency: webpush.UrgencyHigh},
+				})
+			}
 		}
 		explicit := e.Reminders != nil
 		offsets := e.Reminders
@@ -255,6 +275,15 @@ func eventReminderBody(e model.Event, off int) string {
 		parts = append(parts, e.Subtitle)
 	}
 	return strings.Join(parts, " · ")
+}
+
+// travelBody — «Дорога 30 минут, начало в 10:00 · Кофейня».
+func travelBody(e model.Event) string {
+	body := fmt.Sprintf("Дорога %s, начало в %s", plural(e.Travel, "минута", "минуты", "минут"), clock(e.Start))
+	if e.Subtitle != "" {
+		body += " · " + e.Subtitle
+	}
+	return body
 }
 
 // digestBody — «3 встречи, первая в 10:00 — Звонок. 2 задачи со сроком сегодня»; false — день пуст.

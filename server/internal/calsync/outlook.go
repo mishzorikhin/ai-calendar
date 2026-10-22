@@ -31,6 +31,13 @@ type graphEvent struct {
 	Start       graphTime `json:"start"`
 	End         graphTime `json:"end"`
 	Location    *graphLoc `json:"location,omitempty"`
+	// BodyPreview и OnlineMeeting только читаем: тело письма-приглашения обратно не пишем.
+	BodyPreview   string        `json:"bodyPreview,omitempty"`
+	OnlineMeeting *graphMeeting `json:"onlineMeeting,omitempty"`
+}
+
+type graphMeeting struct {
+	JoinURL string `json:"joinUrl"`
 }
 
 type graphLoc struct {
@@ -52,7 +59,7 @@ func (o *Outlook) Fetch(ctx context.Context, from, to time.Time) ([]Occurrence, 
 		"startDateTime": {from.UTC().Format(time.RFC3339)},
 		"endDateTime":   {to.UTC().Format(time.RFC3339)},
 		"$top":          {"200"},
-		"$select":       {"id,subject,location,start,end,isAllDay,isCancelled,changeKey"},
+		"$select":       {"id,subject,location,start,end,isAllDay,isCancelled,changeKey,bodyPreview,onlineMeeting"},
 	}
 	// Время — в UTC, чтобы не разбирать Windows-имена поясов.
 	h := http.Header{"Prefer": {`outlook.timezone="UTC"`}}
@@ -95,6 +102,10 @@ func graphOccurrence(ev graphEvent) (Occurrence, bool) {
 	o := Occurrence{UID: ev.ID, ExternalID: ev.ID, ETag: ev.ChangeKey, Title: ev.Subject, Start: s, End: e, AllDay: ev.IsAllDay}
 	if ev.Location != nil {
 		o.Location = ev.Location.DisplayName
+	}
+	o.Notes = ev.BodyPreview
+	if ev.OnlineMeeting != nil {
+		o.URL = ev.OnlineMeeting.JoinURL
 	}
 	if o.Title == "" {
 		o.Title = "Без названия"

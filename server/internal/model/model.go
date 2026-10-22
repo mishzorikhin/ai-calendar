@@ -66,6 +66,14 @@ type Event struct {
 	// Travel — сколько минут добираться до места: время до начала тоже занято, напоминание —
 	// «пора выезжать».
 	Travel int `json:"travel,omitempty"`
+	// Notes — заметки, URL — ссылка (созвон, билет). Место — Subtitle.
+	Notes string `json:"notes,omitempty"`
+	URL   string `json:"url,omitempty"`
+	// EndDate — последний день многодневного события (пусто — однодневное). В хранилище одна
+	// запись; по дням его разворачивает API (eventsBetween): у вхождений Date — свой день,
+	// Start/End — отрезок этого дня, а Span — исходные день и время.
+	EndDate string     `json:"endDate,omitempty"`
+	Span    *EventSpan `json:"span,omitempty"`
 	// Reminders — за сколько минут до начала напомнить. nil — как в настройках
 	// пользователя (события внешних календарей и созданные до напоминаний), [] — не напоминать.
 	Reminders []int `json:"reminders"`
@@ -78,6 +86,16 @@ type Event struct {
 	ExDates     []string  `json:"exdates,omitempty"`
 	CreatedAt   time.Time `json:"createdAt,omitempty"`
 }
+
+// EventSpan — исходные начало и конец многодневного события у его вхождения в другой день.
+type EventSpan struct {
+	Date  string `json:"date"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// MaxSpanDays — самое длинное многодневное событие.
+const MaxSpanDays = 60
 
 // Repeat — правило повтора события.
 type Repeat string
@@ -121,6 +139,11 @@ type EventPatch struct {
 	ExDates     *[]string
 	// AllDay: true — на весь день (время 0–1440), false — снова со временем (Start и End — из патча).
 	AllDay *bool
+	// Notes, URL, Travel; EndDate: "" — снова однодневное.
+	Notes   *string
+	URL     *string
+	Travel  *int
+	EndDate *string
 }
 
 // Apply применяет патч к событию на месте.
@@ -167,12 +190,25 @@ func (e *Event) Apply(p EventPatch) {
 	if p.SkipDate != nil && !slices.Contains(e.ExDates, *p.SkipDate) {
 		e.ExDates = append(slices.Clone(e.ExDates), *p.SkipDate)
 	}
+	if p.Notes != nil {
+		e.Notes = *p.Notes
+	}
+	if p.URL != nil {
+		e.URL = *p.URL
+	}
+	if p.Travel != nil {
+		e.Travel = *p.Travel
+	}
+	if p.EndDate != nil {
+		e.EndDate = *p.EndDate
+	}
 }
 
 // OnlyReminders — патч меняет только напоминания: во внешний календарь писать нечего.
 func (p EventPatch) OnlyReminders() bool {
 	return p.Reminders != nil && p.Title == nil && p.Subtitle == nil && p.Date == nil &&
-		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil && p.AllDay == nil
+		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil && p.AllDay == nil &&
+		p.Notes == nil && p.URL == nil && p.Travel == nil && p.EndDate == nil
 }
 
 // TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).

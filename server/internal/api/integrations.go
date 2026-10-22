@@ -510,7 +510,10 @@ func (s *server) serveFeed(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var comps []*calsync.Component
-	for _, e := range s.eventsBetween(ctx, from, to) {
+	// Многодневное событие уходит в ленту одним VEVENT от первого до последнего дня, а не по дням.
+	events := slices.DeleteFunc(s.eventsBetween(ctx, from, to), func(e model.Event) bool { return e.Span != nil })
+	events = append(events, s.store.MultiDayEvents(ctx, from, to)...)
+	for _, e := range events {
 		if e.Source != "" {
 			continue
 		}

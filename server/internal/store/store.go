@@ -116,6 +116,9 @@ type Store interface {
 	// RepeatingEvents — повторяющиеся события пользователя, чья серия пересекает [from, to]:
 	// начинается не позже to и не закончилась до from.
 	RepeatingEvents(ctx context.Context, from, to string) []model.Event
+	// MultiDayEvents — многодневные события пользователя (EndDate), пересекающие [from, to]:
+	// начинаются не позже to и заканчиваются не раньше from. По дням их разворачивает API.
+	MultiDayEvents(ctx context.Context, from, to string) []model.Event
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
@@ -983,8 +986,10 @@ func (s *fileStore) SyncEvents(ctx context.Context, source string, events []mode
 func mergeSynced(e *model.Event, in model.Event) bool {
 	changed := e.Date != in.Date || e.Title != in.Title || e.Subtitle != in.Subtitle ||
 		e.Start != in.Start || e.End != in.End || e.Badge != in.Badge ||
-		e.ETag != in.ETag || e.ReadOnly != in.ReadOnly || e.AllDay != in.AllDay
+		e.ETag != in.ETag || e.ReadOnly != in.ReadOnly || e.AllDay != in.AllDay ||
+		e.Notes != in.Notes || e.URL != in.URL
 	e.Date, e.Title, e.Subtitle = in.Date, in.Title, in.Subtitle
+	e.Notes, e.URL = in.Notes, in.URL
 	e.Start, e.End, e.Badge = in.Start, in.End, in.Badge
 	e.ETag, e.ReadOnly, e.AllDay = in.ETag, in.ReadOnly, in.AllDay
 	// Напоминания — настройка пользователя в приложении, синхронизация их не трогает.
@@ -1349,6 +1354,22 @@ func (s *fileStore) RepeatingEvents(ctx context.Context, from, to string) []mode
 	var out []model.Event
 	for _, e := range s.d.Events {
 		if e.UserID == uid && e.Repeat != model.RepeatNone && e.Date <= to && (e.RepeatUntil == "" || e.RepeatUntil >= from) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) MultiDayEvents(ctx context.Context, from, to string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Event
+	for _, e := range s.d.Events {
+		if e.UserID == uid && e.EndDate != "" && e.Date <= to && e.EndDate >= from {
 			out = append(out, e)
 		}
 	}

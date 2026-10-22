@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +22,9 @@ import (
 const (
 	maxTitle    = 120
 	maxSubtitle = 200
+	maxNotes    = 2000
+	maxLinkLen  = 500
+	maxTravel   = 240
 	maxMessage  = 2000
 	dayMinutes  = 24 * 60
 )
@@ -203,6 +207,11 @@ type eventInput struct {
 	RepeatUntil string       `json:"repeatUntil"`
 	// AllDay — на весь день: Start и End не нужны (станут 0 и 1440).
 	AllDay bool `json:"allDay"`
+	// Notes — заметки, URL — ссылка, Travel — минуты дороги, EndDate — последний день многодневного.
+	Notes   string `json:"notes"`
+	URL     string `json:"url"`
+	Travel  int    `json:"travel"`
+	EndDate string `json:"endDate"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -228,6 +237,53 @@ func validateReminders(r []int) ([]int, error) {
 func validateSubtitle(v string) error {
 	if utf8.RuneCountInString(v) > maxSubtitle {
 		return badRequest("Подзаголовок не длиннее %d символов", maxSubtitle)
+	}
+	return nil
+}
+
+// validateDetails — заметки, ссылка и дорога (по отдельности).
+func validateDetails(notes, link string, travel int) error {
+	if utf8.RuneCountInString(notes) > maxNotes {
+		return badRequest("Заметки — не длиннее %d символов", maxNotes)
+	}
+	if link != "" {
+		u, err := url.Parse(link)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(link) > maxLinkLen {
+			return badRequest("Ссылка — адрес http(s):// не длиннее %d символов", maxLinkLen)
+		}
+	}
+	if travel < 0 || travel > maxTravel {
+		return badRequest("Дорога — от 0 до %d минут", maxTravel)
+	}
+	return nil
+}
+
+// validateEventShape — проверки, где поля события зависят друг от друга: интервал времени,
+// многодневное событие (конец позже начала, не длиннее MaxSpanDays, без повтора).
+func validateEventShape(e model.Event) error {
+	if e.EndDate == "" {
+		return validateRange(e.Start, e.End)
+	}
+	first, err := parseDate(e.Date)
+	if err != nil {
+		return err
+	}
+	last, err := parseDate(e.EndDate)
+	if err != nil {
+		return err
+	}
+	if !last.After(first) {
+		return badRequest("Последний день должен быть позже первого")
+	}
+	if last.Sub(first) > model.MaxSpanDays*24*time.Hour {
+		return badRequest("Многодневное событие — не длиннее %d дней", model.MaxSpanDays)
+	}
+	if e.Repeat != model.RepeatNone {
+		return badRequest("Многодневное событие не повторяется")
+	}
+	// Время — начало в первый день и конец в последний: конец может быть «раньше» начала.
+	if e.Start < 0 || e.Start >= dayMinutes || e.End <= 0 || e.End > dayMinutes {
+		return badRequest("Время задано неверно: начало %d, конец %d (минуты от полуночи)", e.Start, e.End)
 	}
 	return nil
 }
@@ -258,7 +314,11 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if in.AllDay {
 		in.Start, in.End = 0, dayMinutes
 	}
-	if err := validateRange(in.Start, in.End); err != nil {
+	in.Notes, in.URL = strings.TrimSpace(in.Notes), strings.TrimSpace(in.URL)
+	if err := validateDetails(in.Notes, in.URL, in.Travel); err != nil {
+		return err
+	}
+	if err := validateEventShape(model.Event{Date: in.Date, Start: in.Start, End: in.End, EndDate: in.EndDate, Repeat: in.Repeat}); err != nil {
 		return err
 	}
 	if in.Badge == "" {
@@ -277,6 +337,7 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
+		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate,
 	})
 	if err != nil {
 		return err
@@ -303,7 +364,12 @@ type eventPatchInput struct {
 	// Skip — убрать из серии один день (удалить «только это»).
 	Skip *string `json:"skip"`
 	// AllDay: true — на весь день; false — снова со временем (передайте start и end).
-	AllDay *bool `json:"allDay"`
+	AllDay *bool   `json:"allDay"`
+	Notes  *string `json:"notes"`
+	URL    *string `json:"url"`
+	Travel *int    `json:"travel"`
+	// EndDate: "" — снова однодневное.
+	EndDate *string `json:"endDate"`
 }
 
 // remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
@@ -351,6 +417,11 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	for _, v := range []*string{in.Notes, in.URL} {
+		if v != nil {
+			*v = strings.TrimSpace(*v)
+		}
+	}
 	for _, d := range []*string{in.Occurrence, in.Skip} {
 		if d != nil {
 			if _, err := parseDate(*d); err != nil {
@@ -381,6 +452,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	patch := model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip, AllDay: in.AllDay,
+		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate,
 	}
 	if in.Occurrence != nil {
 		if err := seriesPatch(current, *in.Occurrence, &patch); err != nil {
@@ -389,7 +461,10 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	}
 	merged := current
 	merged.Apply(patch)
-	if err := validateRange(merged.Start, merged.End); err != nil {
+	if err := validateDetails(merged.Notes, merged.URL, merged.Travel); err != nil {
+		return err
+	}
+	if err := validateEventShape(merged); err != nil {
 		return err
 	}
 	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {

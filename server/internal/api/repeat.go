@@ -16,17 +16,58 @@ import (
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
 )
 
-// eventsBetween — события пользователя с from по to (ГГГГ-ММ-ДД) с развёрнутыми повторами.
+// eventsBetween — события пользователя с from по to (ГГГГ-ММ-ДД) с развёрнутыми повторами
+// и многодневными событиями (по вхождению на каждый день).
 func (s *server) eventsBetween(ctx context.Context, from, to string) []model.Event {
 	stored := s.store.EventsBetween(ctx, from, to)
 	out := make([]model.Event, 0, len(stored))
 	for _, e := range stored {
-		if e.Repeat == model.RepeatNone {
+		if e.Repeat == model.RepeatNone && e.EndDate == "" {
 			out = append(out, e)
 		}
 	}
 	for _, e := range s.store.RepeatingEvents(ctx, from, to) {
 		out = append(out, expandRepeat(e, from, to)...)
+	}
+	for _, e := range s.store.MultiDayEvents(ctx, from, to) {
+		out = append(out, expandSpan(e, from, to)...)
+	}
+	return out
+}
+
+// expandSpan — дни многодневного события в окне [from, to]. Первый день — с начала до полуночи,
+// последний — с полуночи до конца, средние (и все дни события «весь день») — на весь день.
+// У каждого вхождения Span хранит исходные день и время: по ним шторка события правит запись.
+func expandSpan(e model.Event, from, to string) []model.Event {
+	first, err1 := time.Parse(time.DateOnly, e.Date)
+	last, err2 := time.Parse(time.DateOnly, e.EndDate)
+	lo, err3 := time.Parse(time.DateOnly, from)
+	hi, err4 := time.Parse(time.DateOnly, to)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return nil
+	}
+	if lo.Before(first) {
+		lo = first
+	}
+	if hi.After(last) {
+		hi = last
+	}
+	var out []model.Event
+	for d := lo; !d.After(hi); d = d.AddDate(0, 0, 1) {
+		occ := e
+		occ.Date = d.Format(time.DateOnly)
+		occ.Span = &model.EventSpan{Date: e.Date, Start: e.Start, End: e.End}
+		occ.Highlight = e.Highlight && d.Equal(first)
+		switch {
+		case e.AllDay:
+		case d.Equal(first):
+			occ.End = dayMinutes
+		case d.Equal(last):
+			occ.Start = 0
+		default:
+			occ.Start, occ.End, occ.AllDay = 0, dayMinutes, true
+		}
+		out = append(out, occ)
 	}
 	return out
 }

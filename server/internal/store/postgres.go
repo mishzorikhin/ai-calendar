@@ -199,6 +199,12 @@ var schema = []string{
 	`ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS badge_reminders JSONB`,
 	`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS snoozes_user ON snoozes (user_id, at)`,
+	// Заметки, ссылка, дорога и многодневные события.
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS url TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS travel INT NOT NULL DEFAULT 0`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS end_date TEXT NOT NULL DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS events_multiday ON events (user_id, end_date) WHERE end_date <> ''`,
 	`CREATE TABLE IF NOT EXISTS server_keys (
 		name  TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -354,14 +360,16 @@ func uid(ctx context.Context) (int64, error) {
 }
 
 const eventColumns = `id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-	source, external_id, etag, read_only, all_day, reminders::text, repeat, repeat_until, exdates::text`
+	source, external_id, etag, read_only, all_day, reminders::text, repeat, repeat_until, exdates::text,
+	notes, url, travel, end_date`
 
 func scanEvent(row pgx.Row) (model.Event, error) {
 	var e model.Event
 	var userID *int64
 	var reminders, exdates *string
 	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt,
-		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders, &e.Repeat, &e.RepeatUntil, &exdates)
+		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders, &e.Repeat, &e.RepeatUntil, &exdates,
+		&e.Notes, &e.URL, &e.Travel, &e.EndDate)
 	if userID != nil {
 		e.UserID = *userID
 	}
@@ -456,11 +464,13 @@ func (s *pgStore) CreateEvent(ctx context.Context, e model.Event) (model.Event, 
 		return model.Event{}, err
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-			source, external_id, etag, read_only, all_day, reminders, repeat, repeat_until, exdates)
-		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18::jsonb)
+			source, external_id, etag, read_only, all_day, reminders, repeat, repeat_until, exdates, notes, url, travel, end_date)
+		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18::jsonb,
+			$19, $20, $21, $22)
 		RETURNING id`,
 		e.UserID, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, e.Highlight, e.CreatedAt,
-		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay, reminders, e.Repeat, e.RepeatUntil, exdates).Scan(&e.ID)
+		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay, reminders, e.Repeat, e.RepeatUntil, exdates,
+		e.Notes, e.URL, e.Travel, e.EndDate).Scan(&e.ID)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("создание события: %w", err)
 	}
@@ -498,9 +508,10 @@ func (s *pgStore) UpdateEvent(ctx context.Context, id string, patch model.EventP
 		return model.Event{}, err
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE events SET date=$3, title=$4, subtitle=$5, start_min=$6, end_min=$7, badge=$8, reminders=$9::jsonb,
-			repeat=$10, repeat_until=$11, exdates=$12::jsonb, all_day=$13
+			repeat=$10, repeat_until=$11, exdates=$12::jsonb, all_day=$13, notes=$14, url=$15, travel=$16, end_date=$17
 		WHERE id=$1 AND user_id=$2`,
-		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders, e.Repeat, e.RepeatUntil, exdates, e.AllDay)
+		e.ID, u, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, reminders, e.Repeat, e.RepeatUntil, exdates, e.AllDay,
+		e.Notes, e.URL, e.Travel, e.EndDate)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("обновление события: %w", err)
 	}
@@ -1024,6 +1035,16 @@ func (s *pgStore) RepeatingEvents(ctx context.Context, from, to string) []model.
 	return collectEvents(rows, err)
 }
 
+func (s *pgStore) MultiDayEvents(ctx context.Context, from, to string) []model.Event {
+	u, err := uid(ctx)
+	if err != nil {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+eventColumns+` FROM events
+		WHERE user_id = $1 AND end_date <> '' AND date <= $3 AND end_date >= $2`, u, from, to)
+	return collectEvents(rows, err)
+}
+
 func (s *pgStore) SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error) {
 	u, err := uid(ctx)
 	if err != nil {
@@ -1064,17 +1085,19 @@ func (s *pgStore) SyncEvents(ctx context.Context, source string, events []model.
 				continue
 			}
 			if _, err := tx.Exec(ctx, `UPDATE events SET date=$2, title=$3, subtitle=$4, start_min=$5, end_min=$6, badge=$7,
-				etag=$8, read_only=$9, all_day=$10 WHERE id=$1`,
-				cur.ID, cur.Date, cur.Title, cur.Subtitle, cur.Start, cur.End, cur.Badge, cur.ETag, cur.ReadOnly, cur.AllDay); err != nil {
+				etag=$8, read_only=$9, all_day=$10, notes=$11, url=$12 WHERE id=$1`,
+				cur.ID, cur.Date, cur.Title, cur.Subtitle, cur.Start, cur.End, cur.Badge, cur.ETag, cur.ReadOnly, cur.AllDay,
+				cur.Notes, cur.URL); err != nil {
 				return SyncStats{}, fmt.Errorf("обновление события: %w", err)
 			}
 			stats.Updated++
 			continue
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-				source, external_id, etag, read_only, all_day)
-			VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9, $10, $11, $12, $13)`,
-			u, in.Date, in.Title, in.Subtitle, in.Start, in.End, in.Badge, now, source, in.ExternalID, in.ETag, in.ReadOnly, in.AllDay); err != nil {
+				source, external_id, etag, read_only, all_day, notes, url)
+			VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			u, in.Date, in.Title, in.Subtitle, in.Start, in.End, in.Badge, now, source, in.ExternalID, in.ETag, in.ReadOnly, in.AllDay,
+			in.Notes, in.URL); err != nil {
 			return SyncStats{}, fmt.Errorf("добавление события: %w", err)
 		}
 		stats.Added++
