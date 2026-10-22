@@ -47,7 +47,7 @@ func testEventDetails(t *testing.T, s Store) {
 	if got := s.SearchEvents(WithUser(context.Background(), model.User{ID: 999}), "Ёлка", 10); len(got) != 0 {
 		t.Fatalf("чужой поиск: %+v", got)
 	}
-		empty, travel := "", 0
+	empty, travel := "", 0
 	upd, err := s.UpdateEvent(ctx, e.ID, model.EventPatch{EndDate: &empty, URL: &empty, Travel: &travel})
 	if err != nil || upd.EndDate != "" || upd.URL != "" || upd.Travel != 0 || upd.Notes != "Бейдж на входе" {
 		t.Fatalf("правка: %+v %v", upd, err)
