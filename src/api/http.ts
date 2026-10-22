@@ -12,6 +12,7 @@ import type {
   Memory,
   NotifySettings,
   Person,
+  Suggestion,
   Profile,
   PushDevice,
   PushInfo,
@@ -246,6 +247,12 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     createPerson: (input) => post<Person>('/api/people', input),
     updatePerson: (id, input) => request<Person>(`/api/people/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     deletePerson: (id) => request<void>(`/api/people/${id}`, { method: 'DELETE' }),
+    getSuggestions: () => request<Suggestion[]>('/api/suggestions'),
+    acceptSuggestion: async (id) =>
+      (await post<{ suggestion: Suggestion }>(`/api/suggestions/${id}/accept`, {})).suggestion,
+    dismissSuggestion: async (id, mute) => {
+      await post<unknown>(`/api/suggestions/${id}/dismiss`, mute ? { mute: true } : {})
+    },
   }
 }
 

@@ -59,6 +59,8 @@ type server struct {
 	limits  *limits
 	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
 	confirms *confirmations
+	// suggester — когда кому последний раз считали предложения ассистента.
+	suggester suggester
 
 	closedRegistration bool
 	proxy              ProxyMode
@@ -134,6 +136,9 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/people", s.authed(s.createPerson))
 	mux.Handle("PATCH /api/people/{id}", s.authed(s.updatePerson))
 	mux.Handle("DELETE /api/people/{id}", s.authed(s.deletePerson))
+	mux.Handle("GET /api/suggestions", s.authed(s.listSuggestions))
+	mux.Handle("POST /api/suggestions/{id}/accept", s.authed(s.acceptSuggestion))
+	mux.Handle("POST /api/suggestions/{id}/dismiss", s.authed(s.dismissSuggestion))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))

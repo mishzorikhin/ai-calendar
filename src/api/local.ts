@@ -324,6 +324,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         category: input.category,
         done: false,
         due: input.due,
+        createdAt: new Date().toISOString(),
       }
       data.tasks.push(task)
       save()
@@ -519,5 +520,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(undefined)
     },
+    // Предложения считает сервер: в локальном режиме их нет.
+    getSuggestions: () => reply([]),
+    acceptSuggestion: () => Promise.reject(new ApiError(404, 'Предложение не найдено')),
+    dismissSuggestion: () => reply(undefined),
   }
 }

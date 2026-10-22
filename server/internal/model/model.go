@@ -292,6 +292,8 @@ type Task struct {
 	Category TaskCategory `json:"category,omitempty"`
 	Done     bool         `json:"done"`
 	Due      string       `json:"due,omitempty"`
+	// CreatedAt — когда задачу завели: по нему ассистент замечает давно открытые.
+	CreatedAt time.Time `json:"createdAt,omitzero"`
 }
 
 // TaskRole — роль пользователя в совместной задаче.
@@ -497,6 +499,8 @@ const (
 	PushTest   PushKind = "test"
 	// PushReminder — своё напоминание без события («напомни позвонить маме в 18:00»).
 	PushReminder PushKind = "reminder"
+	// PushSuggest — предложение ассистента с кнопками «Да» и «Нет».
+	PushSuggest PushKind = "suggest"
 )
 
 // PushMessage — содержимое уведомления; service worker показывает его как есть.
@@ -512,6 +516,9 @@ type PushMessage struct {
 	TaskID string `json:"taskId,omitempty"`
 	// Badge — сколько встреч и задач ещё осталось сегодня: число на иконке приложения.
 	Badge *int `json:"badge,omitempty"`
+	// SuggestionID и SuggestionAction — для кнопок предложения ассистента (что делает «Да»).
+	SuggestionID     int64  `json:"suggestionId,omitempty"`
+	SuggestionAction string `json:"suggestionAction,omitempty"`
 }
 
 // Snooze — отложенное уведомление («Напомнить через 10 минут»).

@@ -38,7 +38,8 @@ internal/api/     http.go (ошибки, JSON, middleware), api.go (маршру
                   напоминания без события поверх отложенных), repeat.go (развёртка повторов eventsBetween), spa.go (раздача UI),
                   profile.go (профиль и его текст для промпта), slots.go (чистый поиск окон freeSlots), memory.go (память,
                   отбор фактов selectMemories, evidence), people.go (карточки людей, упоминания в тексте),
-                  personal_tools.go (инструменты профиля, памяти и людей)
+                  personal_tools.go (инструменты профиля, памяти и людей), suggestions.go (предложения ассистента:
+                  чистая planSuggestions, accept/dismiss)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 
@@ -165,7 +166,7 @@ web/              embed.go + dist/ (собранный UI, в git только R
   `RLock` и возвращают копии (`slices.Clone`).
 - PostgreSQL: таблицы `users`, `sessions`, `events`, `messages`, `tasks`, `task_members`, `notifications`,
   `integrations`, `push_subscriptions`, `notify_settings`, `sent_reminders`, `snoozes`, `server_keys`, `profiles`, `memories`,
-  `people` создаёт миграция при старте; новые таблицы добавляйте и в `mustWipe` тестов; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
+  `people`, `suggestions` создаёт миграция при старте; новые таблицы добавляйте и в `mustWipe` тестов; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
   Тест — `TEST_DATABASE_URL=… go test -race ./internal/store -run TestPostgres -count=1`
   (без переменной пропускается). `mustWipe` выполняет `TRUNCATE … RESTART IDENTITY`: только отдельная
   одноразовая тестовая БД, никогда рабочая. Не подставляйте продакшен `DATABASE_URL` в тестовую переменную.

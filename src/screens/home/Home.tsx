@@ -22,6 +22,7 @@ import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
 import { HomeSheets, type HomeSheet } from './HomeSheets'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
+import { SuggestionCards } from './SuggestionCards'
 import { TaskSheet } from './TaskSheet'
 import { TasksGrid } from './TasksGrid'
 import styles from './Home.module.css'
@@ -121,6 +122,8 @@ export function Home() {
           </Pressable>
         )}
       </m.section>
+
+      {session && <SuggestionCards />}
 
       <InstallBanner />
 

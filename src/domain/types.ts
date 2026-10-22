@@ -170,6 +170,8 @@ export type Task = {
   members?: User[]
   /** Роль текущего пользователя: владелец удаляет задачу, участник — выходит из неё. */
   role?: 'owner' | 'member'
+  /** Когда задачу завели (ISO). */
+  createdAt?: string
 }
 
 /** Новая задача (до сохранения). members — логины участников, с которыми поделиться. */
@@ -290,6 +292,25 @@ export type Focus = 'none' | 'morning' | 'afternoon' | 'evening'
 export type ProtectedBlock = { title: string; start: number; end: number; days?: number[] }
 
 export type SuggestionKind = 'lunch' | 'stale_task' | 'date' | 'overload' | 'plan_tasks'
+
+/** Что делает «Да»: event — создать событие, task — задачу, chat — открыть чат с запросом. */
+export type SuggestionAction =
+  | { type: 'event'; title: string; date: string; start: number; end: number; badge?: Badge }
+  | { type: 'task'; title: string; due?: string }
+  | { type: 'chat'; prompt: string }
+
+/** Предложение ассистента: он сам заметил, что можно улучшить в расписании. */
+export type Suggestion = {
+  id: number
+  kind: SuggestionKind
+  key: string
+  title: string
+  body: string
+  action: SuggestionAction
+  status: 'pending' | 'accepted' | 'dismissed'
+  createdAt: string
+  expiresAt: string
+}
 
 /** Что пользователь рассказал о себе. Время — минуты от полуночи. */
 export type Profile = {

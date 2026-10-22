@@ -19,6 +19,7 @@ import type {
   NotifySettings,
   Person,
   PersonInput,
+  Suggestion,
   Profile,
   ProfilePatch,
   PushInfo,
@@ -57,6 +58,7 @@ export const keys = {
   search: (q: string) => ['search', q] as const,
   memories: ['memories'] as const,
   people: ['people'] as const,
+  suggestions: ['suggestions'] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -834,6 +836,58 @@ export function useSavePerson() {
       id === undefined ? api.createPerson(input) : api.updatePerson(id, input),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
   })
+}
+
+const NO_SUGGESTIONS: Suggestion[] = []
+
+/** Предложения ассистента, ждущие ответа (карточки на главной). */
+export function useSuggestions() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.suggestions, queryFn: () => api.getSuggestions() })
+  return { ...query, suggestions: query.data ?? NO_SUGGESTIONS }
+}
+
+/** Убрать карточку сразу, вернуть при ошибке. */
+function useAnswerSuggestion<V extends { id: number }>(fn: (vars: V) => Promise<unknown>, after: (vars: V) => void) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: keys.suggestions })
+      const previous = qc.getQueryData<Suggestion[]>(keys.suggestions)
+      qc.setQueryData<Suggestion[]>(keys.suggestions, (list = []) => list.filter((s) => s.id !== vars.id))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.suggestions, ctx?.previous),
+    onSuccess: (_data, vars) => after(vars),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.suggestions }),
+  })
+}
+
+/** «Да»: сервер создаёт событие или задачу — перечитываем их. */
+export function useAcceptSuggestion() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useAnswerSuggestion(
+    ({ id }: { id: number }) => api.acceptSuggestion(id),
+    () => {
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+      void qc.invalidateQueries({ queryKey: keys.tasks })
+    },
+  )
+}
+
+/** «Нет»; mute — «не предлагать такое» (меняет профиль). */
+export function useDismissSuggestion() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useAnswerSuggestion(
+    ({ id, mute }: { id: number; mute?: boolean }) => api.dismissSuggestion(id, mute),
+    ({ mute }) => {
+      if (mute) void qc.invalidateQueries({ queryKey: keys.profile })
+    },
+  )
 }
 
 export function useDeletePerson() {

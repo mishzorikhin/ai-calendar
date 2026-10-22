@@ -208,6 +208,14 @@ type Store interface {
 	// SavePerson создаёт (ID 0) или заменяет карточку; ErrLimit — людей уже MaxPeople.
 	SavePerson(ctx context.Context, p model.Person) (model.Person, error)
 	DeletePerson(ctx context.Context, id int64) error
+
+	// AddSuggestion сохраняет предложение текущего пользователя; false — с таким Key уже было.
+	AddSuggestion(ctx context.Context, sg model.Suggestion) (model.Suggestion, bool, error)
+	// Suggestions — предложения текущего пользователя, созданные не раньше since, новые первыми.
+	Suggestions(ctx context.Context, since time.Time) []model.Suggestion
+	// AnswerSuggestion меняет статус ждущего ответа предложения; ErrNotFound — нет такого,
+	// ErrConflict — на него уже ответили.
+	AnswerSuggestion(ctx context.Context, id int64, status string) (model.Suggestion, error)
 }
 
 // ErrLimit — превышен предел записей.
@@ -272,6 +280,9 @@ type data struct {
 	NextPersonID int64                   `json:"nextPersonId,omitempty"`
 	// EventAttendees — приглашённые на события (по id события).
 	EventAttendees map[string][]storedAttendee `json:"eventAttendees,omitempty"`
+	// Suggestions — предложения ассистента (хранятся suggestionKeep, чтобы не повторяться).
+	Suggestions      []model.Suggestion `json:"suggestions,omitempty"`
+	NextSuggestionID int64              `json:"nextSuggestionId,omitempty"`
 
 	NextID        int   `json:"nextId"`
 	NextUserID    int64 `json:"nextUserId"`
@@ -578,6 +589,7 @@ func (s *fileStore) CreateTask(ctx context.Context, t model.Task) (model.Task, e
 	defer s.mu.Unlock()
 	t.ID = s.nextID("task")
 	t.OwnerID = uid
+	t.CreatedAt = s.now()
 	s.d.Tasks = append(s.d.Tasks, t)
 	out := t
 	out.Members = slices.Clone(t.Members)

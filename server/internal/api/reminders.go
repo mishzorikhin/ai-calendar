@@ -86,6 +86,7 @@ func (s *server) remindUser(ctx context.Context, u model.User, now time.Time) {
 		}
 		_, _ = s.pushTo(ctx, r.msg, r.opt)
 	}
+	s.suggest(ctx, u, now, true)
 }
 
 // localTime — момент «дата + минуты от полуночи» в поясе loc (по настенным часам,

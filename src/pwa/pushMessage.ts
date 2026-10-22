@@ -3,7 +3,7 @@
  * Чистые функции: их использует service worker, тесты гоняются в Node.
  */
 
-export type PushKind = 'event' | 'task' | 'digest' | 'share' | 'test' | 'reminder'
+export type PushKind = 'event' | 'task' | 'digest' | 'share' | 'test' | 'reminder' | 'suggest'
 
 export type PushMessage = {
   kind: PushKind
@@ -17,9 +17,12 @@ export type PushMessage = {
   taskId?: string
   /** Сколько встреч и задач осталось сегодня — число на иконке приложения. */
   badge?: number
+  /** Предложение ассистента: id и что делает «Да» (event, task, chat). */
+  suggestionId?: number
+  suggestionAction?: string
 }
 
-const KINDS: readonly PushKind[] = ['event', 'task', 'digest', 'share', 'test', 'reminder']
+const KINDS: readonly PushKind[] = ['event', 'task', 'digest', 'share', 'test', 'reminder', 'suggest']
 
 /** На сколько откладывает кнопка «Позже»: встречу — на 10 минут, задачу — на час. */
 export const SNOOZE_MINUTES: Record<PushKind, number> = {
@@ -29,6 +32,7 @@ export const SNOOZE_MINUTES: Record<PushKind, number> = {
   share: 60,
   test: 10,
   reminder: 10,
+  suggest: 60,
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined)
@@ -47,6 +51,11 @@ export function parsePushMessage(raw: unknown): PushMessage {
     tag: str(o.tag),
     taskId: str(o.taskId),
     badge: typeof o.badge === 'number' && Number.isInteger(o.badge) && o.badge >= 0 ? o.badge : undefined,
+    suggestionId:
+      typeof o.suggestionId === 'number' && Number.isInteger(o.suggestionId) && o.suggestionId > 0
+        ? o.suggestionId
+        : undefined,
+    suggestionAction: str(o.suggestionAction),
   }
 }
 
@@ -71,6 +80,7 @@ export const VIBRATION: Record<PushKind, number[]> = {
   share: [120, 80, 120],
   test: [200, 100, 200],
   reminder: [200, 100, 200, 100, 200],
+  suggest: [120],
 }
 
 /** Параметры showNotification: иконки берутся из сборки рядом с service worker. */
@@ -103,6 +113,15 @@ export function notificationActions(msg: PushMessage): { action: string; title: 
             { action: 'snooze', title: 'Через час' },
           ]
         : [{ action: 'snooze', title: 'Через час' }]
+    case 'suggest':
+      // «Обсудить в чате» из уведомления не начать: такое открывается по нажатию, на главной.
+      if (!msg.suggestionId) return []
+      return msg.suggestionAction === 'chat'
+        ? [{ action: 'dismiss', title: 'Нет' }]
+        : [
+            { action: 'accept', title: 'Да' },
+            { action: 'dismiss', title: 'Нет' },
+          ]
     default:
       return []
   }

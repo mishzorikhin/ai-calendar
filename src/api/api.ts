@@ -21,6 +21,7 @@ import type {
   NotifySettings,
   Person,
   PersonInput,
+  Suggestion,
   Profile,
   ProfilePatch,
   PushDevice,
@@ -151,6 +152,14 @@ export interface CalendarApi {
   /** Заменить карточку целиком. */
   updatePerson(id: number, input: PersonInput): Promise<Person>
   deletePerson(id: number): Promise<void>
+  /**
+   * Предложения ассистента, ждущие ответа. «Да» выполняет действие на сервере (создаёт событие
+   * или задачу; у chat — ничего, запрос отправляет клиент), «Нет» с mute выключает такой вид.
+   * В локальном режиме предложений нет — их считает сервер.
+   */
+  getSuggestions(): Promise<Suggestion[]>
+  acceptSuggestion(id: number): Promise<Suggestion>
+  dismissSuggestion(id: number, mute?: boolean): Promise<void>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */
