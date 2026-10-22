@@ -63,6 +63,12 @@ describe('local api', () => {
     expect(messages.at(-1)?.role).toBe('ai')
   })
 
+  it('без сервера подтверждать нечего', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    expect(await api.getChatConfirms()).toEqual([])
+    await expect(api.decideChatConfirm('x', true)).rejects.toMatchObject({ status: 410 })
+  })
+
   it('проверяет длины и диапазон времени так же, как сервер', async () => {
     const api = createLocalApi(new MemoryStorage())
     const event = { date: day, start: 600, end: 660 }

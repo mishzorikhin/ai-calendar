@@ -32,7 +32,7 @@ import type {
 } from '../domain/types'
 import { withCheck } from '../domain/habit'
 import { isSameDay, toISODate } from '../lib/dates'
-import { apiErrorText, type MemoryChange } from './api'
+import { apiErrorText, type ChatConfirm, type ChatConfirmResult, type MemoryChange } from './api'
 import { useApi } from './provider'
 import { disablePush } from './push'
 import { useSession } from './session'
@@ -44,6 +44,7 @@ export const keys = {
   month: (year: number, month: number) => ['month', year, month] as const,
   allMonths: ['month'] as const,
   messages: ['messages'] as const,
+  chatConfirms: ['chat-confirms'] as const,
   tasks: ['tasks'] as const,
   me: ['me'] as const,
   users: (q: string) => ['users', q] as const,
@@ -497,6 +498,8 @@ export type ChatStream = {
   tools: ChatToolRun[]
   /** Что запомнилось за ход. */
   memory: MemoryChange[]
+  /** Действия, которые ждут кнопки (после ответа их отдаёт useChatConfirms). */
+  confirms: ChatConfirm[]
   /** Стрим завершён (done или ошибка). */
   done: boolean
   error: string | null
@@ -543,8 +546,10 @@ export function useSendChat() {
         ...list,
         { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: shown },
       ])
-      setStream({ text: '', tools: [], memory: [], done: false, error: null })
+      setStream({ text: '', tools: [], memory: [], confirms: [], done: false, error: null })
       setRemembered([])
+      // Новая реплика снимает прежние карточки и на сервере.
+      qc.setQueryData<ChatConfirm[]>(keys.chatConfirms, [])
       let error: string | null = null
       let delivered = false
       let memory: MemoryChange[] = []
@@ -574,6 +579,9 @@ export function useSendChat() {
             } else if (e.type === 'memory') {
               memory = e.items
               setStream((s) => s && { ...s, memory: [...s.memory, ...e.items] })
+            } else if (e.type === 'confirm') {
+              const card = e.confirm
+              setStream((s) => s && { ...s, confirms: [...s.confirms, card] })
             } else if (e.type === 'error') {
               error = e.message
               setStream((s) => s && { ...s, done: true, error: e.message })
@@ -590,6 +598,7 @@ export function useSendChat() {
       try {
         await Promise.all([
           qc.invalidateQueries({ queryKey: keys.messages }),
+          qc.invalidateQueries({ queryKey: keys.chatConfirms }),
           qc.invalidateQueries({ queryKey: keys.allEvents }),
           qc.invalidateQueries({ queryKey: keys.allMonths }),
           qc.invalidateQueries({ queryKey: keys.tasks }),
@@ -619,6 +628,39 @@ export function useSendChat() {
   /** Ответ ещё идёт или история перечитывается — отправлять новое нельзя. */
   const busy = stream !== null
   return { stream, busy, send, failed, dismissFailed, remembered }
+}
+
+const NO_CONFIRMS: ChatConfirm[] = []
+
+/** Карточки подтверждения, которые ждут ответа: переживают перезагрузку страницы. */
+export function useChatConfirms() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.chatConfirms, queryFn: () => api.getChatConfirms() })
+  return query.data ?? NO_CONFIRMS
+}
+
+/**
+ * Ответ на карточку подтверждения. Итог — реплика ассистента — сразу встаёт в историю,
+ * а дни, месяцы и задачи перечитываются: действие могло их поменять.
+ */
+export function useDecideChatConfirm() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, accept }: { id: string; accept: boolean }) => api.decideChatConfirm(id, accept),
+    onSuccess: (res: ChatConfirmResult, { id }) => {
+      qc.setQueryData<ChatConfirm[]>(keys.chatConfirms, (list = []) => list.filter((c) => c.id !== id))
+      qc.setQueryData<ChatMessage[]>(keys.messages, (list = []) => [...list, res.message])
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.chatConfirms }),
+        qc.invalidateQueries({ queryKey: keys.messages }),
+        qc.invalidateQueries({ queryKey: keys.allEvents }),
+        qc.invalidateQueries({ queryKey: keys.allMonths }),
+        qc.invalidateQueries({ queryKey: keys.tasks }),
+      ]),
+  })
 }
 
 // --- Внешние календари ------------------------------------------------------

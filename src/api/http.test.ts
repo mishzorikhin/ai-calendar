@@ -48,6 +48,27 @@ describe('http api', () => {
     expect(fetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({ method: 'POST' }))
   })
 
+  it('карточка подтверждения приходит в потоке, ответ на неё — отдельный запрос', async () => {
+    const card = { id: 'abc', title: 'Удалить «Созвон»?', button: 'Удалить', date: '2026-10-21' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(`data: ${JSON.stringify({ type: 'confirm', confirm: card })}\n\n`, { status: 200 }),
+      ),
+    )
+    const events: ChatEvent[] = []
+    await createHttpApi().sendChat('убери созвон', (e) => events.push(e))
+    expect(events.at(-1)).toEqual({ type: 'confirm', confirm: card })
+
+    const fetch = mockFetch(200, { message: { id: 9, role: 'ai', text: 'Удалил «Созвон».' }, ok: true })
+    const res = await createHttpApi().decideChatConfirm('a/b', true)
+    expect(res.message.text).toBe('Удалил «Созвон».')
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/chat/confirms/a%2Fb',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ accept: true }) }),
+    )
+  })
+
   it('обрыв потока после приёма — ошибка «связь оборвалась», а не «не отправлено»', async () => {
     let reads = 0
     const body = new ReadableStream<Uint8Array>({

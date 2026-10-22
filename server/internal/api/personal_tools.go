@@ -19,9 +19,6 @@ func object(props map[string]any, required ...string) map[string]any {
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}
 }
 
-var evidenceParam = map[string]any{"type": "string",
-	"description": "Дословный кусок реплики пользователя, где он это сказал (без него ничего не сохранится)"}
-
 var personalTools = []llm.Tool{
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "update_profile",
@@ -49,16 +46,6 @@ var personalTools = []llm.Tool{
 		}),
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
-		Name:        "remember",
-		Description: "Запомнить устойчивый факт о пользователе: привычку, правило, предпочтение, важную дату, место. Только то, что он сказал сам.",
-		Parameters: object(map[string]any{
-			"kind":     map[string]any{"type": "string", "enum": []string{"about", "person", "place", "habit", "preference", "rule", "date", "other"}, "description": "about — о самом пользователе: имя, город, работа, семья"},
-			"text":     map[string]any{"type": "string", "description": "Факт коротко, от третьего лица: «По пятницам после 16:00 не работает»"},
-			"date":     map[string]any{"type": "string", "description": "Для дат: ГГГГ-ММ-ДД или --ММ-ДД (каждый год)"},
-			"evidence": evidenceParam,
-		}, "kind", "text", "evidence"),
-	}},
-	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "forget",
 		Description: "Забыть факт из памяти по id.",
 		Parameters:  object(map[string]any{"memory_id": map[string]any{"type": "integer"}}, "memory_id"),
@@ -70,24 +57,8 @@ var personalTools = []llm.Tool{
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "list_people",
-		Description: "Карточки людей пользователя: кто это, где обычно встречаются, длительность, день рождения, сколько встреч за 90 дней.",
+		Description: "Карточки людей пользователя: кто это, где обычно встречаются, длительность, день рождения, заметки, логин.",
 		Parameters:  object(map[string]any{}),
-	}},
-	{Type: "function", Function: llm.FunctionSpec{
-		Name:        "save_person",
-		Description: "Создать или дополнить карточку человека (person_id — дополнить существующую). Только со слов пользователя.",
-		Parameters: object(map[string]any{
-			"person_id":       map[string]any{"type": "integer", "description": "id существующей карточки; нет — новая"},
-			"name":            map[string]any{"type": "string"},
-			"aliases":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Другие имена: «Глебушка», «Г. Петров»"},
-			"relation":        map[string]any{"type": "string", "description": "Кто это: «коллега», «мама»"},
-			"place":           map[string]any{"type": "string", "description": "Где обычно встречаются"},
-			"meeting_minutes": map[string]any{"type": "integer", "minimum": 15, "maximum": 480},
-			"birthday":        map[string]any{"type": "string", "description": "ГГГГ-ММ-ДД или --ММ-ДД"},
-			"notes":           map[string]any{"type": "string"},
-			"username":        map[string]any{"type": "string", "description": "Логин на сервере, если человек там есть (list_users)"},
-			"evidence":        evidenceParam,
-		}, "evidence"),
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "respond_invitation",
@@ -109,7 +80,7 @@ var personalTools = []llm.Tool{
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "shift_events",
-		Description: "Сдвинуть свои события дня на N минут и/или перенести на другой день: по списку id или все, что начинаются не раньше from. Больше трёх — только после согласия пользователя.",
+		Description: "Сдвинуть свои события дня на N минут и/или перенести на другой день: по списку id или все, что начинаются не раньше from. Больше трёх событий и перенос на другой день выполнятся только по кнопке пользователя.",
 		Parameters: object(map[string]any{
 			"date":      map[string]any{"type": "string", "description": "День, ГГГГ-ММ-ДД"},
 			"minutes":   map[string]any{"type": "integer", "description": "На сколько минут сдвинуть: 60 — на час позже, -30 — на полчаса раньше"},
@@ -120,7 +91,7 @@ var personalTools = []llm.Tool{
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "clear_day",
-		Description: "Освободить день: перенести свои события в ближайшие свободные окна следующих рабочих дней. Всегда только после согласия пользователя.",
+		Description: "Освободить день: перенести свои события в ближайшие свободные окна следующих рабочих дней. Выполнится только по кнопке пользователя.",
 		Parameters:  object(map[string]any{"date": map[string]any{"type": "string", "description": "Какой день, ГГГГ-ММ-ДД"}}, "date"),
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
@@ -130,14 +101,14 @@ var personalTools = []llm.Tool{
 	}},
 }
 
-// memoryWriteTools — инструменты, которые сохраняют новое в память: без памяти их не предлагаем.
-var memoryWriteTools = []string{"remember", "save_person"}
+// memoryTools — инструменты памяти: с выключенной памятью ассистент её не видит и не трогает.
+var memoryTools = []string{"list_memories", "forget", "list_people", "forget_person"}
 
-// chatToolsFor — инструменты для этого пользователя: с выключенной памятью — без записи в неё.
+// chatToolsFor — инструменты для этого пользователя: с выключенной памятью — без памяти.
 func chatToolsFor(p model.Profile) []llm.Tool {
 	out := slices.Concat(chatTools, personalTools)
 	if !p.Memory {
-		out = slices.DeleteFunc(out, func(t llm.Tool) bool { return slices.Contains(memoryWriteTools, t.Function.Name) })
+		out = slices.DeleteFunc(out, func(t llm.Tool) bool { return slices.Contains(memoryTools, t.Function.Name) })
 	}
 	return out
 }

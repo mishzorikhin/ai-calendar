@@ -256,6 +256,15 @@ func batchKey(kind string, parts ...string) string {
 	return fmt.Sprintf("%s:%x", kind, h.Sum64())
 }
 
+// planSig — подпись плана: что, куда и во сколько. Поменялось хоть что-то — это другое действие.
+func planSig(plan []placed) string {
+	var b strings.Builder
+	for _, pl := range plan {
+		fmt.Fprintf(&b, "%s@%s %d-%d;", pl.ID, pl.Date, pl.Start, pl.End)
+	}
+	return b.String()
+}
+
 func idsOf(events []model.Event) []string {
 	out := make([]string, len(events))
 	for i, e := range events {
@@ -304,9 +313,13 @@ func (s *server) moveAll(ctx context.Context, events []model.Event, plan []place
 	return out, nil
 }
 
-// confirmBatch — больше трёх событий (или всегда, если always) двигаем только после согласия.
-func (s *server) confirmBatch(ctx context.Context, turn chatTurn, key string, n int, always bool) bool {
-	return (!always && n <= 3) || s.confirms.confirm(ctx, turn, key)
+// batchCard — карточка подтверждения переноса: что и куда переедет.
+func batchCard(turn chatTurn, key, title, done string, date string, plan []placed) confirmCard {
+	lines := make([]string, 0, len(plan))
+	for _, pl := range plan {
+		lines = append(lines, fmt.Sprintf("%s → %s, %s", pl.Title, strings.ToLower(dayTitle(turn.now, pl.Date)), hm(pl.Start)))
+	}
+	return confirmCard{Key: key, Title: title, Detail: strings.Join(lines, "\n"), Button: "Перенести", Date: date, Done: done}
 }
 
 func (s *server) toolShiftEvents(ctx context.Context, turn chatTurn, args map[string]any) (string, toolMeta) {
@@ -345,16 +358,18 @@ func (s *server) toolShiftEvents(ctx context.Context, turn chatTurn, args map[st
 			plan[i].Date = to
 		}
 	}
-	key := batchKey("shift", date, to, fmt.Sprint(minutes), strings.Join(idsOf(move), ","))
-	// Перенос на другой день — всегда с согласия, как и сдвиг больше трёх событий.
-	if !s.confirmBatch(ctx, turn, key, len(move), to != "" && to != date) {
+	// Перенос на другой день — всегда по кнопке, как и сдвиг больше трёх событий.
+	if len(move) > 3 || (to != "" && to != date) {
+		key := batchKey("shift", date, planSig(plan))
+		n := plural(len(move), "событие", "события", "событий")
+		card := batchCard(turn, key, "Перенести "+n+"?", "Перенёс "+n+".", date, plan)
 		titles := make([]string, len(move))
 		for i, e := range move {
 			titles[i] = e.Title
 		}
-		return toolJSON(map[string]any{"needs_confirmation": true, "events": titles,
-				"instruction": "Ничего не перенесено. Перечисли пользователю, что сдвинется, и спроси согласия; после ответа вызови то же самое ещё раз."}),
-			toolMeta{detail: "нужно подтверждение", date: date}
+		if res, meta, wait := needsConfirm(turn, card, map[string]any{"events": titles}); wait {
+			return res, meta
+		}
 	}
 	done, err := s.moveAll(ctx, move, plan)
 	if err != nil {
@@ -393,15 +408,14 @@ func (s *server) toolClearDay(ctx context.Context, turn chatTurn, args map[strin
 		}
 		return toolJSON(map[string]any{"error": "за две недели нет места для всех", "unplaced": titles}), meta
 	}
-	key := batchKey("clear", date, strings.Join(idsOf(move), ","))
-	if !s.confirmBatch(ctx, turn, key, len(move), true) {
-		items := make([]toolPlanItem, len(plan))
-		for i, pl := range plan {
-			items[i] = toolPlanItem{EventID: pl.ID, Title: pl.Title, Date: pl.Date, Start: hm(pl.Start), End: hm(pl.End)}
-		}
-		return toolJSON(map[string]any{"needs_confirmation": true, "plan": items, "skipped": skippedTitles(skipped),
-				"instruction": "Ничего не перенесено. Покажи пользователю, куда переедет каждое событие, и спроси согласия; после ответа вызови clear_day ещё раз."}),
-			toolMeta{detail: "нужно подтверждение", date: date}
+	key := batchKey("clear", date, planSig(plan))
+	card := batchCard(turn, key, "Освободить "+strings.ToLower(dayTitle(turn.now, date))+"?", "Готово, день свободен.", date, plan)
+	shown := make([]toolPlanItem, len(plan))
+	for i, pl := range plan {
+		shown[i] = toolPlanItem{EventID: pl.ID, Title: pl.Title, Date: pl.Date, Start: hm(pl.Start), End: hm(pl.End)}
+	}
+	if res, meta, wait := needsConfirm(turn, card, map[string]any{"plan": shown, "skipped": skippedTitles(skipped)}); wait {
+		return res, meta
 	}
 	done, err := s.moveAll(ctx, move, plan)
 	if err != nil {

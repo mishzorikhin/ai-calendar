@@ -62,7 +62,7 @@ type server struct {
 	push    *pushService
 	version string
 	limits  *limits
-	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
+	// confirms — действия ассистента, которые ждут кнопки пользователя (confirm.go).
 	confirms *confirmations
 	// suggester — когда кому последний раз считали предложения ассистента.
 	suggester suggester
@@ -155,6 +155,8 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/suggestions/{id}/dismiss", s.authed(s.dismissSuggestion))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
+	mux.Handle("GET /api/chat/confirms", s.authed(s.listChatConfirms))
+	mux.Handle("POST /api/chat/confirms/{id}", s.authed(s.decideChatConfirm))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
 	mux.Handle("POST /api/integrations", s.authed(s.createIntegration))
 	mux.Handle("POST /api/integrations/caldav/discover", s.authed(s.discoverCalDAV))

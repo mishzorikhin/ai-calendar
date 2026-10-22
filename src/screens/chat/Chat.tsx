@@ -1,7 +1,14 @@
 import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useApi } from '../../api/provider'
-import { IMAGE_MARK, useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
+import {
+  IMAGE_MARK,
+  useChatConfirms,
+  useMessages,
+  useSendChat,
+  type ChatStream,
+  type FailedMessage,
+} from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
@@ -11,6 +18,7 @@ import { fromISODate } from '../../lib/dates'
 import { useTimeout } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
 import { ChatComposer } from './ChatComposer'
+import { ConfirmCard } from './ConfirmCard'
 import { DayPreview } from './DayPreview'
 import { MemoryNote } from './MemoryNote'
 import { TasksPill } from './TasksPill'
@@ -27,30 +35,29 @@ const TOOL_LABELS: Record<string, string> = {
   find_free_slots: 'Ищу свободное время',
   create_event: 'Создаю событие',
   update_event: 'Меняю событие',
-  delete_event: 'Удаляю событие',
+  delete_event: 'Удаление события',
   list_tasks: 'Смотрю задачи',
   list_users: 'Ищу людей',
   create_task: 'Добавляю задачу',
   update_task: 'Обновляю задачу',
-  delete_task: 'Удаляю задачу',
+  delete_task: 'Удаление задачи',
   create_reminder: 'Ставлю напоминание',
   list_reminders: 'Смотрю напоминания',
   update_profile: 'Обновляю профиль',
-  remember: 'Запоминаю',
   forget: 'Забываю',
   list_memories: 'Вспоминаю',
   list_people: 'Смотрю людей',
-  save_person: 'Запоминаю человека',
   forget_person: 'Забываю человека',
   respond_invitation: 'Отвечаю на приглашение',
   plan_tasks: 'Раскладываю задачи',
-  shift_events: 'Двигаю события',
-  clear_day: 'Освобождаю день',
+  shift_events: 'Перенос событий',
+  clear_day: 'Освобождение дня',
 }
 
 export function Chat() {
   const { prompt, setPrompt, draft, setDraft } = useAssistant()
   const messages = useMessages()
+  const confirms = useChatConfirms()
   const { stream, busy, send, failed, dismissFailed, remembered } = useSendChat()
   const api = useApi()
   const list = useRef<HTMLDivElement>(null)
@@ -70,7 +77,7 @@ export function Chat() {
   }
   useEffect(() => {
     if (stick.current) list.current?.scrollTo({ top: list.current.scrollHeight })
-  }, [messages.length, stream?.text, stream?.tools.length, failed.length])
+  }, [messages.length, stream?.text, stream?.tools.length, failed.length, confirms.length, stream?.confirms.length])
 
   // Лента меняет высоту (открылась клавиатура, свернулась шапка) — остаёмся у последнего сообщения.
   useEffect(() => {
@@ -158,9 +165,17 @@ export function Chat() {
           <>
             <StreamReply stream={stream} />
             <MemoryNote items={stream.memory} />
+            {stream.confirms.map((c) => (
+              <ConfirmCard key={c.id} confirm={c} disabled />
+            ))}
           </>
         ) : (
-          <MemoryNote items={remembered} />
+          <>
+            <MemoryNote items={remembered} />
+            {confirms.map((c) => (
+              <ConfirmCard key={c.id} confirm={c} />
+            ))}
+          </>
         )}
         {failed.map((msg) => (
           <FailedBubble

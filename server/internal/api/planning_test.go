@@ -76,13 +76,9 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 		{""}, // create_event с task_id — id задачи известен после её создания
 		{textFrame("Поставил.")},
 		{toolCall("shift_events", `{"date":"`+day+`","minutes":60}`)},
-		{textFrame("Сдвинуть пять событий?")},
-		{toolCall("shift_events", `{"date":"`+day+`","minutes":60}`)},
-		{textFrame("Сдвинул.")},
+		{textFrame("Сдвигаю пять событий на час.")},
 		{toolCall("clear_day", `{"date":"`+day+`"}`)},
-		{textFrame("Перенести?")},
-		{toolCall("clear_day", `{"date":"`+day+`"}`)},
-		{textFrame("Готово.")},
+		{textFrame("Переношу всё на вторник.")},
 	}
 	llmc, bodies := fakeChatLLMBodies(t, rounds)
 	h := New(Options{Store: st, LLM: llmc})
@@ -122,7 +118,13 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 	if !strings.Contains((*bodies)[5], "needs_confirmation") || events(day)[0].Start != 540 {
 		t.Fatal("сдвиг без подтверждения")
 	}
-	doAs(t, h, tok, "POST", "/api/chat", `{"text":"да, сдвигай"}`)
+	cards := confirmsOf(t, h, tok)
+	if len(cards) != 1 || cards[0].Title != "Перенести 5 событий?" || !strings.Contains(cards[0].Detail, "Отчёт →") {
+		t.Fatalf("карточка сдвига: %+v", cards)
+	}
+	if res := decode[confirmResult](t, doAs(t, h, tok, "POST", "/api/chat/confirms/"+cards[0].ID, `{"accept":true}`)); res.Message.Text != "Перенёс 5 событий." {
+		t.Fatalf("итог сдвига: %+v", res)
+	}
 	if evs := events(day); evs[0].Start != 600 || evs[4].Start != 900 {
 		t.Fatalf("после согласия: %+v", evs)
 	}
@@ -132,10 +134,14 @@ func TestChatPlanAndBatchTools(t *testing.T) {
 
 	// Освободить день — всегда через согласие; события уезжают на вторник.
 	doAs(t, h, tok, "POST", "/api/chat", `{"text":"освободи понедельник"}`)
-	if !strings.Contains((*bodies)[9], "needs_confirmation") || len(events(day)) != 5 {
+	if !strings.Contains((*bodies)[7], "needs_confirmation") || len(events(day)) != 5 {
 		t.Fatal("освобождение без подтверждения")
 	}
-	doAs(t, h, tok, "POST", "/api/chat", `{"text":"да"}`)
+	cards = confirmsOf(t, h, tok)
+	if len(cards) != 1 || !strings.HasPrefix(cards[0].Title, "Освободить") {
+		t.Fatalf("карточка освобождения: %+v", cards)
+	}
+	doAs(t, h, tok, "POST", "/api/chat/confirms/"+cards[0].ID, `{"accept":true}`)
 	if n := len(events(day)); n != 0 {
 		t.Fatalf("день не освобождён: %d", n)
 	}

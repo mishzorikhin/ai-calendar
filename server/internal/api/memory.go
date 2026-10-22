@@ -1,6 +1,6 @@
 // Память ассистента: факты о пользователе из разговоров («по пятницам не работаю»,
-// «мама — день рождения 14 марта») и догадки по его поведению. Факты попадают в промпт
-// выборочно (selectMemories), пользователь видит и правит их в шторке «Что ассистент обо мне знает».
+// «мама — день рождения 14 марта») и догадки по его поведению. Факты попадают в промпт целиком
+// (promptMemories), пользователь видит и правит их в шторке «Что ассистент обо мне знает».
 package api
 
 import (
@@ -20,11 +20,12 @@ import (
 	"github.com/mishzorikhin/ai-calendar/server/internal/store"
 )
 
-// memoryBudget — сколько символов фактов кладём в промпт (≈ 600–800 токенов).
-const memoryBudget = 2500
+// memoryBudget — сколько символов фактов кладём в промпт (≈ 2–3 тысячи токенов): обычно это
+// вся память, а если нет — модель видит самое важное и может дочитать остальное list_memories.
+const memoryBudget = 8000
 
-// memoryAllBelow — если фактов меньше, отбор не нужен: в промпт идут все.
-const memoryAllBelow = 25
+// peopleBudget — то же для карточек людей.
+const peopleBudget = 4000
 
 // validMemoryDate — «ГГГГ-ММ-ДД» (один раз) или «--ММ-ДД» (каждый год); пусто — без даты.
 func validMemoryDate(v string) bool {
@@ -192,20 +193,6 @@ func foldText(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// stems — «основы» слов текста: первые пять букв слов от трёх букв. Грубо, но «Глебом» и «Глеба»
-// совпадают, а предлоги и союзы не мешают.
-func stems(text string) map[string]bool {
-	out := map[string]bool{}
-	for _, w := range strings.Fields(foldText(text)) {
-		r := []rune(w)
-		if len(r) < 3 {
-			continue
-		}
-		out[string(r[:min(len(r), 5)])] = true
-	}
-	return out
-}
-
 // upcomingDate — дата факта наступает в ближайшие days дней (ежегодные — в этом или следующем году).
 func upcomingDate(date string, now time.Time, days int) (time.Time, bool) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -230,58 +217,43 @@ func upcomingDate(date string, now time.Time, days int) (time.Time, bool) {
 	return when, diff >= 0 && diff <= days
 }
 
-// selectMemories — какие факты положить в промпт: подтверждённые, не отклонённые; правила
-// и предпочтения — всегда; ближайшие даты — всегда; остальное — по совпадению слов с репликами
-// (query). Если фактов мало — все. Общий объём — не больше budget символов.
-func selectMemories(all []model.Memory, query string, now time.Time, budget int) []model.Memory {
+// promptMemories — факты для промпта: все подтверждённые, пока влезают в budget символов.
+// Порядок — по важности для ответа: сведения о себе, правила и предпочтения, ближайшие даты,
+// затем свежие. Возвращает ещё и общее число фактов, чтобы модель знала про остальные.
+func promptMemories(all []model.Memory, now time.Time, budget int) ([]model.Memory, int) {
 	var usable []model.Memory
 	for _, m := range all {
 		if !m.Rejected && (m.Source == model.SourceUser || m.Confirmed) {
 			usable = append(usable, m)
 		}
 	}
-	type scored struct {
-		m     model.Memory
-		score int
-	}
-	q := stems(query)
-	var list []scored
-	for _, m := range usable {
-		score := 0
+	rank := func(m model.Memory) int {
 		switch {
-		case len(usable) <= memoryAllBelow:
-			score = 1
-		case m.Kind == model.MemoryAbout || m.Kind == model.MemoryRule || m.Kind == model.MemoryPreference:
-			score = 100
-		}
-		if m.Date != "" {
+		case m.Kind == model.MemoryAbout:
+			return 0
+		case m.Kind == model.MemoryRule || m.Kind == model.MemoryPreference:
+			return 1
+		case m.Date != "":
 			if _, soon := upcomingDate(m.Date, now, 14); soon {
-				score += 50
+				return 2
 			}
 		}
-		for st := range stems(m.Text) {
-			if q[st] {
-				score += 10
-			}
-		}
-		if score > 0 {
-			list = append(list, scored{m, score})
-		}
+		return 3
 	}
-	slices.SortStableFunc(list, func(a, b scored) int {
-		return cmp.Or(cmp.Compare(b.score, a.score), b.m.UpdatedAt.Compare(a.m.UpdatedAt))
+	slices.SortStableFunc(usable, func(a, b model.Memory) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), b.UpdatedAt.Compare(a.UpdatedAt))
 	})
 	var out []model.Memory
 	used := 0
-	for _, x := range list {
-		n := utf8.RuneCountInString(x.m.Text) + 20
+	for _, m := range usable {
+		n := utf8.RuneCountInString(m.Text) + 24
 		if used+n > budget {
-			continue
+			break
 		}
 		used += n
-		out = append(out, x.m)
+		out = append(out, m)
 	}
-	return out
+	return out, len(usable)
 }
 
 var memoryKindLabels = map[model.MemoryKind]string{
@@ -309,62 +281,6 @@ func memoryLines(list []model.Memory) string {
 }
 
 // --- Инструменты ассистента ---------------------------------------------------
-
-// evidenceOK — фрагмент evidence дословно (без учёта регистра и знаков) есть в одной из реплик
-// пользователя. Так модель может запомнить только то, что сказал сам человек, а не текст
-// из названия чужого события или результата инструмента.
-func evidenceOK(evidence string, userTexts []string) bool {
-	e := foldText(evidence)
-	if utf8.RuneCountInString(e) < 3 {
-		return false
-	}
-	for _, t := range userTexts {
-		if strings.Contains(foldText(t), e) {
-			return true
-		}
-	}
-	return false
-}
-
-const evidenceError = `{"error":"evidence должен дословно повторять слова пользователя из его реплик — запоминай только то, что сказал он сам"}`
-
-func (s *server) toolRemember(ctx context.Context, turn chatTurn, args map[string]any) (string, toolMeta) {
-	if !s.profileFor(ctx).Memory {
-		return `{"error":"память выключена пользователем — ничего не сохраняй"}`, toolMeta{}
-	}
-	if !evidenceOK(strArg(args, "evidence"), turn.userTexts) {
-		return evidenceError, toolMeta{}
-	}
-	kind := model.MemoryKind(strArg(args, "kind"))
-	if kind == "" {
-		kind = model.MemoryOther
-	}
-	if !kind.Valid() {
-		return `{"error":"kind: about, person, place, habit, preference, rule, date или other"}`, toolMeta{}
-	}
-	text := strArg(args, "text")
-	if err := validateMemoryText(text); err != nil {
-		return toolErr(err, "неверный текст факта"), toolMeta{}
-	}
-	date := strArg(args, "date")
-	if !validMemoryDate(date) {
-		return `{"error":"date — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)"}`, toolMeta{}
-	}
-	// Тот же факт уже есть — не дублируем.
-	for _, m := range s.store.Memories(ctx) {
-		if !m.Rejected && foldText(m.Text) == foldText(text) {
-			return toolJSON(map[string]any{"ok": true, "memory_id": m.ID, "note": "уже было в памяти"}), toolMeta{detail: text}
-		}
-	}
-	m, err := s.store.AddMemory(ctx, model.Memory{Kind: kind, Text: text, Date: date, Source: model.SourceUser, Confirmed: true})
-	if errors.Is(err, store.ErrLimit) {
-		return `{"error":"память заполнена — предложи пользователю удалить старые факты в настройках"}`, toolMeta{}
-	}
-	if err != nil {
-		return `{"error":"не удалось запомнить"}`, toolMeta{}
-	}
-	return toolJSON(map[string]any{"ok": true, "memory_id": m.ID}), toolMeta{detail: text}
-}
 
 func (s *server) toolForget(ctx context.Context, args map[string]any) (string, toolMeta) {
 	id := int64(intArg(args, "memory_id", 0))

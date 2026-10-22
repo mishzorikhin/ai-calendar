@@ -401,6 +401,10 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       onEvent({ type: 'done' })
     },
 
+    // Без модели ассистент ничего не предлагает — и подтверждать нечего.
+    getChatConfirms: () => reply([]),
+    decideChatConfirm: () => Promise.reject(new ApiError(410, 'Ассистент работает только с сервером')),
+
     me: () => reply({ ...LOCAL_USER }),
     updateMe: (name) => reply({ ...LOCAL_USER, name }),
     login: () => Promise.reject(NO_ACCOUNTS),

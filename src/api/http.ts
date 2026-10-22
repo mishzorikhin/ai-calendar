@@ -22,7 +22,14 @@ import type {
   User,
 } from '../domain/types'
 import { fromISODate, toISODate } from '../lib/dates'
-import { ApiError, type CalendarApi, type ChatEvent, type Session } from './api'
+import {
+  ApiError,
+  type CalendarApi,
+  type ChatConfirm,
+  type ChatConfirmResult,
+  type ChatEvent,
+  type Session,
+} from './api'
 import { setCredentialsGetter } from './outbox'
 import { getSession, setSession } from './session'
 
@@ -166,6 +173,10 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
         reader.releaseLock()
       }
     },
+
+    getChatConfirms: () => request<ChatConfirm[]>('/api/chat/confirms'),
+    decideChatConfirm: (id, accept) =>
+      post<ChatConfirmResult>(`/api/chat/confirms/${encodeURIComponent(id)}`, { accept }),
 
     me: () => request<User>('/api/me'),
     async updateMe(name) {
