@@ -302,7 +302,7 @@ func TestChatRememberNeedsUserWords(t *testing.T) {
 	// Следующий ход: факт — в системном промпте; профиль и имя — тоже.
 	doAs(t, h, tok, "POST", "/api/chat", `{"text":"что у меня в пятницу"}`)
 	last := (*bodies)[len(*bodies)-1]
-	for _, want := range []string{"По пятницам после 16:00 не работает", "Как зовут пользователя, пока неизвестно", "пн–пт, 09:00–18:00"} {
+	for _, want := range []string{"По пятницам после 16:00 не работает", "Имя пользователя в аккаунте не задано", "пн–пт, 09:00–18:00"} {
 		if !strings.Contains(last, want) {
 			t.Errorf("в промпте нет %q", want)
 		}
@@ -360,30 +360,86 @@ func TestChatPeopleAndProfileTools(t *testing.T) {
 	}
 }
 
-func TestChatRemembersName(t *testing.T) {
+func TestMemoryExtraction(t *testing.T) {
 	st, _ := store.Open("")
-	llmc, bodies := fakeChatLLMBodies(t, [][]string{
-		{toolCall("update_profile", `{"name":"Миша"}`)},
-		{textFrame("Приятно познакомиться, Миша!")},
-		{textFrame("Помню.")},
+	chatLLM, _ := fakeChatLLMBodies(t, [][]string{{textFrame("Приятно познакомиться!")}})
+	memLLM, memBodies := fakeChatLLMBodies(t, [][]string{
+		{toolCall("save_memory_ops", `{"ops":[{"op":"add","kind":"about","text":"Зовут Миша"},{"op":"add","kind":"about","text":"зовут миша"},{"op":"delete","id":999}]}`)},
+		{toolCall("save_memory_ops", `{"ops":[{"op":"update","id":1,"kind":"about","text":"Зовут Михаил"}]}`)},
+		{toolCall("save_memory_ops", `{"ops":[{"op":"delete","id":1}]}`)},
 	})
-	h := New(Options{Store: st, LLM: llmc})
+	h := New(Options{Store: st, LLM: chatLLM, MemoryLLM: memLLM})
 	tok := register(t, h, "misha")
-	doAs(t, h, tok, "POST", "/api/chat", `{"text":"меня зовут Миша"}`)
-	// Пока имени нет, логин в промпте не выдаётся за имя.
-	if first := (*bodies)[0]; !strings.Contains(first, "Как зовут пользователя, пока неизвестно") || strings.Contains(first, "Пользователя зовут misha") {
-		t.Fatal("логин в промпте выдан за имя")
+	ctx := store.WithUser(context.Background(), mustUser(t, st, "misha"))
+
+	rec := doAs(t, h, tok, "POST", "/api/chat", `{"text":"Меня зовут Миша"}`)
+	if !strings.Contains(rec.Body.String(), `"type":"memory"`) || !strings.Contains(rec.Body.String(), "Зовут Миша") {
+		t.Fatalf("в чате нет «Запомнил»: %s", rec.Body)
 	}
-	if me := decode[model.User](t, doAs(t, h, tok, "GET", "/api/me", "")); me.Name != "Миша" {
-		t.Fatalf("имя не сохранено: %+v", me)
+	mem := st.Memories(ctx)
+	if len(mem) != 1 || mem[0].Text != "Зовут Миша" || mem[0].Kind != model.MemoryAbout || !mem[0].Confirmed {
+		t.Fatalf("память: %+v", mem)
 	}
-	doAs(t, h, tok, "POST", "/api/chat", `{"text":"как меня зовут?"}`)
-	if last := (*bodies)[len(*bodies)-1]; !strings.Contains(last, "Пользователя зовут Миша") {
-		t.Fatal("имени нет в промпте")
+	// Разбор видит только слова пользователя и известные факты.
+	if !strings.Contains((*memBodies)[0], "Меня зовут Миша") || !strings.Contains((*memBodies)[0], "save_memory_ops") {
+		t.Fatalf("запрос разбора: %.400s", (*memBodies)[0])
 	}
-	// Слишком длинное имя — ошибка модели, а не сохранение.
-	if out, _ := (&server{store: st}).toolUpdateProfile(store.WithUser(context.Background(), mustUser(t, st, "misha")),
-		map[string]any{"name": strings.Repeat("я", 41)}); !strings.Contains(out, "error") {
-		t.Fatalf("длинное имя: %s", out)
+	// «О себе» всегда в промпте.
+	if got := selectMemories(mem, "что у меня завтра", time.Now(), memoryBudget); len(got) != 1 {
+		t.Fatalf("факт о себе не попал в промпт: %+v", got)
+	}
+
+	// Обновление и удаление — по id известного факта.
+	doAs(t, h, tok, "POST", "/api/chat", `{"text":"Вообще я Михаил"}`)
+	if mem = st.Memories(ctx); len(mem) != 1 || mem[0].Text != "Зовут Михаил" {
+		t.Fatalf("после обновления: %+v", mem)
+	}
+	if !strings.Contains((*memBodies)[1], "[1] about: Зовут Миша") {
+		t.Fatalf("разбор не видит известное: %.400s", (*memBodies)[1])
+	}
+	doAs(t, h, tok, "POST", "/api/chat", `{"text":"Забудь моё имя"}`)
+	if mem = st.Memories(ctx); len(mem) != 0 {
+		t.Fatalf("после удаления: %+v", mem)
+	}
+
+	// Память выключена — разбора нет.
+	before := len(*memBodies)
+	doAs(t, h, tok, "PATCH", "/api/profile", `{"memory":false}`)
+	doAs(t, h, tok, "POST", "/api/chat", `{"text":"Я живу в Казани"}`)
+	if len(*memBodies) != before {
+		t.Fatal("разбор памяти при выключенной памяти")
+	}
+}
+
+func TestMemoryOpsGuard(t *testing.T) {
+	st, _ := store.Open("")
+	s := &server{store: st}
+	u, _ := st.CreateUser(context.Background(), "a", "a", "h")
+	b, _ := st.CreateUser(context.Background(), "b", "b", "h")
+	ctx := store.WithUser(context.Background(), u)
+	bctx := store.WithUser(context.Background(), b)
+	other, _ := st.AddMemory(bctx, model.Memory{Kind: model.MemoryAbout, Text: "Зовут Боб", Source: model.SourceUser, Confirmed: true})
+	ops := []memoryOp{
+		{Op: "add", Kind: "rule", Text: "Не работает по пятницам"},
+		{Op: "delete", ID: other.ID},                               // чужой факт
+		{Op: "update", ID: other.ID, Text: "Зовут Ева"},            // чужой факт
+		{Op: "add", Kind: "secret", Text: "x"},                     // неизвестный вид
+		{Op: "add", Kind: "date", Text: "ДР", Date: "завтра"},      // плохая дата
+		{Op: "add", Kind: "about", Text: strings.Repeat("я", 400)}, // слишком длинно
+	}
+	got := s.applyMemoryOps(ctx, st.Memories(ctx), ops)
+	if len(got) != 1 || got[0].Action != "added" {
+		t.Fatalf("изменения: %+v", got)
+	}
+	if bm := st.Memories(bctx); len(bm) != 1 || bm[0].Text != "Зовут Боб" {
+		t.Fatalf("задет чужой факт: %+v", bm)
+	}
+	// Больше maxExtractOps за раз не применяется.
+	many := make([]memoryOp, maxExtractOps+3)
+	for i := range many {
+		many[i] = memoryOp{Op: "add", Kind: "other", Text: fmt.Sprint("Факт ", i)}
+	}
+	if got := s.applyMemoryOps(ctx, st.Memories(ctx), many); len(got) != maxExtractOps {
+		t.Fatalf("предел изменений: %d", len(got))
 	}
 }

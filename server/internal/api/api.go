@@ -35,6 +35,9 @@ type Options struct {
 	Store store.Store
 	// LLM — клиент языковой модели для разбора запросов; nil — ассистент работает с дефолтными параметрами.
 	LLM *llm.Client
+	// MemoryLLM — модель для автоматической памяти (разбор реплик после ответа); nil — память
+	// пополняется только инструментом remember.
+	MemoryLLM *llm.Client
 	// Web — собранный фронтенд (dist). nil — UI не раздаётся.
 	Web fs.FS
 	// CORSOrigins — источники, которым разрешены запросы к API (для vite dev).
@@ -51,6 +54,8 @@ type Options struct {
 }
 
 type server struct {
+	// memLLM — модель для автоматической памяти (может совпадать с llm).
+	memLLM  *llm.Client
 	store   store.Store
 	llm     *llm.Client
 	cal     *calendars
@@ -77,7 +82,7 @@ func New(opts Options) http.Handler {
 // newServer собирает сервер и запускает фоновые циклы (синхронизация календарей, напоминания).
 func newServer(opts Options) *server {
 	s := &server{
-		store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version,
+		store: opts.Store, llm: opts.LLM, memLLM: opts.MemoryLLM, cal: newCalendars(opts.Calendars), version: opts.Version,
 		limits: newLimits(), confirms: newConfirmations(),
 		closedRegistration: opts.ClosedRegistration, proxy: opts.Proxy,
 	}

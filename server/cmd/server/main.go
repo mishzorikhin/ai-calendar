@@ -9,6 +9,7 @@
 //	LLM_API_KEY   ключ OpenAI-совместимого API для ассистента
 //	LLM_BASE_URL  адрес API (по умолчанию https://api.neuraldeep.ru/v1)
 //	LLM_MODEL     модель (по умолчанию qwen3.6-unlim-noreason)
+//	LLM_MEMORY_MODEL  модель для автоматической памяти (разбор реплик после ответа); по умолчанию LLM_MODEL
 //	STATIC_DIR    раздавать фронтенд с диска вместо встроенного (для разработки)
 //	CORS_ORIGINS  источники через запятую, которым разрешён доступ к API
 //	REGISTRATION  closed — новые аккаунты не создаются (первый, владелец, — можно); по умолчанию open
@@ -98,11 +99,13 @@ func run(port string) error {
 		return fmt.Errorf("REMINDER_INTERVAL: %w", err)
 	}
 
+	assistant := newLLM()
 	srv := &http.Server{
 		Addr: ":" + port,
 		Handler: api.New(api.Options{
 			Store:       st,
-			LLM:         newLLM(),
+			LLM:         assistant,
+			MemoryLLM:   memoryLLM(assistant),
 			Web:         webFS,
 			CORSOrigins: splitList(os.Getenv("CORS_ORIGINS")),
 			Version:     version,
@@ -155,6 +158,20 @@ func newLLM() *llm.Client {
 		APIKey:  key,
 		Model:   env("LLM_MODEL", "qwen3.6-unlim-noreason"),
 	}, 90*time.Second)
+}
+
+// memoryLLM — модель для автоматической памяти: своя (LLM_MEMORY_MODEL, обычно попроще и дешевле)
+// или та же, что у ассистента.
+func memoryLLM(assistant *llm.Client) *llm.Client {
+	model := os.Getenv("LLM_MEMORY_MODEL")
+	if assistant == nil || model == "" {
+		return assistant
+	}
+	return llm.New(llm.Config{
+		BaseURL: env("LLM_BASE_URL", "https://api.neuraldeep.ru/v1"),
+		APIKey:  os.Getenv("LLM_API_KEY"),
+		Model:   model,
+	}, 30*time.Second)
 }
 
 // calendarOptions — настройки внешних календарей из окружения.

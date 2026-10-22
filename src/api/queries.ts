@@ -32,7 +32,7 @@ import type {
 } from '../domain/types'
 import { withCheck } from '../domain/habit'
 import { isSameDay, toISODate } from '../lib/dates'
-import { apiErrorText } from './api'
+import { apiErrorText, type MemoryChange } from './api'
 import { useApi } from './provider'
 import { disablePush } from './push'
 import { useSession } from './session'
@@ -495,6 +495,8 @@ export type ChatToolRun = { name: string; done: boolean; detail?: string; date?:
 export type ChatStream = {
   text: string
   tools: ChatToolRun[]
+  /** Что запомнилось за ход. */
+  memory: MemoryChange[]
   /** Стрим завершён (done или ошибка). */
   done: boolean
   error: string | null
@@ -523,6 +525,8 @@ export function useSendChat() {
   const qc = useQueryClient()
   const [stream, setStream] = useState<ChatStream | null>(null)
   const [failed, setFailed] = useState<FailedMessage[]>([])
+  // Что запомнилось за последний ход — пометка под ответом, пока не написали новое.
+  const [remembered, setRemembered] = useState<MemoryChange[]>([])
   const active = useRef<AbortController | null>(null)
 
   useEffect(() => () => active.current?.abort(), [])
@@ -539,9 +543,11 @@ export function useSendChat() {
         ...list,
         { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: shown },
       ])
-      setStream({ text: '', tools: [], done: false, error: null })
+      setStream({ text: '', tools: [], memory: [], done: false, error: null })
+      setRemembered([])
       let error: string | null = null
       let delivered = false
+      let memory: MemoryChange[] = []
       try {
         await api.sendChat(
           value,
@@ -565,6 +571,9 @@ export function useSendChat() {
                 }
                 return { ...s, tools }
               })
+            } else if (e.type === 'memory') {
+              memory = e.items
+              setStream((s) => s && { ...s, memory: [...s.memory, ...e.items] })
             } else if (e.type === 'error') {
               error = e.message
               setStream((s) => s && { ...s, done: true, error: e.message })
@@ -588,14 +597,13 @@ export function useSendChat() {
           qc.invalidateQueries({ queryKey: keys.memories }),
           qc.invalidateQueries({ queryKey: keys.people }),
           qc.invalidateQueries({ queryKey: keys.profile }),
-          // …или запомнить, как зовут пользователя (имя аккаунта).
-          qc.invalidateQueries({ queryKey: keys.me }),
         ])
       } finally {
         active.current = null
       }
       if (ctl.signal.aborted) return
       setStream(null)
+      setRemembered(memory)
       if (error) {
         const message = error
         setFailed((list) => [...list, { id: Date.now(), text: value, image, error: message, delivered }])
@@ -610,7 +618,7 @@ export function useSendChat() {
 
   /** Ответ ещё идёт или история перечитывается — отправлять новое нельзя. */
   const busy = stream !== null
-  return { stream, busy, send, failed, dismissFailed }
+  return { stream, busy, send, failed, dismissFailed, remembered }
 }
 
 // --- Внешние календари ------------------------------------------------------

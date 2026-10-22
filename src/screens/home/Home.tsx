@@ -4,6 +4,7 @@ import { useApi } from '../../api/provider'
 import { useDayEvents, useMe, useNotifications, useTasks } from '../../api/queries'
 import { useSession } from '../../api/session'
 import { BarSlot } from '../../app/bar'
+import { onHomeSheet } from '../../app/sheetRequest'
 import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
@@ -40,6 +41,8 @@ export function Home() {
   // Вернулись со страницы входа Google/Microsoft — сразу открываем «Календари» с результатом.
   const [oauthReturn] = useState(readOAuthReturn)
   const [sheet, setSheet] = useState<HomeSheet | null>(oauthReturn ? 'calendars' : null)
+  // Просьба открыть шторку с другого экрана («Запомнил: …» в чате → «Что ассистент знает»).
+  useEffect(() => onHomeSheet((s) => setSheet(s as HomeSheet)), [])
   useEffect(clearOAuthReturn, [])
   const user = me.data ?? session?.user
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.

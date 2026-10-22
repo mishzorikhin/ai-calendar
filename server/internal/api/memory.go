@@ -251,7 +251,7 @@ func selectMemories(all []model.Memory, query string, now time.Time, budget int)
 		switch {
 		case len(usable) <= memoryAllBelow:
 			score = 1
-		case m.Kind == model.MemoryRule || m.Kind == model.MemoryPreference:
+		case m.Kind == model.MemoryAbout || m.Kind == model.MemoryRule || m.Kind == model.MemoryPreference:
 			score = 100
 		}
 		if m.Date != "" {
@@ -285,6 +285,7 @@ func selectMemories(all []model.Memory, query string, now time.Time, budget int)
 }
 
 var memoryKindLabels = map[model.MemoryKind]string{
+	model.MemoryAbout:      "о себе",
 	model.MemoryPerson:     "человек",
 	model.MemoryPlace:      "место",
 	model.MemoryHabit:      "привычка",
@@ -339,7 +340,7 @@ func (s *server) toolRemember(ctx context.Context, turn chatTurn, args map[strin
 		kind = model.MemoryOther
 	}
 	if !kind.Valid() {
-		return `{"error":"kind: person, place, habit, preference, rule, date или other"}`, toolMeta{}
+		return `{"error":"kind: about, person, place, habit, preference, rule, date или other"}`, toolMeta{}
 	}
 	text := strArg(args, "text")
 	if err := validateMemoryText(text); err != nil {

@@ -48,8 +48,13 @@ export type ChatEvent =
   | { type: 'open' }
   | { type: 'delta'; text: string }
   | { type: 'tool'; name: string; status: 'run' | 'done'; detail?: string; date?: string }
+  /** Что ассистент запомнил, поменял или забыл за этот ход (сервер шлёт перед done). */
+  | { type: 'memory'; items: MemoryChange[] }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+/** Изменение памяти за ход: показывается под ответом («Запомнил: …»). */
+export type MemoryChange = { action: 'added' | 'updated' | 'deleted'; text: string }
 
 /**
  * Источник данных приложения. Две реализации:

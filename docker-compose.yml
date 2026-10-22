@@ -16,6 +16,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.neuraldeep.ru/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen3.6-unlim-noreason}
+      LLM_MEMORY_MODEL: ${LLM_MEMORY_MODEL:-}
       # closed — регистрация только для первого аккаунта. TRUST_PROXY: пусто — X-Forwarded-For
       # от прокси из своей сети, 1 — всегда (прокси снаружи), 0 — никогда.
       REGISTRATION: ${REGISTRATION:-open}

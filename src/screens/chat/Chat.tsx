@@ -12,6 +12,7 @@ import { useTimeout } from '../../lib/hooks'
 import { itemVariants, spring } from '../../lib/motion'
 import { ChatComposer } from './ChatComposer'
 import { DayPreview } from './DayPreview'
+import { MemoryNote } from './MemoryNote'
 import { TasksPill } from './TasksPill'
 import styles from './Chat.module.css'
 
@@ -50,7 +51,7 @@ const TOOL_LABELS: Record<string, string> = {
 export function Chat() {
   const { prompt, setPrompt, draft, setDraft } = useAssistant()
   const messages = useMessages()
-  const { stream, busy, send, failed, dismissFailed } = useSendChat()
+  const { stream, busy, send, failed, dismissFailed, remembered } = useSendChat()
   const api = useApi()
   const list = useRef<HTMLDivElement>(null)
 
@@ -153,7 +154,14 @@ export function Chat() {
             {msg.text}
           </m.p>
         ))}
-        {stream && <StreamReply stream={stream} />}
+        {stream ? (
+          <>
+            <StreamReply stream={stream} />
+            <MemoryNote items={stream.memory} />
+          </>
+        ) : (
+          <MemoryNote items={remembered} />
+        )}
         {failed.map((msg) => (
           <FailedBubble
             key={msg.id}
