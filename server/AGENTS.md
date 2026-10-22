@@ -39,7 +39,8 @@ internal/api/     http.go (ошибки, JSON, middleware), api.go (маршру
                   profile.go (профиль и его текст для промпта), slots.go (чистый поиск окон freeSlots), memory.go (память,
                   отбор фактов selectMemories, evidence), people.go (карточки людей, упоминания в тексте),
                   personal_tools.go (инструменты профиля, памяти и людей), suggestions.go (предложения ассистента:
-                  чистая planSuggestions, accept/dismiss)
+                  чистая planSuggestions, accept/dismiss), planning.go (раскладка задач и массовый перенос:
+                  чистые placeItems/planTasks/shiftPlan)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 

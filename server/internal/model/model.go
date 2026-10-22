@@ -89,8 +89,10 @@ type Event struct {
 	RepeatUntil string   `json:"repeatUntil,omitempty"`
 	ExDates     []string `json:"exdates,omitempty"`
 	// SeriesDate — у вхождения серии: её первый день (Date — день вхождения).
-	SeriesDate string    `json:"seriesDate,omitempty"`
-	CreatedAt  time.Time `json:"createdAt,omitempty"`
+	SeriesDate string `json:"seriesDate,omitempty"`
+	// TaskID — задача, под которую ассистент поставил это время (план дня); задаётся при создании.
+	TaskID    string    `json:"taskId,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }
 
 // RSVP — ответ на приглашение.
@@ -292,8 +294,25 @@ type Task struct {
 	Category TaskCategory `json:"category,omitempty"`
 	Done     bool         `json:"done"`
 	Due      string       `json:"due,omitempty"`
+	// Estimate — сколько минут займёт (0 — не указано, планируется как DefaultEstimate).
+	Estimate int `json:"estimate,omitempty"`
 	// CreatedAt — когда задачу завели: по нему ассистент замечает давно открытые.
 	CreatedAt time.Time `json:"createdAt,omitzero"`
+}
+
+// Оценка задачи: сколько минут она займёт.
+const (
+	DefaultEstimate = 60
+	MinEstimate     = 15
+	MaxEstimate     = 480
+)
+
+// Minutes — оценка задачи для планирования (по умолчанию — час).
+func (t Task) Minutes() int {
+	if t.Estimate > 0 {
+		return t.Estimate
+	}
+	return DefaultEstimate
 }
 
 // TaskRole — роль пользователя в совместной задаче.
@@ -311,6 +330,7 @@ type TaskPatch struct {
 	Category *TaskCategory
 	Done     *bool
 	Due      *string
+	Estimate *int
 }
 
 // Apply применяет патч к задаче на месте.
@@ -332,6 +352,9 @@ func (t *Task) Apply(p TaskPatch) {
 	}
 	if p.Due != nil {
 		t.Due = *p.Due
+	}
+	if p.Estimate != nil {
+		t.Estimate = *p.Estimate
 	}
 }
 

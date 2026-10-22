@@ -98,6 +98,32 @@ var personalTools = []llm.Tool{
 		}, "event_id", "answer"),
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "plan_tasks",
+		Description: "Предложить план: разложить открытые задачи по свободным окнам (фокус-время, рабочие часы, сроки, оценки). Ничего не создаёт.",
+		Parameters: object(map[string]any{
+			"task_ids":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Какие задачи; пусто — все открытые"},
+			"from":       map[string]any{"type": "string", "description": "С какого дня, ГГГГ-ММ-ДД; пусто — сегодня"},
+			"days":       map[string]any{"type": "integer", "minimum": 1, "maximum": 14, "description": "На сколько дней вперёд (1 — только этот день)"},
+			"work_hours": map[string]any{"type": "boolean", "description": "Только рабочие часы и дни (по умолчанию true); false — весь день, для личных дел"},
+		}),
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "shift_events",
+		Description: "Сдвинуть свои события дня на N минут и/или перенести на другой день: по списку id или все, что начинаются не раньше from. Больше трёх — только после согласия пользователя.",
+		Parameters: object(map[string]any{
+			"date":      map[string]any{"type": "string", "description": "День, ГГГГ-ММ-ДД"},
+			"minutes":   map[string]any{"type": "integer", "description": "На сколько минут сдвинуть: 60 — на час позже, -30 — на полчаса раньше"},
+			"to_date":   map[string]any{"type": "string", "description": "Перенести на этот день, ГГГГ-ММ-ДД"},
+			"event_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Какие события; пусто — все со временем от from"},
+			"from":      map[string]any{"type": "string", "description": "ЧЧ:ММ — двигать события, начинающиеся не раньше (без event_ids)"},
+		}, "date"),
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "clear_day",
+		Description: "Освободить день: перенести свои события в ближайшие свободные окна следующих рабочих дней. Всегда только после согласия пользователя.",
+		Parameters:  object(map[string]any{"date": map[string]any{"type": "string", "description": "Какой день, ГГГГ-ММ-ДД"}}, "date"),
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "forget_person",
 		Description: "Удалить карточку человека по id.",
 		Parameters:  object(map[string]any{"person_id": map[string]any{"type": "integer"}}, "person_id"),

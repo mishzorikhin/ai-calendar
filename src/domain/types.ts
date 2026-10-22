@@ -47,6 +47,8 @@ export type CalendarEvent = {
   attendees?: Attendee[]
   /** Чужая встреча, куда пригласили: от кого и мой ответ. Такое событие — только для чтения. */
   invite?: Invite
+  /** Задача, под которую поставлено это время (план ассистента). */
+  taskId?: string
 }
 
 export type Rsvp = 'pending' | 'accepted' | 'declined'
@@ -94,6 +96,8 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   endDate?: string
   /** Логины, кого пригласить. */
   attendees?: string[]
+  /** Задача, под которую ставится это время. */
+  taskId?: string
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -172,6 +176,8 @@ export type Task = {
   role?: 'owner' | 'member'
   /** Когда задачу завели (ISO). */
   createdAt?: string
+  /** Сколько минут займёт (нет — час при планировании). */
+  estimate?: number
 }
 
 /** Новая задача (до сохранения). members — логины участников, с которыми поделиться. */
@@ -182,6 +188,7 @@ export type NewTask = {
   category?: TaskCategory
   due?: string
   members?: string[]
+  estimate?: number
 }
 
 /** Частичное обновление задачи. category: '' очищает категорию; members — добавить участников. */
@@ -193,6 +200,8 @@ export type TaskPatch = {
   done?: boolean
   due?: string
   members?: string[]
+  /** 0 — без оценки. */
+  estimate?: number
 }
 
 /** Вид подключённого календаря. */

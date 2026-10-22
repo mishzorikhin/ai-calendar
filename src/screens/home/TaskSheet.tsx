@@ -10,6 +10,7 @@ import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import { toISODate } from '../../lib/dates'
 import type { Task, TaskKind, User } from '../../domain/types'
 import { userColor, userInitials } from '../../lib/avatar'
+import { EstimateField } from './EstimateField'
 import { TAG_PRESETS } from './tags'
 import styles from './Home.module.css'
 
@@ -30,6 +31,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
     task?.category && !TAG_PRESETS.some((p) => p.id === task.category) ? task.category : '',
   )
   const [due, setDue] = useState(task?.due ?? '')
+  const [estimate, setEstimate] = useState(task?.estimate ?? 0)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Логины, с которыми поделиться при создании (для существующей — live через API).
   const [pendingMembers, setPendingMembers] = useState<string[]>([])
@@ -51,6 +53,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
             kind,
             category: tag,
             due: kind === 'goal' ? due : '',
+            estimate: kind === 'task' ? estimate : 0,
           },
         },
         { onSuccess: onClose },
@@ -64,6 +67,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
         kind,
         category: tag,
         due: kind === 'goal' && due ? due : undefined,
+        estimate: kind === 'task' && estimate ? estimate : undefined,
         members: pendingMembers.length > 0 ? pendingMembers : undefined,
       },
       { onSuccess: onClose },
@@ -163,6 +167,8 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
             Цель
           </Pill>
         </div>
+
+        {kind === 'task' && <EstimateField value={estimate} onChange={setEstimate} />}
 
         {kind === 'goal' && (
           <>

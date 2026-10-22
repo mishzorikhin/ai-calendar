@@ -7,6 +7,7 @@ import {
   normalizeReminders,
   remindersError,
   spanError,
+  estimateError,
   subtitleError,
   titleError,
 } from '../domain/limits'
@@ -192,7 +193,10 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
             repeat: input.repeat,
           }),
         ) ??
-        (input.allDay || input.endDate || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+        (input.allDay || input.endDate || isValidRange(input.start, input.end)
+          ? null
+          : invalid('Время задано неверно')) ??
+        (input.taskId && !data.tasks.some((t) => t.id === input.taskId) ? invalid('Задача не найдена') : null)
       if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
@@ -212,6 +216,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         url: input.url?.trim() || undefined,
         travel: input.travel || undefined,
         endDate: input.endDate || undefined,
+        taskId: input.taskId || undefined,
       }
       data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
@@ -314,7 +319,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     createTask(input) {
       const title = input.title.trim()
       const subtitle = input.subtitle?.trim()
-      const bad = invalid(titleError(title), subtitleError(subtitle))
+      const bad = invalid(titleError(title), subtitleError(subtitle), estimateError(input.estimate))
       if (bad) return bad
       const task: Task = {
         id: nextId('task'),
@@ -325,6 +330,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         done: false,
         due: input.due,
         createdAt: new Date().toISOString(),
+        estimate: input.estimate || undefined,
       }
       data.tasks.push(task)
       save()
@@ -336,7 +342,11 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const prev = data.tasks[i]!
       const title = patch.title?.trim()
       const subtitle = patch.subtitle?.trim()
-      const bad = invalid(title === undefined ? null : titleError(title), subtitleError(subtitle))
+      const bad = invalid(
+        title === undefined ? null : titleError(title),
+        subtitleError(subtitle),
+        estimateError(patch.estimate),
+      )
       if (bad) return bad
       const task: Task = {
         ...prev,
@@ -346,8 +356,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         done: patch.done ?? prev.done,
         due: patch.due ?? prev.due,
       }
-      // '' очищает категорию; undefined — не трогает.
+      // '' очищает категорию, 0 — оценку; undefined — не трогает.
       if (patch.category !== undefined) task.category = patch.category || undefined
+      if (patch.estimate !== undefined) task.estimate = patch.estimate || undefined
       data.tasks[i] = task
       save()
       return reply(task)

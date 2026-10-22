@@ -267,7 +267,9 @@ func chatRules(now time.Time) string {
 - Подстраивайся под пользователя: соблюдай его профиль (ритм дня, рабочие часы, «святые» блоки, перерывы, манеру общения) и факты из памяти. Для работы и созвонов ищи окна с work_hours: true. Длительность встречи с человеком из карточки — как в карточке, место — тоже оттуда, если не сказано иное.
 - Пользователь рассказал о себе что-то устойчивое (привычка, правило, важная дата, предпочтение, кто такой человек) — запомни: remember или save_person для людей. В evidence передай дословный кусок его реплики. Не запоминай разовые планы — для них есть события и задачи. Коротко скажи, что запомнил.
 - Позвать на встречу пользователей сервера — attendees в create_event (логины из list_users или карточек людей). На чужие встречи (invited_by) отвечай respond_invitation, когда пользователь скажет, придёт ли.
-- Пользователь меняет что-то из профиля («теперь работаю с 10», «обед у меня в 14») — update_profile. Просит забыть — forget или forget_person (id — из списков выше или list_memories/list_people).`,
+- Пользователь меняет что-то из профиля («теперь работаю с 10», «обед у меня в 14») — update_profile. Просит забыть — forget или forget_person (id — из списков выше или list_memories/list_people).
+- «Разложи задачи», «когда мне всё это успеть» — plan_tasks: он только предлагает план. Покажи план, после согласия создай события create_event с task_id. Сказал, сколько займёт задача, — estimate_minutes в create_task/update_task.
+- «Сдвинь всё после обеда на час», «перенеси встречи на завтра» — shift_events; «освободи пятницу» — clear_day. Больше трёх событий и любое освобождение дня — после согласия пользователя (как удаление: needs_confirmation, затем тот же вызов).`,
 		now.Format("02.01.2006"), ruWeekdays[now.Weekday()], now.Format("15:04"), now.Location())
 }
 
@@ -322,6 +324,7 @@ var chatTools = []llm.Tool{
 				"travel_minutes": map[string]any{"type": "integer", "minimum": 0, "maximum": 240, "description": "Сколько минут добираться до места: время до начала тоже займётся, придёт «пора выезжать»"},
 				"end_date":       map[string]any{"type": "string", "description": "Последний день многодневного события (конференция, отпуск), ГГГГ-ММ-ДД; end — время в этот день"},
 				"attendees":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Логины (без @) пользователей сервера, кого пригласить — им придёт приглашение"},
+				"task_id":        map[string]any{"type": "string", "description": "id задачи, под которую ставится это время (из plan_tasks или list_tasks)"},
 			},
 			"required":             []string{"date", "title"},
 			"additionalProperties": false,
@@ -417,12 +420,13 @@ var chatTools = []llm.Tool{
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"title":    map[string]any{"type": "string", "description": "Короткое название, например «Подготовить презентацию»"},
-				"kind":     map[string]any{"type": "string", "enum": []string{"task", "goal"}, "description": "task — дело, goal — цель с дедлайном"},
-				"category": map[string]any{"type": "string", "description": "Тег задачи: «учёба», «спорт», «работа» или любой свой"},
-				"subtitle": map[string]any{"type": "string", "description": "Детали, необязательно"},
-				"due":      map[string]any{"type": "string", "description": "Дедлайн цели, ГГГГ-ММ-ДД (для kind=goal)"},
-				"members":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Логины (без @), с кем поделиться — задача станет совместной"},
+				"title":            map[string]any{"type": "string", "description": "Короткое название, например «Подготовить презентацию»"},
+				"kind":             map[string]any{"type": "string", "enum": []string{"task", "goal"}, "description": "task — дело, goal — цель с дедлайном"},
+				"category":         map[string]any{"type": "string", "description": "Тег задачи: «учёба», «спорт», «работа» или любой свой"},
+				"subtitle":         map[string]any{"type": "string", "description": "Детали, необязательно"},
+				"due":              map[string]any{"type": "string", "description": "Дедлайн цели, ГГГГ-ММ-ДД (для kind=goal)"},
+				"members":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Логины (без @), с кем поделиться — задача станет совместной"},
+				"estimate_minutes": map[string]any{"type": "integer", "minimum": 15, "maximum": 480, "description": "Сколько займёт, если пользователь сказал («на пару часов»)"},
 			},
 			"required":             []string{"title"},
 			"additionalProperties": false,
@@ -434,12 +438,13 @@ var chatTools = []llm.Tool{
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"task_id":  map[string]any{"type": "string", "description": "id задачи из list_tasks"},
-				"title":    map[string]any{"type": "string"},
-				"category": map[string]any{"type": "string", "description": "Новый тег (учёба, спорт, работа или любой свой)"},
-				"done":     map[string]any{"type": "boolean", "description": "true — выполнена, false — снова открыта"},
-				"due":      map[string]any{"type": "string", "description": "Дедлайн, ГГГГ-ММ-ДД"},
-				"members":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Добавить участников по логинам (без @)"},
+				"task_id":          map[string]any{"type": "string", "description": "id задачи из list_tasks"},
+				"title":            map[string]any{"type": "string"},
+				"category":         map[string]any{"type": "string", "description": "Новый тег (учёба, спорт, работа или любой свой)"},
+				"done":             map[string]any{"type": "boolean", "description": "true — выполнена, false — снова открыта"},
+				"due":              map[string]any{"type": "string", "description": "Дедлайн, ГГГГ-ММ-ДД"},
+				"members":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Добавить участников по логинам (без @)"},
+				"estimate_minutes": map[string]any{"type": "integer", "minimum": 15, "maximum": 480, "description": "Сколько займёт"},
 			},
 			"required":             []string{"task_id"},
 			"additionalProperties": false,
@@ -517,6 +522,12 @@ func (s *server) runTool(ctx context.Context, turn chatTurn, call llm.ToolCall) 
 		return s.toolForgetPerson(ctx, args)
 	case "respond_invitation":
 		return s.toolRespondInvitation(ctx, args)
+	case "plan_tasks":
+		return s.toolPlanTasks(ctx, turn, args)
+	case "shift_events":
+		return s.toolShiftEvents(ctx, turn, args)
+	case "clear_day":
+		return s.toolClearDay(ctx, turn, args)
 	}
 	return fmt.Sprintf(`{"error":"неизвестный инструмент %q"}`, call.Function.Name), toolMeta{}
 }
@@ -713,10 +724,17 @@ func (s *server) toolCreateEvent(ctx context.Context, args map[string]any) (stri
 	if err := validateRepeat(repeat, until, day.Format(time.DateOnly)); err != nil {
 		return toolErr(err, "неверный повтор"), toolMeta{}
 	}
+	taskID := strArg(args, "task_id")
+	if taskID != "" {
+		if _, err := s.store.Task(ctx, taskID); err != nil {
+			return `{"error":"задача не найдена — id из list_tasks"}`, toolMeta{}
+		}
+	}
 	ev, err := s.createEventSynced(ctx, model.Event{
 		Date: day.Format(time.DateOnly), Title: title, Subtitle: strArg(args, "subtitle"),
 		Start: start, End: end, Badge: badge, Highlight: true, Reminders: reminders,
 		Repeat: repeat, RepeatUntil: until, AllDay: allDay, Notes: notes, URL: link, Travel: travel, EndDate: endDate,
+		TaskID: taskID,
 	})
 	if err != nil {
 		return toolErr(err, "не удалось сохранить событие"), toolMeta{}
@@ -923,12 +941,13 @@ type toolTask struct {
 	Due      string   `json:"due,omitempty"`
 	Owner    string   `json:"owner,omitempty"`
 	Members  []string `json:"members,omitempty"`
+	Estimate int      `json:"estimate_minutes,omitempty"`
 }
 
 func toToolTask(t model.Task) toolTask {
 	out := toolTask{
 		ID: t.ID, Title: t.Title, Subtitle: t.Subtitle, Kind: string(t.Kind),
-		Category: string(t.Category), Done: t.Done, Due: t.Due,
+		Category: string(t.Category), Done: t.Done, Due: t.Due, Estimate: t.Estimate,
 	}
 	if t.Owner != nil {
 		out.Owner = t.Owner.Username
@@ -1001,6 +1020,10 @@ func taskArgs(args map[string]any) (model.Task, string) {
 	if !validTaskDue(t.Due) {
 		return t, `{"error":"due должен быть в формате ГГГГ-ММ-ДД"}`
 	}
+	t.Estimate = intArg(args, "estimate_minutes", 0)
+	if validateEstimate(t.Estimate) != nil {
+		return t, `{"error":"estimate_minutes — от 15 до 480"}`
+	}
 	return t, ""
 }
 
@@ -1059,6 +1082,13 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 			return `{"error":"due должен быть в формате ГГГГ-ММ-ДД"}`, toolMeta{}
 		}
 		patch.Due = &due
+	}
+	if _, ok := args["estimate_minutes"]; ok {
+		est := intArg(args, "estimate_minutes", 0)
+		if validateEstimate(est) != nil {
+			return `{"error":"estimate_minutes — от 15 до 480"}`, toolMeta{}
+		}
+		patch.Estimate = &est
 	}
 	var users []model.User
 	if _, ok := args["members"]; ok {
@@ -1167,6 +1197,7 @@ var (
 		"давай": true, "удаляй": true, "удали": true, "удалить": true, "удалите": true, "убери": true, "убирай": true,
 		"конечно": true, "подтверждаю": true, "согласен": true, "согласна": true, "верно": true, "точно": true,
 		"можно": true, "go": true, "го": true,
+		"переноси": true, "перенеси": true, "сдвигай": true, "сдвинь": true, "двигай": true, "освобождай": true, "освободи": true,
 	}
 	refusalWords = map[string]bool{
 		"не": true, "нет": true, "неа": true, "no": true, "стоп": true, "отмена": true, "отмени": true,

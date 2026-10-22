@@ -205,6 +205,8 @@ var schema = []string{
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS url TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS travel INT NOT NULL DEFAULT 0`,
+	`ALTER TABLE events ADD COLUMN IF NOT EXISTS task_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimate INT NOT NULL DEFAULT 0`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS end_date TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS events_multiday ON events (user_id, end_date) WHERE end_date <> ''`,
 	// Приглашённые на события и их ответы.
@@ -385,7 +387,7 @@ func uid(ctx context.Context) (int64, error) {
 
 const eventColumns = `id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
 	source, external_id, etag, read_only, all_day, reminders::text, repeat, repeat_until, exdates::text,
-	notes, url, travel, end_date`
+	notes, url, travel, end_date, task_id`
 
 func scanEvent(row pgx.Row) (model.Event, error) {
 	var e model.Event
@@ -393,7 +395,7 @@ func scanEvent(row pgx.Row) (model.Event, error) {
 	var reminders, exdates *string
 	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt,
 		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders, &e.Repeat, &e.RepeatUntil, &exdates,
-		&e.Notes, &e.URL, &e.Travel, &e.EndDate)
+		&e.Notes, &e.URL, &e.Travel, &e.EndDate, &e.TaskID)
 	if userID != nil {
 		e.UserID = *userID
 	}
@@ -488,13 +490,13 @@ func (s *pgStore) CreateEvent(ctx context.Context, e model.Event) (model.Event, 
 		return model.Event{}, err
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO events (id, user_id, date, title, subtitle, start_min, end_min, badge, highlight, created_at,
-			source, external_id, etag, read_only, all_day, reminders, repeat, repeat_until, exdates, notes, url, travel, end_date)
+			source, external_id, etag, read_only, all_day, reminders, repeat, repeat_until, exdates, notes, url, travel, end_date, task_id)
 		VALUES ('evt-' || nextval('event_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18::jsonb,
-			$19, $20, $21, $22)
+			$19, $20, $21, $22, $23)
 		RETURNING id`,
 		e.UserID, e.Date, e.Title, e.Subtitle, e.Start, e.End, e.Badge, e.Highlight, e.CreatedAt,
 		e.Source, e.ExternalID, e.ETag, e.ReadOnly, e.AllDay, reminders, e.Repeat, e.RepeatUntil, exdates,
-		e.Notes, e.URL, e.Travel, e.EndDate).Scan(&e.ID)
+		e.Notes, e.URL, e.Travel, e.EndDate, e.TaskID).Scan(&e.ID)
 	if err != nil {
 		return model.Event{}, fmt.Errorf("создание события: %w", err)
 	}
@@ -557,7 +559,7 @@ func (s *pgStore) DeleteEvent(ctx context.Context, id string) error {
 	return nil
 }
 
-const taskColumns = `t.id, t.owner_id, t.title, t.subtitle, t.kind, t.category, t.done, t.due, t.created_at,
+const taskColumns = `t.id, t.owner_id, t.title, t.subtitle, t.kind, t.category, t.done, t.due, t.estimate, t.created_at,
 	COALESCE(o.username, ''), COALESCE(o.name, ''), o.created_at`
 
 func scanTask(row pgx.Row) (model.Task, error) {
@@ -565,7 +567,7 @@ func scanTask(row pgx.Row) (model.Task, error) {
 	var ownerID *int64
 	var ownerUsername, ownerName string
 	var ownerCreated *time.Time
-	err := row.Scan(&t.ID, &ownerID, &t.Title, &t.Subtitle, &t.Kind, &t.Category, &t.Done, &t.Due, &t.CreatedAt, &ownerUsername, &ownerName, &ownerCreated)
+	err := row.Scan(&t.ID, &ownerID, &t.Title, &t.Subtitle, &t.Kind, &t.Category, &t.Done, &t.Due, &t.Estimate, &t.CreatedAt, &ownerUsername, &ownerName, &ownerCreated)
 	if ownerID != nil {
 		t.OwnerID = *ownerID
 		t.Owner = &model.User{ID: *ownerID, Username: ownerUsername, Name: ownerName}
@@ -670,10 +672,10 @@ func (s *pgStore) CreateTask(ctx context.Context, t model.Task) (model.Task, err
 	if err != nil {
 		return model.Task{}, err
 	}
-	err = s.pool.QueryRow(ctx, `INSERT INTO tasks (id, owner_id, title, subtitle, kind, category, done, due)
-		VALUES ('task-' || nextval('task_id_seq'), $1, $2, $3, $4, $5, $6, $7)
+	err = s.pool.QueryRow(ctx, `INSERT INTO tasks (id, owner_id, title, subtitle, kind, category, done, due, estimate)
+		VALUES ('task-' || nextval('task_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`,
-		u, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due).Scan(&t.ID)
+		u, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate).Scan(&t.ID)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("создание задачи: %w", err)
 	}
@@ -686,8 +688,8 @@ func (s *pgStore) UpdateTask(ctx context.Context, id string, patch model.TaskPat
 		return model.Task{}, err
 	}
 	t.Apply(patch)
-	_, err = s.pool.Exec(ctx, `UPDATE tasks SET title=$2, subtitle=$3, kind=$4, category=$5, done=$6, due=$7 WHERE id=$1`,
-		t.ID, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due)
+	_, err = s.pool.Exec(ctx, `UPDATE tasks SET title=$2, subtitle=$3, kind=$4, category=$5, done=$6, due=$7, estimate=$8 WHERE id=$1`,
+		t.ID, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("обновление задачи: %w", err)
 	}

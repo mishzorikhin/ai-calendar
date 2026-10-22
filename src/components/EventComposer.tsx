@@ -27,6 +27,7 @@ import type { Badge, Repeat } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
 import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, MapIcon, RepeatIcon, TrashIcon } from './Icons'
 import { EventDetails, mapLink, type Details } from './EventDetails'
+import { EventTask } from './EventTask'
 import { EventLinks } from './EventLinks'
 import { PeoplePicker, type Picked } from './PeoplePicker'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
@@ -392,6 +393,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           </p>
         )}
         {editing?.url && <EventLinks event={{ ...editing, subtitle: undefined }} notes={false} />}
+        {editing?.taskId && <EventTask taskId={editing.taskId} />}
         <div className={styles.placeRow}>
           <input
             className={styles.subtitle}

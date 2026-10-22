@@ -384,6 +384,7 @@ export function useUpdateTask() {
                 done: patch.done ?? t.done,
                 due: patch.due ?? t.due,
                 category: patch.category === undefined ? t.category : patch.category || undefined,
+                estimate: patch.estimate === undefined ? t.estimate : patch.estimate || undefined,
               }
             : t,
         ),

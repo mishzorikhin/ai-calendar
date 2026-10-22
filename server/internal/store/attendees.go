@@ -101,6 +101,7 @@ func overlaps(e model.Event, from, to string) bool {
 func (s *fileStore) asInvite(e model.Event, status model.RSVP) model.Event {
 	owner, _ := s.userCard(e.UserID)
 	e.Invite = &model.Invite{From: owner, Status: status}
+	e.TaskID = "" // задача владельца приглашённому не видна
 	return e
 }
 

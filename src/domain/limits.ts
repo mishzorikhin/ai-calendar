@@ -12,7 +12,18 @@ export const LIMITS = {
   travel: 240,
   /** Самое длинное многодневное событие, дней. */
   spanDays: 60,
+  /** Оценка задачи, минут. */
+  estimateMin: 15,
+  estimateMax: 480,
 } as const
+
+/** Оценка задачи: нет, 0 (снять) или от 15 минут до 8 часов — как на сервере. */
+export function estimateError(estimate: number | undefined): string | null {
+  if (estimate === undefined || estimate === 0) return null
+  return Number.isInteger(estimate) && estimate >= LIMITS.estimateMin && estimate <= LIMITS.estimateMax
+    ? null
+    : 'Оценка — от 15 минут до 8 часов'
+}
 
 /** Длина в символах Unicode (как на сервере), а не в UTF-16-единицах. */
 const length = (s: string) => [...s].length

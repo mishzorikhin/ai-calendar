@@ -36,6 +36,10 @@ const TOOL_LABELS: Record<string, string> = {
   list_people: 'Смотрю людей',
   save_person: 'Запоминаю человека',
   forget_person: 'Забываю человека',
+  respond_invitation: 'Отвечаю на приглашение',
+  plan_tasks: 'Раскладываю задачи',
+  shift_events: 'Двигаю события',
+  clear_day: 'Освобождаю день',
 }
 
 export function Chat() {

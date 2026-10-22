@@ -221,6 +221,8 @@ type eventInput struct {
 	EndDate string `json:"endDate"`
 	// Attendees — логины приглашённых.
 	Attendees []string `json:"attendees"`
+	// TaskID — задача, под которую ставится это время (должна быть видна пользователю).
+	TaskID string `json:"taskId"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -347,10 +349,15 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if in.TaskID != "" {
+		if _, err := s.store.Task(r.Context(), in.TaskID); err != nil {
+			return badRequest("Задача %q не найдена", in.TaskID)
+		}
+	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
-		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate,
+		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate, TaskID: in.TaskID,
 	})
 	if err != nil {
 		return err
@@ -575,8 +582,18 @@ type taskInput struct {
 	Kind     model.TaskKind     `json:"kind"`
 	Category model.TaskCategory `json:"category"`
 	Due      string             `json:"due"`
+	// Estimate — сколько минут займёт: 0 (не указано) или 15–480.
+	Estimate int `json:"estimate"`
 	// Members — логины, с кем поделиться (@имя в title/subtitle работает так же).
 	Members []string `json:"members"`
+}
+
+// validateEstimate — оценка задачи: 0 (не указано) или от 15 минут до 8 часов.
+func validateEstimate(v int) error {
+	if v != 0 && (v < model.MinEstimate || v > model.MaxEstimate) {
+		return badRequest("Оценка — от %d минут до %d часов", model.MinEstimate, model.MaxEstimate/60)
+	}
+	return nil
 }
 
 // validTaskDue проверяет дату дедлайна цели (пустая — без дедлайна).
@@ -613,13 +630,16 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 	if !validTaskDue(in.Due) {
 		return badRequest("due должен быть в формате ГГГГ-ММ-ДД")
 	}
+	if err := validateEstimate(in.Estimate); err != nil {
+		return err
+	}
 	// Явный members — строго: незнакомые логины отклоняем до создания.
 	users, unknown := s.resolveUsernames(r.Context(), in.Members)
 	if len(unknown) > 0 {
 		return badRequest("Нет пользователей: @%s", strings.Join(unknown, ", @"))
 	}
 	t, err := s.store.CreateTask(r.Context(), model.Task{
-		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind, Category: in.Category, Due: in.Due,
+		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind, Category: in.Category, Due: in.Due, Estimate: in.Estimate,
 	})
 	if err != nil {
 		return err
@@ -659,6 +679,7 @@ type taskPatchInput struct {
 	Category *model.TaskCategory `json:"category"`
 	Done     *bool               `json:"done"`
 	Due      *string             `json:"due"`
+	Estimate *int                `json:"estimate"`
 	Members  []string            `json:"members"`
 }
 
@@ -688,6 +709,11 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 	if in.Due != nil && !validTaskDue(*in.Due) {
 		return badRequest("due должен быть в формате ГГГГ-ММ-ДД")
 	}
+	if in.Estimate != nil {
+		if err := validateEstimate(*in.Estimate); err != nil {
+			return err
+		}
+	}
 	users, unknown := s.resolveUsernames(r.Context(), in.Members)
 	if len(unknown) > 0 {
 		return badRequest("Нет пользователей: @%s", strings.Join(unknown, ", @"))
@@ -703,7 +729,7 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 	}
 	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), model.TaskPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind,
-		Category: in.Category, Done: in.Done, Due: in.Due,
+		Category: in.Category, Done: in.Done, Due: in.Due, Estimate: in.Estimate,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {

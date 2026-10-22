@@ -56,9 +56,43 @@ func testSuggestions(t *testing.T, s Store) {
 	}
 }
 
+// testPlanningFields — оценка задачи и связь события с задачей сохраняются; приглашённый связи не видит.
+func testPlanningFields(t *testing.T, s Store) {
+	t.Helper()
+	ctx := userCtx(t, s)
+	task, err := s.CreateTask(ctx, model.Task{Title: "Отчёт", Kind: model.TaskKindTask, Estimate: 90})
+	if err != nil || task.Estimate != 90 || task.CreatedAt.IsZero() {
+		t.Fatalf("задача: %+v %v", task, err)
+	}
+	est := 120
+	if task, err = s.UpdateTask(ctx, task.ID, model.TaskPatch{Estimate: &est}); err != nil || task.Estimate != 120 {
+		t.Fatalf("правка оценки: %+v %v", task, err)
+	}
+	ev, err := s.CreateEvent(ctx, model.Event{Date: "2030-01-07", Title: "Отчёт", Start: 540, End: 660, Badge: model.BadgeWork, TaskID: task.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := "Отчёт, часть 1"
+	if got, err := s.UpdateEvent(ctx, ev.ID, model.EventPatch{Title: &title}); err != nil || got.TaskID != task.ID {
+		t.Fatalf("после правки события: %+v %v", got, err)
+	}
+	guest, err := s.CreateUser(context.Background(), "guest3", "Гость", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetAttendees(ctx, ev.ID, []model.User{guest}); err != nil {
+		t.Fatal(err)
+	}
+	inv := s.InvitedEvents(WithUser(context.Background(), guest), "2030-01-01", "2030-02-01")
+	if len(inv) != 1 || inv[0].TaskID != "" {
+		t.Fatalf("приглашённый видит задачу: %+v", inv)
+	}
+}
+
 func TestFileSuggestions(t *testing.T) {
 	s, _ := Open("")
 	testSuggestions(t, s)
+	testPlanningFields(t, s)
 }
 
 func TestPostgresSuggestions(t *testing.T) {
@@ -74,10 +108,5 @@ func TestPostgresSuggestions(t *testing.T) {
 	defer s.(*pgStore).pool.Close()
 	mustWipe(ctx, t, s)
 	testSuggestions(t, s)
-	// Задача помнит, когда её завели.
-	tctx := userCtx(t, s)
-	task, err := s.CreateTask(tctx, model.Task{Title: "x", Kind: model.TaskKindTask})
-	if err != nil || task.CreatedAt.IsZero() {
-		t.Fatalf("createdAt: %+v %v", task, err)
-	}
+	testPlanningFields(t, s)
 }

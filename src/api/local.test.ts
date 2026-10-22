@@ -285,4 +285,18 @@ describe('local api', () => {
     expect(res.tasks).toHaveLength(1)
     await expect(api.search('г')).rejects.toBeInstanceOf(ApiError)
   })
+
+  it('оценка задачи и событие под задачу — как на сервере', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const task = await api.createTask({ title: 'Отчёт', estimate: 90 })
+    expect(task.estimate).toBe(90)
+    await expect(api.createTask({ title: 'x', estimate: 5 })).rejects.toBeInstanceOf(ApiError)
+    expect((await api.updateTask(task.id, { estimate: 0 })).estimate).toBeUndefined()
+    const ev = await api.createEvent({ title: 'Отчёт', date: day, start: 540, end: 630, taskId: task.id })
+    expect(ev.taskId).toBe(task.id)
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 540, end: 600, taskId: 'нет' }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(await api.getSuggestions()).toEqual([])
+  })
 })

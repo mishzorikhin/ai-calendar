@@ -110,10 +110,11 @@ func scanInvite(row pgx.Row) (model.Event, error) {
 	var owner model.User
 	err := row.Scan(&e.ID, &userID, &e.Date, &e.Title, &e.Subtitle, &e.Start, &e.End, &e.Badge, &e.Highlight, &e.CreatedAt,
 		&e.Source, &e.ExternalID, &e.ETag, &e.ReadOnly, &e.AllDay, &reminders, &e.Repeat, &e.RepeatUntil, &exdates,
-		&e.Notes, &e.URL, &e.Travel, &e.EndDate, &status, &owner.ID, &owner.Username, &owner.Name)
+		&e.Notes, &e.URL, &e.Travel, &e.EndDate, &e.TaskID, &status, &owner.ID, &owner.Username, &owner.Name)
 	if err != nil {
 		return e, err
 	}
+	e.TaskID = "" // задача владельца приглашённому не видна
 	if userID != nil {
 		e.UserID = *userID
 	}
