@@ -251,4 +251,24 @@ describe('local api', () => {
     await api.deletePerson(gleb.id)
     await expect(api.deletePerson(gleb.id)).rejects.toBeInstanceOf(ApiError)
   })
+
+  it('многодневное событие видно в каждом дне, заметки и ссылка сохраняются', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    await api.createEvent({
+      title: 'Конференция',
+      date: new Date(2026, 9, 21),
+      endDate: '2026-10-23',
+      start: 600,
+      end: 1080,
+      url: 'https://conf.example',
+      notes: ' Бейдж ',
+    })
+    const mid = (await api.getEvents(new Date(2026, 9, 22))).find((e) => e.title === 'Конференция')
+    expect(mid).toMatchObject({ allDay: true, url: 'https://conf.example', notes: 'Бейдж' })
+    expect(mid?.span?.start).toBe(600)
+    expect((await api.getEvents(new Date(2026, 9, 24))).some((e) => e.title === 'Конференция')).toBe(false)
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 600, end: 660, url: 'ftp://x' }),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
 })

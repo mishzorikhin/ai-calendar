@@ -254,3 +254,170 @@
   padding: 0 10px;
   white-space: nowrap;
 }
+
+/* --- Подробнее: ссылка, заметки, дорога, несколько дней ----------------------- */
+
+.placeRow {
+  position: relative;
+}
+
+.placeRow .subtitle {
+  padding-right: 104px;
+}
+
+/* «На карте» — внутри поля места, справа. */
+.mapLink {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.details {
+  margin-top: 12px;
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+
+.detailsToggle {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 18px;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.detailsTitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.detailsTitle small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.chevron,
+.chevronOpen {
+  flex-shrink: 0;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.detailsBody {
+  overflow: hidden;
+  padding: 0 12px;
+}
+
+.detailsBody > :last-child {
+  margin-bottom: 14px;
+}
+
+.detailsBody .subtitle {
+  margin-top: 0;
+  background: var(--surface);
+}
+
+.detailsBody .subtitle + .subtitle {
+  margin-top: 8px;
+}
+
+.notes {
+  height: auto;
+  padding: 12px 16px;
+  line-height: 1.4;
+  resize: none;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.label svg {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
+.detailsBody .row {
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+.multiRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.multiRow .pick {
+  height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  background: var(--surface);
+}
+
+/* --- Ссылка, место и заметки в просмотре ---------------------------------------- */
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.linkPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.linkPill:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.linkJoin {
+  background: var(--surface-ink);
+  color: var(--ink-inverse);
+}
+
+.notesText {
+  margin: 12px 4px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}

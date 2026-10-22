@@ -28,11 +28,13 @@ import {
 } from '../lib/dates'
 import { BADGE_OPTIONS } from '../lib/badges'
 import { BADGE_ICON } from './Icons'
-import { LIMITS } from '../domain/limits'
+import { LIMITS, detailsError, spanError } from '../domain/limits'
 import { repeatLabel } from '../domain/repeat'
 import type { Badge, Repeat } from '../domain/types'
 import { BottomSheet } from './BottomSheet'
-import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, RepeatIcon, TrashIcon } from './Icons'
+import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, MapIcon, RepeatIcon, TrashIcon } from './Icons'
+import { EventDetails, mapLink, type Details } from './EventDetails'
+import { EventLinks } from './EventLinks'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
@@ -88,6 +90,7 @@ function centerActive(row: HTMLElement | null, smooth: boolean) {
 }
 
 function durationLabel(mins: number): string {
+  if (mins < 60) return `${mins} мин`
   if (mins % 60 === 0) return `${mins / 60} ч`
   if (mins % 30 === 0) return `${mins / 60}`.replace('.', ',') + ' ч'
   return `${mins} мин`
@@ -127,6 +130,15 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const defaultReminder = useDefaultReminder(badge)
   // Повтор — только у своих событий: у подключённых календарей он задаётся там.
   const [repeat, setRepeat] = useState<Repeat | ''>(editing?.repeat ?? '')
+  // Ссылка, заметки, дорога и последний день многодневного события.
+  const [details, setDetails] = useState<Details>({
+    notes: editing?.notes ?? '',
+    url: editing?.url ?? '',
+    travel: editing?.travel ?? 0,
+    endDate: editing?.endDate ?? '',
+    endTime: editing?.endDate ? editing.end : 18 * 60,
+  })
+  const multiDay = details.endDate !== ''
   const series = editing?.repeat
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
@@ -160,10 +172,26 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
     editing && !editing.allDay ? editing.end - editing.start : null,
   )
 
-  const conflicts = allDay ? [] : slotAt(others, start, length).conflicts
+  const conflicts = allDay || multiDay ? [] : slotAt(others, start, length).conflicts
   const shift = conflicts.length ? nextFreeTime(others, start, length) : null
-  // Что уходит на сервер: у события на весь день — сутки целиком.
-  const range = allDay ? { start: 0, end: LIMITS.dayMinutes } : { start, end }
+  // Что уходит на сервер: у события на весь день — сутки целиком, у многодневного — конец в последний день.
+  const range = allDay
+    ? { start: 0, end: LIMITS.dayMinutes }
+    : multiDay
+      ? { start, end: details.endTime }
+      : { start, end }
+  const multiSummary = multiDay
+    ? `${relativeDayLabel(date, today)}${allDay ? '' : `, ${formatMinutes(start)}`} — ${relativeDayLabel(fromISODate(details.endDate), today)}${allDay ? '' : `, ${formatMinutes(details.endTime % LIMITS.dayMinutes)}`}`
+    : undefined
+  const detailsProblem =
+    detailsError({ ...details, url: details.url.trim() }) ??
+    spanError({ date: toISODate(date), endDate: details.endDate || undefined, ...range, repeat: repeat || undefined })
+  const detailsPatch = {
+    notes: details.notes.trim(),
+    url: details.url.trim(),
+    travel: allDay ? 0 : details.travel,
+    endDate: details.endDate,
+  }
 
   // Выбранные день и время всегда на виду: при открытии ленты сразу стоят на них,
   // а после выбора (в том числе из системного календаря) плавно доезжают.
@@ -184,6 +212,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const reminders = reminder === null ? {} : { reminders: reminder < 0 ? [] : [reminder] }
 
   const save = () => {
+    if (detailsProblem) return
     const name = title.trim()
     // Безымянное событие в календаре потом не опознать — просим название, а не подставляем заглушку.
     if (!name && !editing) {
@@ -207,6 +236,8 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             ...reminders,
             ...(repeat !== (editing.repeat ?? '') && { repeat }),
             ...(series && (!isSameDay(date, editing.date) || repeat === '') && { occurrence: editing.date }),
+            ...detailsPatch,
+            ...(editing.source && { endDate: undefined }),
           },
         },
         { onSuccess: onClose },
@@ -223,6 +254,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
         ...reminders,
         ...(repeat && { repeat }),
         ...(allDay && { allDay }),
+        ...(detailsPatch.notes && { notes: detailsPatch.notes }),
+        ...(detailsPatch.url && { url: detailsPatch.url }),
+        ...(detailsPatch.travel > 0 && { travel: detailsPatch.travel }),
+        ...(detailsPatch.endDate && { endDate: detailsPatch.endDate }),
       },
       {
         onSuccess: () => {
@@ -267,10 +302,11 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             conflicts={conflicts}
             shift={shift}
             onShift={setStart}
+            summary={multiSummary}
           />
-          {error && (
+          {(error || detailsProblem) && (
             <p className={styles.error} role="alert">
-              {apiErrorText(error)}
+              {detailsProblem ?? apiErrorText(error)}
             </p>
           )}
           {editing && series && confirmDelete ? (
@@ -321,7 +357,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           </CircleButton>
         </div>
 
-        {syncTarget && !repeat && !allDay && (
+        {syncTarget && !repeat && !allDay && !multiDay && (
           <p className={styles.syncNote}>
             <CalendarIcon size={14} />
             {editing ? `Изменения уйдут в «${syncTarget}»` : `Сохранится и в «${syncTarget}»`}
@@ -354,14 +390,22 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             Как назвать событие?
           </p>
         )}
-        <input
-          className={styles.subtitle}
-          value={subtitle}
-          onChange={(e) => setSubtitle(e.target.value)}
-          placeholder="Место или заметка — необязательно"
-          aria-label="Место или заметка"
-          enterKeyHint="done"
-        />
+        {editing?.url && <EventLinks event={{ ...editing, subtitle: undefined }} notes={false} />}
+        <div className={styles.placeRow}>
+          <input
+            className={styles.subtitle}
+            value={subtitle}
+            onChange={(e) => setSubtitle(e.target.value)}
+            placeholder="Место — необязательно"
+            aria-label="Место"
+            enterKeyHint="done"
+          />
+          {subtitle.trim() && (
+            <a className={styles.mapLink} href={mapLink(subtitle.trim())} target="_blank" rel="noreferrer">
+              <MapIcon size={15} /> На карте
+            </a>
+          )}
+        </div>
 
         <div className={styles.labelRow}>
           <p className={styles.label} id="composer-day">
@@ -438,20 +482,27 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
               Весь день
             </Pill>
           )}
-          {durations.map((d) => (
-            <Pill
-              key={d}
-              small
-              tone={!allDay && d === duration ? 'dark' : 'ghost'}
-              aria-pressed={!allDay && d === duration}
-              onClick={() => {
-                setDuration(d)
-                setAllDay(false)
-              }}
-            >
-              {durationLabel(d)}
+          {/* Многодневное: «весь день» или со временем — конец тогда задаётся в «Подробнее». */}
+          {multiDay && (
+            <Pill small tone={allDay ? 'ghost' : 'dark'} aria-pressed={!allDay} onClick={() => setAllDay(false)}>
+              Со временем
             </Pill>
-          ))}
+          )}
+          {!(multiDay && !allDay) &&
+            durations.map((d) => (
+              <Pill
+                key={d}
+                small
+                tone={!allDay && d === duration ? 'dark' : 'ghost'}
+                aria-pressed={!allDay && d === duration}
+                onClick={() => {
+                  setDuration(d)
+                  setAllDay(false)
+                }}
+              >
+                {durationLabel(d)}
+              </Pill>
+            ))}
         </div>
 
         <p className={styles.label} id="composer-badge">
@@ -475,7 +526,15 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           })}
         </div>
 
-        {!editing?.source && <RepeatPicker value={repeat} onChange={setRepeat} />}
+        {!editing?.source && !multiDay && <RepeatPicker value={repeat} onChange={setRepeat} />}
+
+        <EventDetails
+          value={details}
+          onChange={(patch) => setDetails((d) => ({ ...d, ...patch }))}
+          date={date}
+          allDay={allDay}
+          multiDayLocked={!!editing?.source || !!repeat}
+        />
 
         {/* У события на весь день нет времени начала — оно попадает в план на день. */}
         {remindersOn && !allDay && (

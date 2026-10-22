@@ -56,7 +56,7 @@ func expandSpan(e model.Event, from, to string) []model.Event {
 	for d := lo; !d.After(hi); d = d.AddDate(0, 0, 1) {
 		occ := e
 		occ.Date = d.Format(time.DateOnly)
-		occ.Span = &model.EventSpan{Date: e.Date, Start: e.Start, End: e.End}
+		occ.Span = &model.EventSpan{Date: e.Date, Start: e.Start, End: e.End, AllDay: e.AllDay}
 		occ.Highlight = e.Highlight && d.Equal(first)
 		switch {
 		case e.AllDay:

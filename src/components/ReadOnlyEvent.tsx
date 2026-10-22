@@ -5,6 +5,7 @@ import { useCalendarName, useUpdateEvent } from '../api/queries'
 import type { DatedEvent } from '../domain/types'
 import { formatMinutes, relativeDayLabel } from '../lib/dates'
 import { BottomSheet } from './BottomSheet'
+import { EventLinks } from './EventLinks'
 import { CloseIcon, LockIcon } from './Icons'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
 import { CircleButton, Pill } from './ui'
@@ -26,6 +27,7 @@ export function ReadOnlyEvent({ event, onClose }: { event: DatedEvent; onClose: 
   const when = event.allDay
     ? `${relativeDayLabel(event.date)}, весь день`
     : `${relativeDayLabel(event.date)}, ${formatMinutes(event.start)}–${formatMinutes(event.end)}`
+  const travel = event.travel ? ` · дорога ${event.travel} мин` : ''
   return (
     <BottomSheet
       label={event.title}
@@ -44,8 +46,12 @@ export function ReadOnlyEvent({ event, onClose }: { event: DatedEvent; onClose: 
           <CloseIcon size={18} />
         </CircleButton>
       </div>
-      <p className={`${styles.readOnlyWhen} tnum`}>{when}</p>
+      <p className={`${styles.readOnlyWhen} tnum`}>
+        {when}
+        {travel}
+      </p>
       {event.subtitle && <p className={styles.readOnlySub}>{event.subtitle}</p>}
+      <EventLinks event={event} />
       <p className={`${styles.status} ${styles.readOnlyNote}`}>
         <LockIcon size={15} />
         <span>

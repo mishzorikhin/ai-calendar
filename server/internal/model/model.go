@@ -89,9 +89,10 @@ type Event struct {
 
 // EventSpan — исходные начало и конец многодневного события у его вхождения в другой день.
 type EventSpan struct {
-	Date  string `json:"date"`
-	Start int    `json:"start"`
-	End   int    `json:"end"`
+	Date   string `json:"date"`
+	Start  int    `json:"start"`
+	End    int    `json:"end"`
+	AllDay bool   `json:"allDay,omitempty"`
 }
 
 // MaxSpanDays — самое длинное многодневное событие.

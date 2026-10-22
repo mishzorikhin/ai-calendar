@@ -29,6 +29,18 @@ export type CalendarEvent = {
   repeatUntil?: string
   /** Дни, убранные из серии (ГГГГ-ММ-ДД). */
   exdates?: string[]
+  /** Заметки и ссылка (созвон, билет). Место — subtitle. */
+  notes?: string
+  url?: string
+  /** Сколько минут добираться: время до начала занято, придёт «пора выезжать». */
+  travel?: number
+  /** Последний день многодневного события, ГГГГ-ММ-ДД. */
+  endDate?: string
+  /**
+   * У дня многодневного события: исходные первый день и время. start/end дня — отрезок этого дня
+   * (первый — до полуночи, последний — с полуночи, средние — на весь день).
+   */
+  span?: { date: string; start: number; end: number; allDay?: boolean }
 }
 
 export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
@@ -65,6 +77,11 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   repeatUntil?: string
   /** На весь день: start 0, end 1440, время не занимает. */
   allDay?: boolean
+  notes?: string
+  url?: string
+  travel?: number
+  /** Последний день многодневного события (end — время в этот день). */
+  endDate?: string
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -86,6 +103,11 @@ export type EventPatch = {
   skip?: Date
   /** true — на весь день; false — снова со временем (вместе с start и end). */
   allDay?: boolean
+  /** '' очищает заметки и ссылку; endDate: '' — снова однодневное. */
+  notes?: string
+  url?: string
+  travel?: number
+  endDate?: string
 }
 
 /** Значки событий по числам месяца. */

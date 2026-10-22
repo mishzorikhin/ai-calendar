@@ -550,3 +550,29 @@ button.event {
   vertical-align: -1px;
   opacity: 0.6;
 }
+
+/* Дорога до места: пунктирная полоса над событием на шкале. */
+.travel {
+  position: absolute;
+  left: 68px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--ink) 5%, transparent) 6px 8px
+  );
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+
+.night .travel {
+  color: var(--on-dark-2);
+}

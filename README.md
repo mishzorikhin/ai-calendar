@@ -122,49 +122,49 @@ Workflow `.github/workflows/deploy.yml` публикует статическу�
 - Неизвестный `@логин` — просто текст. Упомянуть себя или владельца можно: участником они не становятся и ошибки нет. Явно добавить владельца через `members` — ошибка 400.
 - У упомянутого общая задача появляется без перезагрузки: приложение раз в минуту проверяет уведомления и при новом перечитывает задачи.
 
-| Метод и путь                                      | Что делает                                                                                                        |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                                 | Проверка живости и версия                                                                                         |
-| `POST /api/auth/register`                         | Аккаунт: `{username, password, name?}` → `{token, user}`; логин уникален без учёта регистра                       |
-| `POST /api/auth/login`                            | Вход → `{token, user}`                                                                                            |
-| `POST /api/auth/logout`                           | Завершить сессию (токен сгорает)                                                                                  |
-| `GET /api/me` · `PATCH /api/me`                   | Профиль; правка `{name}`                                                                                          |
-| `GET /api/users?q=`                               | Поиск пользователей для шаринга (без себя); пустой `q` — все                                                      |
-| `GET /api/notifications`                          | Уведомления (о шаринге задач), последние 100                                                                      |
-| `POST /api/notifications/read`                    | Отметить все прочитанными                                                                                         |
-| `GET /api/events?date=2026-10-20`                 | События дня пользователя                                                                                          |
-| `POST /api/events`                                | Новое событие `{date, title, subtitle?, start, end, badge?, reminders?, repeat?, repeatUntil?, allDay?}`          |
-| `PATCH /api/events/{id}`                          | Изменить: любые поля; `reminders: null` — по умолчанию; `occurrence` + `date` — сдвиг серии, `skip` — убрать день |
-| `DELETE /api/events/{id}`                         | Удалить событие                                                                                                   |
-| `GET /api/month?year=&month=`                     | Значки событий по дням месяца (месяц с 1)                                                                         |
-| `GET/POST /api/tasks`                             | Задачи и цели: `{title, subtitle?, kind?, category?, due?, members?}` — `members` добавляет логинов               |
-| `PATCH /api/tasks/{id}`                           | Обновить поля; `members` дособирает участников; новые `@логины` в тексте тоже делят                               |
-| `DELETE /api/tasks/{id}`                          | Владелец — удаляет для всех, участник — выходит                                                                   |
-| `POST /api/tasks/{id}/members`                    | Добавить участника `{username}`; неизвестный логин — 404                                                          |
-| `DELETE /api/tasks/{id}/members/{username}`       | Владелец снимает любого, участник — только себя                                                                   |
-| `GET /api/messages`                               | История чата с ассистентом (пишет её только `POST /api/chat`)                                                     |
-| `POST /api/chat`                                  | Диалог с ассистентом: `{text}` → SSE-стрим `delta`/`tool`/`error`/`done`; реплики сохраняются                     |
-| `GET /api/integrations`                           | Подключённые календари и какие OAuth-сервисы включены (`providers`)                                               |
-| `POST /api/integrations/caldav/discover`          | Календари на CalDAV-сервере: `{url, username, password}` → `{calendars}`                                          |
-| `POST /api/integrations`                          | Подключить `{kind: ics\|caldav, url, name?, badge?, username?, password?, writable?, primary?}`                   |
-| `PATCH /api/integrations/{id}`                    | `{name?, badge?, primary?}`; `primary` — сюда уходят новые события                                                |
-| `DELETE /api/integrations/{id}`                   | Отключить календарь (его события пропадают из приложения)                                                         |
-| `POST /api/integrations/{id}/sync`                | Синхронизировать сейчас; ошибка сервиса — в `lastError`                                                           |
-| `POST /api/integrations/oauth/{provider}/start`   | `google` / `outlook` → `{url}` страницы входа                                                                     |
-| `GET /api/integrations/oauth/{provider}/callback` | Возврат со страницы входа (публичный, пользователь — из подписанного `state`)                                     |
-| `GET/POST/DELETE /api/feed`                       | Личная лента `.ics`: путь, новая ссылка (старая перестаёт работать), выключить                                    |
-| `GET /api/feed/{token}.ics`                       | Сама лента для Google/Apple/Outlook (публичная, доступ — по секрету в ссылке)                                     |
-| `GET /api/push`                                   | Уведомления: `{publicKey, settings, devices}` — ключ VAPID, настройки напоминаний, число устройств                |
-| `PATCH /api/push/settings`                        | `{eventReminder?, taskTime?, digest?}` — минуты; `-1` — выключено                                                 |
-| `POST/DELETE /api/push/subscriptions`             | Подписка браузера (`PushSubscription.toJSON()`) / отписка `{endpoint}`                                            |
-| `POST /api/push/test`                             | Пробное уведомление на все устройства → `{sent}`; 409 — ни одного устройства                                      |
-| `POST /api/push/snooze`                           | «Отложить» из уведомления: `{minutes, message}` — то же уведомление придёт позже                                  |
-| `GET /api/push/devices` · `DELETE …/{id}`         | Устройства с уведомлениями (`{id, label, createdAt}`, без адреса подписки) и отключение одного                    |
-| `GET/POST /api/reminders` · `DELETE …/{id}`       | Свои напоминания без события `{text, at}` (ISO-время) и отложенные из уведомлений; отмена                         |
-| `GET/PATCH /api/profile`                          | Профиль для ассистента: ритм дня, работа, «святые» блоки, тон, память вкл/выкл, предложения                       |
-| `GET/POST/DELETE /api/memories`                   | Память ассистента: факты (новые первыми), добавить `{kind, text, date?}`, забыть всё                              |
-| `PATCH/DELETE /api/memories/{id}`                 | Правка факта `{text?, kind?, date?, confirmed?, rejected?}` — «Верно»/«Нет» у догадок; удаление                   |
-| `GET/POST /api/people` · `PATCH/DELETE …/{id}`    | Карточки людей `{name, aliases?, relation?, place?, meetingMinutes?, birthday?, notes?, username?}`               |
+| Метод и путь                                      | Что делает                                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                 | Проверка живости и версия                                                                                                                 |
+| `POST /api/auth/register`                         | Аккаунт: `{username, password, name?}` → `{token, user}`; логин уникален без учёта регистра                                               |
+| `POST /api/auth/login`                            | Вход → `{token, user}`                                                                                                                    |
+| `POST /api/auth/logout`                           | Завершить сессию (токен сгорает)                                                                                                          |
+| `GET /api/me` · `PATCH /api/me`                   | Профиль; правка `{name}`                                                                                                                  |
+| `GET /api/users?q=`                               | Поиск пользователей для шаринга (без себя); пустой `q` — все                                                                              |
+| `GET /api/notifications`                          | Уведомления (о шаринге задач), последние 100                                                                                              |
+| `POST /api/notifications/read`                    | Отметить все прочитанными                                                                                                                 |
+| `GET /api/events?date=2026-10-20`                 | События дня пользователя                                                                                                                  |
+| `POST /api/events`                                | Новое событие `{date, title, subtitle?, start, end, badge?, reminders?, repeat?, repeatUntil?, allDay?, notes?, url?, travel?, endDate?}` |
+| `PATCH /api/events/{id}`                          | Изменить: любые поля; `reminders: null` — по умолчанию; `occurrence` + `date` — сдвиг серии, `skip` — убрать день                         |
+| `DELETE /api/events/{id}`                         | Удалить событие                                                                                                                           |
+| `GET /api/month?year=&month=`                     | Значки событий по дням месяца (месяц с 1)                                                                                                 |
+| `GET/POST /api/tasks`                             | Задачи и цели: `{title, subtitle?, kind?, category?, due?, members?}` — `members` добавляет логинов                                       |
+| `PATCH /api/tasks/{id}`                           | Обновить поля; `members` дособирает участников; новые `@логины` в тексте тоже делят                                                       |
+| `DELETE /api/tasks/{id}`                          | Владелец — удаляет для всех, участник — выходит                                                                                           |
+| `POST /api/tasks/{id}/members`                    | Добавить участника `{username}`; неизвестный логин — 404                                                                                  |
+| `DELETE /api/tasks/{id}/members/{username}`       | Владелец снимает любого, участник — только себя                                                                                           |
+| `GET /api/messages`                               | История чата с ассистентом (пишет её только `POST /api/chat`)                                                                             |
+| `POST /api/chat`                                  | Диалог с ассистентом: `{text}` → SSE-стрим `delta`/`tool`/`error`/`done`; реплики сохраняются                                             |
+| `GET /api/integrations`                           | Подключённые календари и какие OAuth-сервисы включены (`providers`)                                                                       |
+| `POST /api/integrations/caldav/discover`          | Календари на CalDAV-сервере: `{url, username, password}` → `{calendars}`                                                                  |
+| `POST /api/integrations`                          | Подключить `{kind: ics\|caldav, url, name?, badge?, username?, password?, writable?, primary?}`                                           |
+| `PATCH /api/integrations/{id}`                    | `{name?, badge?, primary?}`; `primary` — сюда уходят новые события                                                                        |
+| `DELETE /api/integrations/{id}`                   | Отключить календарь (его события пропадают из приложения)                                                                                 |
+| `POST /api/integrations/{id}/sync`                | Синхронизировать сейчас; ошибка сервиса — в `lastError`                                                                                   |
+| `POST /api/integrations/oauth/{provider}/start`   | `google` / `outlook` → `{url}` страницы входа                                                                                             |
+| `GET /api/integrations/oauth/{provider}/callback` | Возврат со страницы входа (публичный, пользователь — из подписанного `state`)                                                             |
+| `GET/POST/DELETE /api/feed`                       | Личная лента `.ics`: путь, новая ссылка (старая перестаёт работать), выключить                                                            |
+| `GET /api/feed/{token}.ics`                       | Сама лента для Google/Apple/Outlook (публичная, доступ — по секрету в ссылке)                                                             |
+| `GET /api/push`                                   | Уведомления: `{publicKey, settings, devices}` — ключ VAPID, настройки напоминаний, число устройств                                        |
+| `PATCH /api/push/settings`                        | `{eventReminder?, taskTime?, digest?}` — минуты; `-1` — выключено                                                                         |
+| `POST/DELETE /api/push/subscriptions`             | Подписка браузера (`PushSubscription.toJSON()`) / отписка `{endpoint}`                                                                    |
+| `POST /api/push/test`                             | Пробное уведомление на все устройства → `{sent}`; 409 — ни одного устройства                                                              |
+| `POST /api/push/snooze`                           | «Отложить» из уведомления: `{minutes, message}` — то же уведомление придёт позже                                                          |
+| `GET /api/push/devices` · `DELETE …/{id}`         | Устройства с уведомлениями (`{id, label, createdAt}`, без адреса подписки) и отключение одного                                            |
+| `GET/POST /api/reminders` · `DELETE …/{id}`       | Свои напоминания без события `{text, at}` (ISO-время) и отложенные из уведомлений; отмена                                                 |
+| `GET/PATCH /api/profile`                          | Профиль для ассистента: ритм дня, работа, «святые» блоки, тон, память вкл/выкл, предложения                                               |
+| `GET/POST/DELETE /api/memories`                   | Память ассистента: факты (новые первыми), добавить `{kind, text, date?}`, забыть всё                                                      |
+| `PATCH/DELETE /api/memories/{id}`                 | Правка факта `{text?, kind?, date?, confirmed?, rejected?}` — «Верно»/«Нет» у догадок; удаление                                           |
+| `GET/POST /api/people` · `PATCH/DELETE …/{id}`    | Карточки людей `{name, aliases?, relation?, place?, meetingMinutes?, birthday?, notes?, username?}`                                       |
 
 Ошибки — JSON `{"error": "понятный текст"}` с кодом 400/401/403/404/409/413/424/429 (424 — внешний календарь не принял изменение, 429 — превышен лимит, в ответе `Retry-After`). Лимиты: вход — 10 попыток в один аккаунт с одного адреса (дальше одна в 30 с; с другого адреса хозяин входит как обычно) и 30 с одного адреса, регистрация — 20 с адреса, чат — 10 сообщений подряд (дальше одно в 6 с); одновременных PBKDF2 — не больше четырёх. Тело запроса ограничено 64 КБ, неизвестные поля отклоняются. Название — до 120 символов, подзаголовок — до 200, сообщение — до 2000 (в локальном режиме те же ограничения). Если запись `data.json` не удалась, изменение откатывается. Сервер отдаёт `Content-Security-Policy` (всё своё, картинки — по HTTPS). Всё, что не `/api/*`, — PWA: файлы с хешем кэшируются навсегда, `index.html`, `sw.js` и манифест — `no-cache`, неизвестные пути отдают `index.html`.
 
@@ -246,6 +246,15 @@ TEST_DATABASE_URL=postgres://... go test ./internal/store -run TestPostgres
 ## События на весь день
 
 В шторке события длительность «Весь день»: отпуск, переезд, день рождения (вместе с «Каждый год»). Такое событие время не занимает и лежит полосой над шкалой — как праздники из подключённых календарей. Напоминание о нём приходит в плане на день, в ленту `.ics` оно уходит датой (`VALUE=DATE`). Как и серии, во внешний календарь оно не пишется. Ассистенту — `all_day` в `create_event`.
+
+## Подробности события и несколько дней
+
+В шторке события — «Место» (с кнопкой «На карте») и раздел «Подробнее»: ссылка на созвон или билет, заметки, дорога до
+места и «несколько дней». Дорога занимает время перед началом (на шкале — пунктир «в пути»), окна ассистента её учитывают,
+а в момент выезда приходит «Пора выезжать». Многодневное событие (конференция, поездка, отпуск) лежит одной записью и
+показывается в каждом дне: первый — с начала до полуночи, последний — с полуночи до конца, средние — полосой «весь день»;
+напоминание — только в первый день, в ленту `.ics` — одним событием. У событий подключённых календарей описание и ссылка
+на созвон (Google Meet, Teams, Zoom, Телемост) подтягиваются сами — в шторке есть «Подключиться».
 
 ## Повторяющиеся события
 

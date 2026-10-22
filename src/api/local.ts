@@ -1,10 +1,12 @@
 import type { ChatMessage, DatedEvent, Memory, NotifySettings, Person, Profile, Task, User } from '../domain/types'
 import {
   LIMITS,
+  detailsError,
   isValidRange,
   messageError,
   normalizeReminders,
   remindersError,
+  spanError,
   subtitleError,
   titleError,
 } from '../domain/limits'
@@ -21,6 +23,7 @@ import {
 } from '../domain/profile'
 import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
 import { isRepeat, occursOn, shiftSeries } from '../domain/repeat'
+import { spanDay } from '../domain/span'
 import { fromISODate, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
@@ -134,6 +137,10 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
   const eventsOn = (day: string, all: DatedEvent[] = events()): DatedEvent[] =>
     all.flatMap((e) => {
       const iso = toISODate(e.date)
+      if (e.endDate) {
+        const part = spanDay(e, iso, day)
+        return part ? [{ ...part, date: fromISODate(day) }] : []
+      }
       if (!e.repeat) return iso === day ? [e] : []
       if (!occursOn({ ...e, date: iso, repeat: e.repeat }, day)) return []
       // «Новое» — только у первого вхождения.
@@ -160,7 +167,16 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
           subtitleError(subtitle),
           remindersError(input.reminders),
           repeatError(input.repeat, input.repeatUntil, toISODate(input.date)),
-        ) ?? (input.allDay || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+          detailsError(input),
+          spanError({
+            date: toISODate(input.date),
+            endDate: input.endDate,
+            start: input.allDay ? 0 : input.start,
+            end: input.allDay ? LIMITS.dayMinutes : input.end,
+            repeat: input.repeat,
+          }),
+        ) ??
+        (input.allDay || input.endDate || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
       if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
@@ -176,6 +192,10 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         reminders: input.reminders ? normalizeReminders(input.reminders) : null,
         repeat: input.repeat,
         repeatUntil: input.repeat ? input.repeatUntil || undefined : undefined,
+        notes: input.notes?.trim() || undefined,
+        url: input.url?.trim() || undefined,
+        travel: input.travel || undefined,
+        endDate: input.endDate || undefined,
       }
       data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
@@ -229,14 +249,19 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
           : skip && !prev.exdates?.includes(skip)
             ? [...(prev.exdates ?? []), skip]
             : prev.exdates?.map(shift),
+        notes: patch.notes === undefined ? prev.notes : patch.notes.trim() || undefined,
+        url: patch.url === undefined ? prev.url : patch.url.trim() || undefined,
+        travel: patch.travel === undefined ? prev.travel : patch.travel || undefined,
+        endDate: patch.endDate === undefined ? prev.endDate : patch.endDate || undefined,
       }
-      const bad =
-        invalid(
-          title === undefined ? null : titleError(title),
-          subtitleError(subtitle),
-          remindersError(patch.reminders),
-          repeatError(next.repeat, next.repeatUntil, next.date),
-        ) ?? (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
+      const bad = invalid(
+        title === undefined ? null : titleError(title),
+        subtitleError(subtitle),
+        remindersError(patch.reminders),
+        repeatError(next.repeat, next.repeatUntil, next.date),
+        detailsError(next),
+        spanError(next),
+      )
       if (bad) return bad
       data.events[i] = next
       save()

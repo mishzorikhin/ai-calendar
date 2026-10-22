@@ -44,6 +44,18 @@ function eventBody(op: PendingOp): Record<string, unknown> {
 const remindersOf = (v: unknown): number[] | null =>
   Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : null
 
+/** Заметки, ссылка, дорога и последний день из тела операции поверх события ('' — убрать). */
+function details(body: Record<string, unknown>, e: Partial<CalendarEvent>): Partial<CalendarEvent> {
+  const text = (key: 'notes' | 'url' | 'endDate') =>
+    typeof body[key] === 'string' ? (body[key] as string) || undefined : e[key]
+  return {
+    notes: text('notes'),
+    url: text('url'),
+    endDate: text('endDate'),
+    travel: typeof body.travel === 'number' ? body.travel || undefined : e.travel,
+  }
+}
+
 function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: string): CalendarEvent[] {
   const list = base.map((e) => ({ ...e }))
   const findIdx = (id: string) => list.findIndex((e) => e.id === id)
@@ -62,6 +74,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           highlight: true,
           reminders: remindersOf(body.reminders),
           allDay: body.allDay === true || undefined,
+          ...details(body, {}),
         })
       }
     } else if (op.action === 'update') {
@@ -82,6 +95,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           badge: (body.badge as CalendarEvent['badge']) ?? e.badge,
           reminders: 'reminders' in body ? remindersOf(body.reminders) : e.reminders,
           allDay: typeof body.allDay === 'boolean' ? body.allDay || undefined : e.allDay,
+          ...details(body, e),
         }
       }
     } else {
@@ -189,6 +203,10 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         repeat: input.repeat,
         repeatUntil: input.repeatUntil,
         allDay: input.allDay,
+        notes: input.notes,
+        url: input.url,
+        travel: input.travel,
+        endDate: input.endDate,
       }
     },
 
