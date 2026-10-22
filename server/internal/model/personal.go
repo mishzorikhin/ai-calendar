@@ -124,6 +124,8 @@ func (p Profile) DayBounds() (from, to int) {
 type MemoryKind string
 
 const (
+	// MemoryAbout — о самом пользователе: имя, город, работа, семья. Всегда идёт в промпт.
+	MemoryAbout      MemoryKind = "about"
 	MemoryPerson     MemoryKind = "person"
 	MemoryPlace      MemoryKind = "place"
 	MemoryHabit      MemoryKind = "habit"
@@ -135,7 +137,7 @@ const (
 
 func (k MemoryKind) Valid() bool {
 	switch k {
-	case MemoryPerson, MemoryPlace, MemoryHabit, MemoryPreference, MemoryRule, MemoryDate, MemoryOther:
+	case MemoryAbout, MemoryPerson, MemoryPlace, MemoryHabit, MemoryPreference, MemoryRule, MemoryDate, MemoryOther:
 		return true
 	}
 	return false

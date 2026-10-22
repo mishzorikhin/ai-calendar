@@ -115,6 +115,7 @@ export function applyProfilePatch(p: Profile, patch: Partial<Profile>): Profile 
 }
 
 export const MEMORY_KINDS: readonly { id: MemoryKind; label: string; plural: string }[] = [
+  { id: 'about', label: 'О себе', plural: 'О вас' },
   { id: 'rule', label: 'Правило', plural: 'Правила' },
   { id: 'preference', label: 'Предпочтение', plural: 'Предпочтения' },
   { id: 'habit', label: 'Привычка', plural: 'Привычки' },

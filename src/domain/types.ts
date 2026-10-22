@@ -360,7 +360,7 @@ export type Profile = {
 
 export type ProfilePatch = Partial<Profile>
 
-export type MemoryKind = 'person' | 'place' | 'habit' | 'preference' | 'rule' | 'date' | 'other'
+export type MemoryKind = 'about' | 'person' | 'place' | 'habit' | 'preference' | 'rule' | 'date' | 'other'
 
 /** Факт в памяти ассистента. source: inferred — догадка по поведению (ждёт «Верно» / «Нет»). */
 export type Memory = {

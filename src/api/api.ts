@@ -48,8 +48,24 @@ export type ChatEvent =
   | { type: 'open' }
   | { type: 'delta'; text: string }
   | { type: 'tool'; name: string; status: 'run' | 'done'; detail?: string; date?: string }
+  /** Что ассистент запомнил, поменял или забыл за этот ход (сервер шлёт перед done). */
+  | { type: 'memory'; items: MemoryChange[] }
+  /** Действие ждёт кнопки пользователя: удаление, перенос нескольких событий, освобождение дня. */
+  | { type: 'confirm'; confirm: ChatConfirm }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+/** Изменение памяти за ход: показывается под ответом («Запомнил: …»). */
+export type MemoryChange = { action: 'added' | 'updated' | 'deleted'; text: string }
+
+/**
+ * Карточка подтверждения в чате. Ассистент только предлагает действие — выполняет его
+ * сервер по кнопке. Карточка живёт до следующей реплики (и не дольше 10 минут).
+ */
+export type ChatConfirm = { id: string; title: string; detail?: string; button: string; date?: string }
+
+/** Итог нажатия на карточке: реплика ассистента в истории и день, к которому это относилось. */
+export type ChatConfirmResult = { message: ChatMessage; ok: boolean; date?: string }
 
 /**
  * Источник данных приложения. Две реализации:
@@ -81,6 +97,10 @@ export interface CalendarApi {
    */
   /** image — картинка к реплике (data URL JPEG, до 1,5 МБ); в истории от неё остаётся пометка «📎 фото». */
   sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal, image?: string): Promise<void>
+  /** Карточки подтверждения, которые ждут ответа. */
+  getChatConfirms(): Promise<ChatConfirm[]>
+  /** Ответ на карточку: accept — выполнить действие, иначе — отказаться. */
+  decideChatConfirm(id: string, accept: boolean): Promise<ChatConfirmResult>
 
   /** Профиль текущего пользователя. */
   me(): Promise<User>

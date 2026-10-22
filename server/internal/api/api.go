@@ -35,6 +35,9 @@ type Options struct {
 	Store store.Store
 	// LLM — клиент языковой модели для разбора запросов; nil — ассистент работает с дефолтными параметрами.
 	LLM *llm.Client
+	// MemoryLLM — модель для автоматической памяти (разбор реплик после ответа); nil — память
+	// пополняется только инструментом remember.
+	MemoryLLM *llm.Client
 	// Web — собранный фронтенд (dist). nil — UI не раздаётся.
 	Web fs.FS
 	// CORSOrigins — источники, которым разрешены запросы к API (для vite dev).
@@ -51,13 +54,15 @@ type Options struct {
 }
 
 type server struct {
+	// memLLM — модель для автоматической памяти (может совпадать с llm).
+	memLLM  *llm.Client
 	store   store.Store
 	llm     *llm.Client
 	cal     *calendars
 	push    *pushService
 	version string
 	limits  *limits
-	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
+	// confirms — действия ассистента, которые ждут кнопки пользователя (confirm.go).
 	confirms *confirmations
 	// suggester — когда кому последний раз считали предложения ассистента.
 	suggester suggester
@@ -77,7 +82,7 @@ func New(opts Options) http.Handler {
 // newServer собирает сервер и запускает фоновые циклы (синхронизация календарей, напоминания).
 func newServer(opts Options) *server {
 	s := &server{
-		store: opts.Store, llm: opts.LLM, cal: newCalendars(opts.Calendars), version: opts.Version,
+		store: opts.Store, llm: opts.LLM, memLLM: opts.MemoryLLM, cal: newCalendars(opts.Calendars), version: opts.Version,
 		limits: newLimits(), confirms: newConfirmations(),
 		closedRegistration: opts.ClosedRegistration, proxy: opts.Proxy,
 	}
@@ -150,6 +155,8 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/suggestions/{id}/dismiss", s.authed(s.dismissSuggestion))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
+	mux.Handle("GET /api/chat/confirms", s.authed(s.listChatConfirms))
+	mux.Handle("POST /api/chat/confirms/{id}", s.authed(s.decideChatConfirm))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
 	mux.Handle("POST /api/integrations", s.authed(s.createIntegration))
 	mux.Handle("POST /api/integrations/caldav/discover", s.authed(s.discoverCalDAV))

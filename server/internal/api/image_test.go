@@ -60,7 +60,7 @@ func TestChatImage(t *testing.T) {
 	}
 }
 
-func TestChatImageModelBlind(t *testing.T) {
+func TestChatImageRejected(t *testing.T) {
 	// Модель без зрения отвечает 400 на запрос с картинкой.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"image input is not supported"}`, http.StatusBadRequest)
@@ -70,12 +70,12 @@ func TestChatImageModelBlind(t *testing.T) {
 	h := New(Options{Store: st, LLM: llm.New(llm.Config{BaseURL: srv.URL, APIKey: "k", Model: "m"}, 2*time.Second)})
 	tok := register(t, h, "alice")
 	rec := doAs(t, h, tok, "POST", "/api/chat", imageJSON("что тут", 1000))
-	if !strings.Contains(rec.Body.String(), "не видит картинки") {
+	if !strings.Contains(rec.Body.String(), "не приняла запрос с картинкой") {
 		t.Fatalf("ответ: %s", rec.Body)
 	}
 	// Без картинки та же ошибка — обычное «модель не ответила».
 	rec = doAs(t, h, tok, "POST", "/api/chat", `{"text":"привет"}`)
-	if strings.Contains(rec.Body.String(), "картинки") || !strings.Contains(rec.Body.String(), "Модель не ответила") {
+	if strings.Contains(rec.Body.String(), "картинк") || !strings.Contains(rec.Body.String(), "Модель не ответила") {
 		t.Fatalf("без картинки: %s", rec.Body)
 	}
 }

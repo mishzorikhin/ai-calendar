@@ -7,9 +7,7 @@ import { Segmented } from '../../../components/Segmented'
 import { CircleButton } from '../../../components/ui'
 import { DEFAULT_PROFILE, PROFILE_LIMITS } from '../../../domain/profile'
 import type { Focus, Profile } from '../../../domain/types'
-import { useApi } from '../../../api/provider'
 import { BlocksEditor } from './BlocksEditor'
-import { NameGroup } from './NameGroup'
 import { DayPicker, Group, PillChoice, TimePill } from './Fields'
 import { SuggestionsGroup } from './SuggestionsGroup'
 import styles from './Assistant.module.css'
@@ -36,7 +34,6 @@ export function ProfileSheet({ onClose }: { onClose: () => void }) {
   const update = useUpdateProfile()
   const p = data ?? DEFAULT_PROFILE
   const set = (patch: Partial<Profile>) => update.mutate(patch)
-  const server = useApi().mode === 'server'
 
   return (
     <BottomSheet label="Ассистент обо мне" onClose={onClose}>
@@ -49,8 +46,6 @@ export function ProfileSheet({ onClose }: { onClose: () => void }) {
       <p className={styles.lead}>
         С этим ассистент ищет время и подбирает слова. Менять можно и голосом: «теперь работаю с десяти».
       </p>
-
-      {server && <NameGroup />}
 
       <Group title="Ритм дня" hint="Окна для дел ищутся между подъёмом и отбоем">
         <div className={styles.timeRow}>
