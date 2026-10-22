@@ -101,6 +101,7 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/events", s.authed(s.createEvent))
 	mux.Handle("PATCH /api/events/{id}", s.authed(s.updateEvent))
 	mux.Handle("DELETE /api/events/{id}", s.authed(s.deleteEvent))
+	mux.Handle("POST /api/events/{id}/rsvp", s.authed(s.rsvp))
 	mux.Handle("GET /api/month", s.authed(s.monthDots))
 	mux.Handle("GET /api/tasks", s.authed(s.listTasks))
 	mux.Handle("POST /api/tasks", s.authed(s.createTask))
@@ -189,7 +190,7 @@ func (s *server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, nonNil(s.eventsOn(r.Context(), date)))
+	writeJSON(w, http.StatusOK, nonNil(s.withAttendees(r.Context(), s.eventsOn(r.Context(), date))))
 	return nil
 }
 
@@ -212,6 +213,8 @@ type eventInput struct {
 	URL     string `json:"url"`
 	Travel  int    `json:"travel"`
 	EndDate string `json:"endDate"`
+	// Attendees — логины приглашённых.
+	Attendees []string `json:"attendees"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -334,6 +337,10 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateRepeat(in.Repeat, in.RepeatUntil, in.Date); err != nil {
 		return err
 	}
+	guests, err := s.resolveAttendees(r.Context(), in.Attendees)
+	if err != nil {
+		return err
+	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
@@ -341,6 +348,11 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	})
 	if err != nil {
 		return err
+	}
+	if len(guests) > 0 {
+		if ev.Attendees, err = s.setAttendees(r.Context(), ev, guests); err != nil {
+			return err
+		}
 	}
 	writeJSON(w, http.StatusCreated, ev)
 	return nil
@@ -370,6 +382,8 @@ type eventPatchInput struct {
 	Travel *int    `json:"travel"`
 	// EndDate: "" — снова однодневное.
 	EndDate *string `json:"endDate"`
+	// Attendees — новый полный список логинов приглашённых.
+	Attendees *[]string `json:"attendees"`
 }
 
 // remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
@@ -429,6 +443,12 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
+	var guests []model.User
+	if in.Attendees != nil {
+		if guests, err = s.resolveAttendees(r.Context(), *in.Attendees); err != nil {
+			return err
+		}
+	}
 	id := r.PathValue("id")
 	current, err := s.store.Event(r.Context(), id)
 	if err != nil {
@@ -470,6 +490,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {
 		return err
 	}
+	attendees := s.store.Attendees(r.Context(), []string{id})[id]
 	patched, err := s.updateEventSynced(r.Context(), current, patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -477,12 +498,24 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	// Перенос встречи — тем, кого позвали и кто не отказался (до замены списка: новые узнают из приглашения).
+	if patched.Date != current.Date || patched.Start != current.Start || patched.AllDay != current.AllDay {
+		s.notifyAttendeesChange(r.Context(), attendees, patched, "Перенесли: «%s»", "Перенёс ")
+	}
+	patched.Attendees = attendees
+	if in.Attendees != nil {
+		if patched.Attendees, err = s.setAttendees(r.Context(), patched, guests); err != nil {
+			return err
+		}
+	}
 	writeJSON(w, http.StatusOK, patched)
 	return nil
 }
 
 func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) error {
-	current, err := s.store.Event(r.Context(), r.PathValue("id"))
+	id := r.PathValue("id")
+	attendees := s.store.Attendees(r.Context(), []string{id})[id]
+	current, err := s.store.Event(r.Context(), id)
 	if err == nil {
 		err = s.deleteEventSynced(r.Context(), current)
 	}
@@ -492,6 +525,7 @@ func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	s.notifyAttendeesChange(r.Context(), attendees, current, "Отменили: «%s»", "Отменил ")
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

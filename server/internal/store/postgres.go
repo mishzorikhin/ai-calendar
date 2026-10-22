@@ -126,6 +126,8 @@ var schema = []string{
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`,
 	`CREATE INDEX IF NOT EXISTS notifications_user ON notifications (user_id, id)`,
+	`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS event_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS date TEXT NOT NULL DEFAULT ''`,
 	`CREATE SEQUENCE IF NOT EXISTS event_id_seq`,
 	`CREATE SEQUENCE IF NOT EXISTS task_id_seq`,
 	// Внешние календари: события получают источник и id во внешнем календаре,
@@ -205,6 +207,15 @@ var schema = []string{
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS travel INT NOT NULL DEFAULT 0`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS end_date TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS events_multiday ON events (user_id, end_date) WHERE end_date <> ''`,
+	// Приглашённые на события и их ответы.
+	`CREATE TABLE IF NOT EXISTS event_attendees (
+		event_id   TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+		user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		status     TEXT NOT NULL DEFAULT 'pending',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (event_id, user_id)
+	)`,
+	`CREATE INDEX IF NOT EXISTS event_attendees_user ON event_attendees (user_id)`,
 	`CREATE TABLE IF NOT EXISTS server_keys (
 		name  TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -966,7 +977,8 @@ func (s *pgStore) Notifications(ctx context.Context) []model.Notification {
 		return nil
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.user_id, n.from_id, n.from_name, n.task_id, n.text, n.is_read, n.created_at, COALESCE(fu.username, ''), fu.created_at
+		SELECT n.id, n.user_id, n.from_id, n.from_name, n.task_id, n.text, n.is_read, n.created_at, COALESCE(fu.username, ''), fu.created_at,
+			n.event_id, n.date
 		FROM notifications n LEFT JOIN users fu ON fu.id = n.from_id
 		WHERE n.user_id = $1 ORDER BY n.id DESC LIMIT 100`, u)
 	if err != nil {
@@ -979,7 +991,8 @@ func (s *pgStore) Notifications(ctx context.Context) []model.Notification {
 		var fromID *int64
 		var fromName, fromUsername string
 		var fromCreated *time.Time
-		if err := rows.Scan(&n.ID, &n.UserID, &fromID, &fromName, &n.TaskID, &n.Text, &n.Read, &n.CreatedAt, &fromUsername, &fromCreated); err != nil {
+		if err := rows.Scan(&n.ID, &n.UserID, &fromID, &fromName, &n.TaskID, &n.Text, &n.Read, &n.CreatedAt, &fromUsername, &fromCreated,
+			&n.EventID, &n.Date); err != nil {
 			return nil
 		}
 		if fromID != nil {
@@ -1001,9 +1014,9 @@ func (s *pgStore) AddNotification(ctx context.Context, n model.Notification) err
 		fromName = n.From.Name
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO notifications (user_id, from_id, from_name, task_id, text, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		n.UserID, fromID, fromName, n.TaskID, n.Text, time.Now())
+		INSERT INTO notifications (user_id, from_id, from_name, task_id, text, created_at, event_id, date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		n.UserID, fromID, fromName, n.TaskID, n.Text, time.Now(), n.EventID, n.Date)
 	return err
 }
 

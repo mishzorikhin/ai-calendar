@@ -74,6 +74,10 @@ type Event struct {
 	// Start/End — отрезок этого дня, а Span — исходные день и время.
 	EndDate string     `json:"endDate,omitempty"`
 	Span    *EventSpan `json:"span,omitempty"`
+	// Attendees — кого владелец пригласил и что они ответили (видят владелец и участники).
+	Attendees []Attendee `json:"attendees,omitempty"`
+	// Invite — у приглашённого: от кого приглашение и его ответ. Такое событие у него только для чтения.
+	Invite *Invite `json:"invite,omitempty"`
 	// Reminders — за сколько минут до начала напомнить. nil — как в настройках
 	// пользователя (события внешних календарей и созданные до напоминаний), [] — не напоминать.
 	Reminders []int `json:"reminders"`
@@ -86,6 +90,36 @@ type Event struct {
 	ExDates     []string  `json:"exdates,omitempty"`
 	CreatedAt   time.Time `json:"createdAt,omitempty"`
 }
+
+// RSVP — ответ на приглашение.
+type RSVP string
+
+const (
+	RSVPPending  RSVP = "pending"
+	RSVPAccepted RSVP = "accepted"
+	RSVPDeclined RSVP = "declined"
+)
+
+func (r RSVP) Valid() bool {
+	return r == RSVPPending || r == RSVPAccepted || r == RSVPDeclined
+}
+
+// Attendee — приглашённый на встречу пользователь сервера и его ответ.
+type Attendee struct {
+	UserID   int64  `json:"-"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Status   RSVP   `json:"status"`
+}
+
+// Invite — приглашение глазами приглашённого.
+type Invite struct {
+	From   User `json:"from"`
+	Status RSVP `json:"status"`
+}
+
+// MaxAttendees — сколько людей можно пригласить на одну встречу.
+const MaxAttendees = 20
 
 // EventSpan — исходные начало и конец многодневного события у его вхождения в другой день.
 type EventSpan struct {
@@ -314,10 +348,13 @@ type Message struct {
 
 // Notification — уведомление в шторке аккаунта: «@misha поделился с вами задачей».
 type Notification struct {
-	ID        int       `json:"id"`
-	UserID    int64     `json:"userId"`
-	From      *User     `json:"from,omitempty"`
-	TaskID    string    `json:"taskId,omitempty"`
+	ID     int    `json:"id"`
+	UserID int64  `json:"userId"`
+	From   *User  `json:"from,omitempty"`
+	TaskID string `json:"taskId,omitempty"`
+	// EventID и Date — уведомление о встрече (приглашение, ответ): по нажатию открывается день.
+	EventID   string    `json:"eventId,omitempty"`
+	Date      string    `json:"date,omitempty"`
 	Text      string    `json:"text"`
 	Read      bool      `json:"read"`
 	CreatedAt time.Time `json:"createdAt"`

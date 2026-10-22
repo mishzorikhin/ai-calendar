@@ -32,7 +32,8 @@ func (s *server) eventsBetween(ctx context.Context, from, to string) []model.Eve
 	for _, e := range s.store.MultiDayEvents(ctx, from, to) {
 		out = append(out, expandSpan(e, from, to)...)
 	}
-	return out
+	// Встречи, куда пригласили (и приглашение не отклонено), занимают время так же, как свои.
+	return append(out, s.invitedBetween(ctx, from, to)...)
 }
 
 // expandSpan — дни многодневного события в окне [from, to]. Первый день — с начала до полуночи,

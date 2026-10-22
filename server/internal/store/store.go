@@ -119,6 +119,18 @@ type Store interface {
 	// MultiDayEvents — многодневные события пользователя (EndDate), пересекающие [from, to]:
 	// начинаются не позже to и заканчиваются не раньше from. По дням их разворачивает API.
 	MultiDayEvents(ctx context.Context, from, to string) []model.Event
+	// SetAttendees заменяет приглашённых своего события (ответы оставшихся сохраняются, новые — pending).
+	// Возвращает список после замены; ErrNotFound — событие не своё.
+	SetAttendees(ctx context.Context, eventID string, users []model.User) ([]model.Attendee, error)
+	// Attendees — приглашённые на события ids, которые текущий пользователь создал или куда приглашён.
+	Attendees(ctx context.Context, ids []string) map[string][]model.Attendee
+	// InvitedEvents — чужие события, куда пригласили текущего пользователя (с его ответом в Invite.Status),
+	// пересекающие [from, to] с учётом повторов и многодневных; разворачивает их API.
+	InvitedEvents(ctx context.Context, from, to string) []model.Event
+	// InvitedEvent — одно такое событие; ErrNotFound — приглашения нет.
+	InvitedEvent(ctx context.Context, id string) (model.Event, error)
+	// SetRSVP — ответ текущего пользователя на приглашение.
+	SetRSVP(ctx context.Context, eventID string, status model.RSVP) error
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
@@ -255,6 +267,8 @@ type data struct {
 	NextMemoryID int64                   `json:"nextMemoryId,omitempty"`
 	People       []model.Person          `json:"people,omitempty"`
 	NextPersonID int64                   `json:"nextPersonId,omitempty"`
+	// EventAttendees — приглашённые на события (по id события).
+	EventAttendees map[string][]storedAttendee `json:"eventAttendees,omitempty"`
 
 	NextID        int   `json:"nextId"`
 	NextUserID    int64 `json:"nextUserId"`
@@ -464,6 +478,8 @@ func (s *fileStore) CreateEvent(ctx context.Context, e model.Event) (model.Event
 	e.ID = s.nextID("evt")
 	e.UserID = uid
 	e.CreatedAt = s.now()
+	// Участники, приглашение и отрезок дня — не поля записи: их собирают при чтении.
+	e.Attendees, e.Invite, e.Span = nil, nil, nil
 	s.d.Events = append(s.d.Events, e)
 	return e, s.save()
 }
@@ -509,6 +525,7 @@ func (s *fileStore) DeleteEvent(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	s.d.Events = slices.Delete(s.d.Events, i, i+1)
+	delete(s.d.EventAttendees, id)
 	return s.save()
 }
 

@@ -90,6 +90,14 @@ var personalTools = []llm.Tool{
 		}, "evidence"),
 	}},
 	{Type: "function", Function: llm.FunctionSpec{
+		Name:        "respond_invitation",
+		Description: "Ответить на приглашение на чужую встречу (invited_by в get_day_schedule): придёт пользователь или нет.",
+		Parameters: object(map[string]any{
+			"event_id": map[string]any{"type": "string"},
+			"answer":   map[string]any{"type": "string", "enum": []string{"accepted", "declined"}},
+		}, "event_id", "answer"),
+	}},
+	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "forget_person",
 		Description: "Удалить карточку человека по id.",
 		Parameters:  object(map[string]any{"person_id": map[string]any{"type": "integer"}}, "person_id"),
