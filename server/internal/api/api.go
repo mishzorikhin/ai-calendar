@@ -61,6 +61,8 @@ type server struct {
 	confirms *confirmations
 	// suggester — когда кому последний раз считали предложения ассистента.
 	suggester suggester
+	// inferrer — когда кому последний раз делали выводы из поведения.
+	inferrer inferrer
 
 	closedRegistration bool
 	proxy              ProxyMode

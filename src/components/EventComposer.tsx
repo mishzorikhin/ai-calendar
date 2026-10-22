@@ -2,7 +2,15 @@ import { AnimatePresence } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../api/api'
 import { useApi } from '../api/provider'
-import { useCalendarName, useCreateEvent, useDayEvents, usePrimaryCalendar, useUpdateEvent } from '../api/queries'
+import {
+  useCalendarName,
+  useCreateEvent,
+  useDayEvents,
+  useMemories,
+  usePrimaryCalendar,
+  useUpdateEvent,
+} from '../api/queries'
+import { habitDuration } from '../domain/profile'
 import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
@@ -120,6 +128,14 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   // На весь день: время не занимает, лежит полосой над шкалой. Только у своих событий.
   const [allDay, setAllDay] = useState(editing?.allDay ?? false)
   const [badge, setBadge] = useState<Badge>(editing?.badge ?? 'routine')
+  // Длительность выбрали руками (или это правка) — тип события её больше не меняет.
+  const [durationTouched, setDurationTouched] = useState(Boolean(editing))
+  const { memories } = useMemories()
+  const pickBadge = (id: Badge) => {
+    setBadge(id)
+    const usual = durationTouched ? null : habitDuration(memories, id)
+    if (usual) setDuration(usual)
+  }
   // Напоминание: null — не трогали (у нового события сработает настройка по умолчанию), −1 — не напоминать.
   const [reminder, setReminder] = useState<number | null>(null)
   const remindersOn = useApi().mode === 'server'
@@ -168,8 +184,11 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   // Точное время из системного выбора или «сдвига» встаёт в ленту отдельной пилюлей.
   const startOptions = withExtra(withExtra(TIME_OPTIONS, editing?.allDay ? null : editing?.start), start)
   const durations = withExtra(
-    DURATIONS.map((d) => d.value),
-    editing && !editing.allDay ? editing.end - editing.start : null,
+    withExtra(
+      DURATIONS.map((d) => d.value),
+      editing && !editing.allDay ? editing.end - editing.start : null,
+    ),
+    duration,
   )
 
   const conflicts = allDay || multiDay ? [] : slotAt(others, start, length).conflicts
@@ -500,6 +519,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
                 aria-pressed={!allDay && d === duration}
                 onClick={() => {
                   setDuration(d)
+                  setDurationTouched(true)
                   setAllDay(false)
                 }}
               >
@@ -520,7 +540,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
                 small
                 tone={id === badge ? 'dark' : 'ghost'}
                 aria-pressed={id === badge}
-                onClick={() => setBadge(id)}
+                onClick={() => pickBadge(id)}
                 className={styles.badgePill}
               >
                 <Icon size={14} /> {label}

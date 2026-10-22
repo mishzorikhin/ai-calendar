@@ -3,6 +3,7 @@ import {
   DEFAULT_PROFILE,
   applyProfilePatch,
   daysLabel,
+  habitDuration,
   isMemoryDate,
   memoryDateLabel,
   normalizePerson,
@@ -81,5 +82,22 @@ describe('даты памяти и карточки людей', () => {
       notes: undefined,
       username: 'gleb',
     })
+  })
+})
+
+describe('habitDuration', () => {
+  const base = {
+    id: 1,
+    kind: 'preference' as const,
+    text: 'x',
+    source: 'inferred' as const,
+    createdAt: '',
+    updatedAt: '',
+  }
+  it('берёт только подтверждённую догадку своего типа', () => {
+    expect(habitDuration([{ ...base, confirmed: true, key: 'duration:sport:90' }], 'sport')).toBe(90)
+    expect(habitDuration([{ ...base, confirmed: false, key: 'duration:sport:90' }], 'sport')).toBeNull()
+    expect(habitDuration([{ ...base, confirmed: true, key: 'duration:work:45' }], 'sport')).toBeNull()
+    expect(habitDuration([{ ...base, confirmed: true, key: 'duration:sport:abc' }], 'sport')).toBeNull()
   })
 })

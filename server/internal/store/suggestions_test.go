@@ -79,6 +79,10 @@ func testPlanningFields(t *testing.T, s Store) {
 		len(habit.Checks) != 2 || habit.Checks[1] != "2030-01-08" || !habit.DoneAt.Equal(doneAt) {
 		t.Fatalf("отметки: %+v %v", habit, err)
 	}
+	three := 3
+	if habit, err = s.UpdateTask(ctx, habit.ID, model.TaskPatch{Postponed: &three}); err != nil || habit.Postponed != 3 {
+		t.Fatalf("переносы: %+v %v", habit, err)
+	}
 	zero := time.Time{}
 	if habit, _ = s.UpdateTask(ctx, habit.ID, model.TaskPatch{DoneAt: &zero}); !habit.DoneAt.IsZero() {
 		t.Fatalf("doneAt не снят: %+v", habit)

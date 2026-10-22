@@ -184,6 +184,8 @@ type Store interface {
 	PushSubscriptions(ctx context.Context) []model.PushSubscription
 	// PushUserIDs — пользователи, у которых есть подписки (для планировщика напоминаний).
 	PushUserIDs(ctx context.Context) []int64
+	// UserIDs — все пользователи (для фоновых выводов из поведения).
+	UserIDs(ctx context.Context) []int64
 	// NotifySettings — настройки напоминаний текущего пользователя (по умолчанию — DefaultNotifySettings).
 	NotifySettings(ctx context.Context) (model.NotifySettings, error)
 	SetNotifySettings(ctx context.Context, ns model.NotifySettings) error
@@ -1296,6 +1298,16 @@ func (s *fileStore) PushUserIDs(context.Context) []int64 {
 		if !slices.Contains(out, p.UserID) {
 			out = append(out, p.UserID)
 		}
+	}
+	return out
+}
+
+func (s *fileStore) UserIDs(context.Context) []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]int64, len(s.d.Users))
+	for i, u := range s.d.Users {
+		out[i] = u.ID
 	}
 	return out
 }

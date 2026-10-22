@@ -77,8 +77,13 @@ func withCheck(checks []string, date string, on bool) []string {
 	return out
 }
 
-// stampDone — у патча, который закрывает или открывает задачу, ставит или снимает DoneAt.
+// stampDone — у патча, который закрывает или открывает задачу, ставит или снимает DoneAt,
+// а при переносе срока на более поздний увеличивает счётчик переносов.
 func stampDone(before model.Task, patch *model.TaskPatch, now time.Time) {
+	if patch.Due != nil && before.Due != "" && *patch.Due > before.Due {
+		n := before.Postponed + 1
+		patch.Postponed = &n
+	}
 	if patch.Done == nil || *patch.Done == before.Done {
 		return
 	}

@@ -42,7 +42,9 @@ func (s *server) runPushLoop(ctx context.Context, every time.Duration) {
 			return
 		case <-ticker.C:
 		}
-		s.remindAll(ctx, s.cal.now())
+		now := s.cal.now()
+		s.remindAll(ctx, now)
+		s.inferAll(ctx, now)
 	}
 }
 

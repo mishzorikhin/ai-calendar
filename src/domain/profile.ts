@@ -1,4 +1,4 @@
-import type { MemoryKind, PersonInput, Profile, SuggestionKind } from './types'
+import type { Badge, Memory, MemoryKind, PersonInput, Profile, SuggestionKind } from './types'
 
 /** Пределы профиля и памяти — те же, что в server/internal/model/personal.go. */
 export const PROFILE_LIMITS = {
@@ -200,4 +200,17 @@ export function memoryDateLabel(v: string): string {
   if (yearly) return `${Number(yearly[2])} ${months[Number(yearly[1]) - 1] ?? ''}`
   if (full) return `${Number(full[3])} ${months[Number(full[2]) - 1] ?? ''} ${full[1]}`
   return v
+}
+
+/**
+ * Обычная длительность событий этого типа — из подтверждённой догадки ассистента
+ * («Обычно спорт длится 1,5 ч», ключ `duration:sport:90`). Нет такой — null.
+ */
+export function habitDuration(memories: readonly Memory[], badge: Badge): number | null {
+  for (const m of memories) {
+    if (!m.confirmed || !m.key?.startsWith(`duration:${badge}:`)) continue
+    const minutes = Number(m.key.slice(`duration:${badge}:`.length))
+    if (Number.isInteger(minutes) && minutes >= 15 && minutes <= 480) return minutes
+  }
+  return null
 }

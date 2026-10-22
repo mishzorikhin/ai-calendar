@@ -318,6 +318,8 @@ type Task struct {
 	// Cadence и Checks — у привычки: как часто и в какие дни отмечена (ГГГГ-ММ-ДД, по порядку).
 	Cadence Cadence  `json:"cadence,omitempty"`
 	Checks  []string `json:"checks,omitempty"`
+	// Postponed — сколько раз срок переносили на более поздний (для выводов ассистента).
+	Postponed int `json:"postponed,omitempty"`
 	// CreatedAt — когда задачу завели: по нему ассистент замечает давно открытые.
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 }
@@ -346,16 +348,17 @@ const (
 // TaskPatch — частичное обновление задачи: nil-поля не трогаем.
 // Category: указатель на "" — очистить категорию.
 type TaskPatch struct {
-	Title    *string
-	Subtitle *string
-	Kind     *TaskKind
-	Category *TaskCategory
-	Done     *bool
-	Due      *string
-	Estimate *int
-	DoneAt   *time.Time
-	Cadence  *Cadence
-	Checks   *[]string
+	Title     *string
+	Subtitle  *string
+	Kind      *TaskKind
+	Category  *TaskCategory
+	Done      *bool
+	Due       *string
+	Estimate  *int
+	DoneAt    *time.Time
+	Cadence   *Cadence
+	Checks    *[]string
+	Postponed *int
 }
 
 // Apply применяет патч к задаче на месте.
@@ -389,6 +392,9 @@ func (t *Task) Apply(p TaskPatch) {
 	}
 	if p.Checks != nil {
 		t.Checks = slices.Clone(*p.Checks)
+	}
+	if p.Postponed != nil {
+		t.Postponed = *p.Postponed
 	}
 }
 
