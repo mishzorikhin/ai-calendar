@@ -135,13 +135,24 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+/* Место под «живой активностью» сверху; ниже — сворачиваемая шапка (превью дня и «Сегодня»). */
+.top {
+  flex-shrink: 0;
+  padding-top: calc(var(--live-top) + 46px);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+}
+
 .preview {
   position: relative;
   align-self: center;
   width: 70%;
   max-width: 300px;
   height: 150px;
-  margin-top: calc(var(--live-top) + 46px);
+  flex-shrink: 0;
   padding: 12px 14px 0;
   border-radius: 22px;
   display: flex;
@@ -220,6 +231,11 @@
   mask-image: linear-gradient(180deg, transparent 0, #000 24px);
 }
 
+/* Короткая переписка прижата к полю ввода, как в мессенджерах (прокрутка при этом не ломается). */
+.messages > :first-child {
+  margin-top: auto;
+}
+
 .bubble {
   max-width: 85%;
   line-height: 1.38;
@@ -288,6 +304,10 @@
 .composer {
   padding: 0 10px;
   flex-shrink: 0;
+}
+
+.chipsFold {
+  overflow: hidden;
 }
 
 .chipsViewport {

@@ -18,6 +18,8 @@ export function ChatComposer({
   focusOnMount,
   busy,
   canAttach,
+  compact,
+  onTyping,
   onSend,
 }: {
   initialText: string
@@ -26,6 +28,10 @@ export function ChatComposer({
   busy?: boolean
   /** Можно приложить картинку (только с сервером). */
   canAttach?: boolean
+  /** Режим набора на телефоне: подсказки прячутся, чтобы над клавиатурой осталось место для ленты. */
+  compact?: boolean
+  /** Поле получило или потеряло фокус. */
+  onTyping?: (focused: boolean) => void
   onSend: (text: string, image?: string) => void
 }) {
   const { back } = useNavigation()
@@ -111,51 +117,70 @@ export function ChatComposer({
       initial={{ y: 40, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ ...softSpring, delay: 0.1 }}
+      // Нажатие на кнопки и подсказки не уводит фокус из поля: клавиатура не закрывается и не прыгает экран.
+      onPointerDown={(e) => {
+        if (e.target instanceof Element && e.target.closest('button') && document.activeElement === input.current) {
+          e.preventDefault()
+        }
+      }}
     >
-      <div className={styles.chipsViewport}>
-        <AnimatePresence mode="popLayout" initial={false}>
+      <AnimatePresence initial={false}>
+        {!compact && (
           <m.div
-            key={chipsKey}
-            className={`${styles.chips} scroll-x`}
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
+            key="chips"
+            className={styles.chipsFold}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
             transition={spring}
           >
-            {text ? (
-              QUICK_PROMPTS.map((q) => (
-                <Pill key={q.label} small tone="glass" onClick={() => insert(q.prompt)}>
-                  {q.label}
-                </Pill>
-              ))
-            ) : active ? (
-              <>
-                <Pill
-                  small
-                  tone="dark"
-                  onClick={() => setCategory(null)}
-                  aria-label={`Убрать категорию ${active.label}`}
-                  className={styles.categoryPill}
+            <div className={styles.chipsViewport}>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <m.div
+                  key={chipsKey}
+                  className={`${styles.chips} scroll-x`}
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  transition={spring}
                 >
-                  {active.label}
-                  <CloseIcon size={12} strokeWidth={2.6} />
-                </Pill>
-                {active.prompts.map((p) => (
-                  <Pill key={p} small tone="glass" onClick={() => insert(p)}>
-                    {p}
-                  </Pill>
-                ))}
-              </>
-            ) : (
-              CHAT_CATEGORIES.map((c) => (
-                <Pill key={c.id} small tone="glass" onClick={() => setCategory(c.id)}>
-                  {c.label}
-                </Pill>
-              ))
-            )}
+                  {text ? (
+                    QUICK_PROMPTS.map((q) => (
+                      <Pill key={q.label} small tone="glass" onClick={() => insert(q.prompt)}>
+                        {q.label}
+                      </Pill>
+                    ))
+                  ) : active ? (
+                    <>
+                      <Pill
+                        small
+                        tone="dark"
+                        onClick={() => setCategory(null)}
+                        aria-label={`Убрать категорию ${active.label}`}
+                        className={styles.categoryPill}
+                      >
+                        {active.label}
+                        <CloseIcon size={12} strokeWidth={2.6} />
+                      </Pill>
+                      {active.prompts.map((p) => (
+                        <Pill key={p} small tone="glass" onClick={() => insert(p)}>
+                          {p}
+                        </Pill>
+                      ))}
+                    </>
+                  ) : (
+                    CHAT_CATEGORIES.map((c) => (
+                      <Pill key={c.id} small tone="glass" onClick={() => setCategory(c.id)}>
+                        {c.label}
+                      </Pill>
+                    ))
+                  )}
+                </m.div>
+              </AnimatePresence>
+            </div>
           </m.div>
-        </AnimatePresence>
-      </div>
+        )}
+      </AnimatePresence>
 
       {(image || imageError) && (
         <div className={styles.attachment}>
@@ -186,6 +211,8 @@ export function ChatComposer({
             ref={input}
             rows={1}
             value={text}
+            onFocus={() => onTyping?.(true)}
+            onBlur={() => onTyping?.(false)}
             onChange={(e) => {
               if (listening) {
                 typed.current = true
