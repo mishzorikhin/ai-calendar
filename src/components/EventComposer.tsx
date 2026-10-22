@@ -35,6 +35,7 @@ import { BottomSheet } from './BottomSheet'
 import { CalendarIcon, ClockIcon, CloseIcon, InfinityIcon, MapIcon, RepeatIcon, TrashIcon } from './Icons'
 import { EventDetails, mapLink, type Details } from './EventDetails'
 import { EventLinks } from './EventLinks'
+import { PeoplePicker, type Picked } from './PeoplePicker'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
@@ -139,6 +140,10 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
     endTime: editing?.endDate ? editing.end : 18 * 60,
   })
   const multiDay = details.endDate !== ''
+  // Участники встречи (только с сервером): у правки — с ответами на приглашение.
+  const [guests, setGuests] = useState<Picked[]>(editing?.attendees ?? [])
+  const guestNames = guests.map((g) => g.username)
+  const guestsChanged = guestNames.join() !== (editing?.attendees ?? []).map((a) => a.username).join()
   const series = editing?.repeat
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
@@ -238,6 +243,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
             ...(series && (!isSameDay(date, editing.date) || repeat === '') && { occurrence: editing.date }),
             ...detailsPatch,
             ...(editing.source && { endDate: undefined }),
+            ...(guestsChanged && { attendees: guestNames }),
           },
         },
         { onSuccess: onClose },
@@ -258,6 +264,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
         ...(detailsPatch.url && { url: detailsPatch.url }),
         ...(detailsPatch.travel > 0 && { travel: detailsPatch.travel }),
         ...(detailsPatch.endDate && { endDate: detailsPatch.endDate }),
+        ...(guestNames.length > 0 && { attendees: guestNames }),
       },
       {
         onSuccess: () => {
@@ -535,6 +542,15 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
           allDay={allDay}
           multiDayLocked={!!editing?.source || !!repeat}
         />
+
+        {remindersOn && (
+          <PeoplePicker
+            label="Пригласить"
+            placeholder="@логин — позвать на встречу"
+            value={guests}
+            onChange={setGuests}
+          />
+        )}
 
         {/* У события на весь день нет времени начала — оно попадает в план на день. */}
         {remindersOn && !allDay && (

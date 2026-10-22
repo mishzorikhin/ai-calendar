@@ -38,13 +38,15 @@ export function PartCard({
   onEvent: (event: CalendarEvent) => void
 }) {
   const Icon = PART_ICON[part.id]
-  const hours = (part.to - part.from) / 60
+  // Ночные события (до 6 утра) относятся к утру: шкала утра начинается с часа самого раннего из них.
+  const from = Math.min(part.from, ...events.map((e) => Math.floor(e.start / 60) * 60))
+  const hours = (part.to - from) / 60
   const wrap = useRef<HTMLDivElement>(null)
-  const nowInside = nowMins !== null && nowMins >= part.from && nowMins < part.to
+  const nowInside = nowMins !== null && nowMins >= from && nowMins < part.to
 
   const scrollToNow = useEffectEvent(() => {
     if (nowMins === null) return
-    wrap.current?.scrollTo({ top: Math.max(0, ((nowMins - part.from) / 60) * HOUR_H - 80), behavior: 'smooth' })
+    wrap.current?.scrollTo({ top: Math.max(0, ((nowMins - from) / 60) * HOUR_H - 80), behavior: 'smooth' })
   })
 
   // Новый день — шкала с начала, а не с позиции, на которой остался предыдущий день.
@@ -63,8 +65,8 @@ export function PartCard({
   const onTimelineClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target instanceof Element && e.target.closest('[data-event]')) return
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top
-    const mins = part.from + Math.floor((y / HOUR_H) * 2) * 30
-    onCreate(Math.min(Math.max(mins, part.from), part.to - 30))
+    const mins = from + Math.floor((y / HOUR_H) * 2) * 30
+    onCreate(Math.min(Math.max(mins, from), part.to - 30))
   }
 
   return (
@@ -111,14 +113,14 @@ export function PartCard({
               >
                 {Array.from({ length: hours }, (_, h) => (
                   <span key={h} className={`${styles.hour} tnum`} style={{ top: h * HOUR_H }}>
-                    {formatMinutes(part.from + h * 60)}
+                    {formatMinutes(from + h * 60)}
                   </span>
                 ))}
                 {events.map((e, i) => (
-                  <EventCard key={e.id} event={e} from={part.from} to={part.to} index={i} onOpen={onEvent} />
+                  <EventCard key={e.id} event={e} from={from} to={part.to} index={i} onOpen={onEvent} />
                 ))}
                 {nowInside && nowMins !== null && (
-                  <span className={styles.now} style={{ top: ((nowMins - part.from) / 60) * HOUR_H }}>
+                  <span className={styles.now} style={{ top: ((nowMins - from) / 60) * HOUR_H }}>
                     <b className="tnum">{formatMinutes(nowMins)}</b>
                     <i />
                   </span>
@@ -126,11 +128,7 @@ export function PartCard({
               </m.div>
             </AnimatePresence>
             {/* Клавиатурный (и явный) способ сделать то же, что тап по пустому времени. */}
-            <Pressable
-              className={styles.addInPart}
-              scale={0.97}
-              onClick={() => onCreate(firstFreeTime(events, part.from))}
-            >
+            <Pressable className={styles.addInPart} scale={0.97} onClick={() => onCreate(firstFreeTime(events, from))}>
               <PlusIcon size={15} /> Добавить событие · или нажмите на свободное время
             </Pressable>
           </m.div>

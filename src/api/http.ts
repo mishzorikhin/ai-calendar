@@ -8,6 +8,7 @@ import type {
   DatedEvent,
   Integration,
   IntegrationsInfo,
+  Invite,
   Memory,
   NotifySettings,
   Person,
@@ -103,6 +104,7 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
       return toEvent(await request<EventDTO>(`/api/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }))
     },
     deleteEvent: (id) => request<void>(`/api/events/${id}`, { method: 'DELETE' }),
+    rsvpEvent: (id, status) => post<Invite>(`/api/events/${id}/rsvp`, { status }),
     async getMonthDots(year, month) {
       const raw = await request<Record<string, Badge[]>>(`/api/month?year=${year}&month=${month + 1}`)
       return Object.fromEntries(Object.entries(raw).map(([day, badges]) => [Number(day), badges]))

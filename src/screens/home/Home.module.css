@@ -952,3 +952,8 @@
 .settingsRow + .settingsRow {
   margin-top: 8px;
 }
+
+.notifButton {
+  width: 100%;
+  text-align: left;
+}

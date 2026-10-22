@@ -3,7 +3,7 @@ import { ArrowRightIcon } from '../../../components/Icons'
 import { Avatar, Pill } from '../../../components/ui'
 import { memoryDateLabel } from '../../../domain/profile'
 import type { Person } from '../../../domain/types'
-import { userColor, userInitials } from '../avatar'
+import { userColor, userInitials } from '../../../lib/avatar'
 import { PersonForm } from './PersonForm'
 import styles from './Assistant.module.css'
 

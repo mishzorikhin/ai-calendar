@@ -274,6 +274,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(undefined)
     },
+    rsvpEvent: () => Promise.reject(NO_ACCOUNTS),
     getMonthDots: (year, month) => reply(monthDotsFor(year, month, monthEvents(year, month))),
     getTasks: () => reply([...data.tasks]),
     createTask(input) {

@@ -10,6 +10,7 @@ import type {
   Integration,
   IntegrationPatch,
   IntegrationsInfo,
+  Invite,
   Memory,
   MemoryKind,
   MemoryPatch,
@@ -25,6 +26,7 @@ import type {
   PushDevice,
   PushInfo,
   PushSubscriptionData,
+  Rsvp,
   Task,
   TaskPatch,
   User,
@@ -57,6 +59,8 @@ export interface CalendarApi {
   createEvent(input: NewEvent): Promise<DatedEvent>
   updateEvent(id: string, patch: EventPatch): Promise<DatedEvent>
   deleteEvent(id: string): Promise<void>
+  /** Ответ на приглашение на чужую встречу. */
+  rsvpEvent(id: string, status: Rsvp): Promise<Invite>
   /** Месяц с 0, как в Date. */
   getMonthDots(year: number, month: number): Promise<MonthDots>
   /** Задачи и цели в порядке создания. */

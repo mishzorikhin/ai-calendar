@@ -100,7 +100,7 @@ export function Day() {
                   index={i}
                   expanded={open === part.id}
                   onOpen={() => setOpened({ day: key, part: part.id })}
-                  events={events.filter((e) => e.start >= part.from && e.start < part.to)}
+                  events={events.filter((e) => partOf(e.start) === part.id)}
                   dateKey={key}
                   nowMins={isToday ? minutesOf(now) : null}
                   onCreate={(start) => composer.open({ date: selectedDate, start })}

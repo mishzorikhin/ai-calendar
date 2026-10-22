@@ -13,7 +13,8 @@ const MIN_CARD_H = 44
 
 /** Подзаголовок события: место/заметка, а у событий без заметки — откуда они (Google, Яндекс…). */
 export function EventSub({ event, calendar }: { event: CalendarEvent; calendar: string | undefined }) {
-  const text = event.subtitle || calendar
+  const invite = event.invite && `от ${event.invite.from.name || '@' + event.invite.from.username}`
+  const text = event.subtitle || invite || calendar
   return text ? <span className={styles.eventSub}>{text}</span> : null
 }
 
@@ -60,12 +61,12 @@ export function EventCard({
       <m.button
         data-event
         type="button"
-        className={`${styles.event} ${event.highlight ? styles.eventNew : ''}`}
+        className={`${styles.event} ${event.highlight ? styles.eventNew : ''} ${event.invite ? styles.invite : ''} ${event.invite?.status === 'pending' ? styles.invitePending : ''}`}
         style={{ top, height }}
         initial={{ opacity: 0, y: 14, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ ...spring, delay: 0.15 + index * 0.06 }}
-        aria-label={`${formatMinutes(event.start)}–${formatMinutes(event.end)}, ${event.title}${event.repeat ? ', повторяется' : ''}${event.travel ? `, дорога ${event.travel} минут` : ''}${calendar ? `, календарь «${calendar}»` : ''}`}
+        aria-label={`${formatMinutes(event.start)}–${formatMinutes(event.end)}, ${event.title}${event.repeat ? ', повторяется' : ''}${event.travel ? `, дорога ${event.travel} минут` : ''}${event.invite ? `, приглашение от @${event.invite.from.username}` : ''}${calendar ? `, календарь «${calendar}»` : ''}`}
         onClick={() => onOpen(event)}
         whileTap={{ scale: 0.97 }}
       >
@@ -79,6 +80,7 @@ export function EventCard({
           <BadgeIcon size={10} strokeWidth={2.4} />
         </i>
         {event.highlight && <span className={styles.newTag}>Новое</span>}
+        {event.invite?.status === 'pending' && <span className={styles.newTag}>Приглашение</span>}
       </m.button>
     </>
   )

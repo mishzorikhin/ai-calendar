@@ -576,3 +576,22 @@ button.event {
 .night .travel {
   color: var(--on-dark-2);
 }
+
+/* Чужая встреча, куда пригласили: тонкая рамка; без ответа — пунктиром. */
+.invite {
+  box-shadow:
+    inset 0 0 0 1.5px var(--accent-line),
+    0 6px 18px var(--shadow-c3);
+}
+
+.invitePending {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: none;
+  outline: 1.5px dashed var(--accent-line);
+  outline-offset: -1.5px;
+}
+
+.invitePending .newTag {
+  color: var(--blue);
+  background: var(--accent-bg);
+}

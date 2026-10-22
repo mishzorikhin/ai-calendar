@@ -421,3 +421,11 @@
   overflow-wrap: anywhere;
   color: var(--ink-2);
 }
+
+/* Ответ на приглашение: две крупные кнопки. */
+.rsvp {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}

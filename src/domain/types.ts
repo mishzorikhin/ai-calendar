@@ -41,7 +41,15 @@ export type CalendarEvent = {
    * (первый — до полуночи, последний — с полуночи, средние — на весь день).
    */
   span?: { date: string; start: number; end: number; allDay?: boolean }
+  /** Кого владелец пригласил и что они ответили. */
+  attendees?: Attendee[]
+  /** Чужая встреча, куда пригласили: от кого и мой ответ. Такое событие — только для чтения. */
+  invite?: Invite
 }
+
+export type Rsvp = 'pending' | 'accepted' | 'declined'
+export type Attendee = { username: string; name: string; status: Rsvp }
+export type Invite = { from: User; status: Rsvp }
 
 export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
 
@@ -82,6 +90,8 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   travel?: number
   /** Последний день многодневного события (end — время в этот день). */
   endDate?: string
+  /** Логины, кого пригласить. */
+  attendees?: string[]
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -108,6 +118,8 @@ export type EventPatch = {
   url?: string
   travel?: number
   endDate?: string
+  /** Новый полный список приглашённых (логины). */
+  attendees?: string[]
 }
 
 /** Значки событий по числам месяца. */
@@ -133,6 +145,9 @@ export type AppNotification = {
   id: number
   text: string
   taskId?: string
+  /** Уведомление о встрече: какой день открыть. */
+  eventId?: string
+  date?: string
   from?: User
   read: boolean
   createdAt: string

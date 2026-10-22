@@ -22,6 +22,7 @@ import type {
   Profile,
   ProfilePatch,
   PushInfo,
+  Rsvp,
   Task,
   TaskPatch,
 } from '../domain/types'
@@ -101,8 +102,8 @@ export function useCreateEvent() {
   })
 }
 
-/** Поля события из патча: occurrence/skip — указания серверу, а '' у повтора — «без повтора». */
-function eventFields({ occurrence: _o, skip: _s, repeat, ...fields }: EventPatch): Partial<DatedEvent> {
+/** Поля события из патча: occurrence/skip/attendees — указания серверу, а '' у повтора — «без повтора». */
+function eventFields({ occurrence: _o, skip: _s, attendees: _a, repeat, ...fields }: EventPatch): Partial<DatedEvent> {
   return repeat === undefined ? fields : { ...fields, repeat: repeat || undefined }
 }
 
@@ -134,6 +135,19 @@ export function useUpdateEvent() {
     onError: (_err, _vars, ctx) => {
       for (const [key, data] of ctx?.previous ?? []) qc.setQueryData(key, data)
     },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+    },
+  })
+}
+
+/** Ответ на приглашение: отказ убирает встречу из дня сразу. */
+export function useRsvp() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ event, status }: { event: DatedEvent; status: Rsvp }) => api.rsvpEvent(event.id, status),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.allEvents })
       void qc.invalidateQueries({ queryKey: keys.allMonths })
@@ -269,8 +283,8 @@ const NO_NOTIFICATIONS: AppNotification[] = []
 
 /**
  * Уведомления с периодической проверкой: бейдж непрочитанных на аватаре.
- * Новое уведомление значит, что с вами поделились задачей, — тогда перечитываем
- * и задачи: общая задача появляется без перезагрузки и без отдельного опроса.
+ * Новое уведомление значит, что с вами поделились задачей или позвали на встречу, — тогда
+ * перечитываем задачи и дни: они появляются без перезагрузки и без отдельного опроса.
  */
 export function useNotifications() {
   const api = useApi()
@@ -286,7 +300,12 @@ export function useNotifications() {
   const seen = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (newest === undefined) return
-    if (seen.current !== undefined && newest > seen.current) void qc.invalidateQueries({ queryKey: keys.tasks })
+    if (seen.current !== undefined && newest > seen.current) {
+      // Новое уведомление — общая задача, приглашение, перенос или отмена встречи: перечитываем их.
+      void qc.invalidateQueries({ queryKey: keys.tasks })
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+    }
     seen.current = newest
   }, [newest, qc])
   return { ...query, notifications, unread: notifications.filter((n) => !n.read).length }

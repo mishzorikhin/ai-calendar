@@ -8,7 +8,7 @@ import { CheckIcon, CloseIcon, TrashIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import { toISODate } from '../../lib/dates'
 import type { Task, TaskKind, User } from '../../domain/types'
-import { userColor, userInitials } from './avatar'
+import { userColor, userInitials } from '../../lib/avatar'
 import { TAG_PRESETS } from './tags'
 import styles from './Home.module.css'
 

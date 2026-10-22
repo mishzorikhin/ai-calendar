@@ -14,6 +14,8 @@ import {
   useUpdateMe,
 } from '../../api/queries'
 import { useSession } from '../../api/session'
+import { useCalendar } from '../../app/calendar'
+import { useNavigation } from '../../app/navigation'
 import { BottomSheet } from '../../components/BottomSheet'
 import { Segmented } from '../../components/Segmented'
 import {
@@ -26,11 +28,11 @@ import {
   UsersIcon,
 } from '../../components/Icons'
 import { Avatar, CircleButton, Pressable } from '../../components/ui'
-import { userColor, userInitials } from './avatar'
+import { userColor, userInitials } from '../../lib/avatar'
 import { daysLabel } from '../../domain/profile'
 import { reminderLabel } from '../../domain/reminders'
 import type { AppNotification } from '../../domain/types'
-import { formatMinutes } from '../../lib/dates'
+import { formatMinutes, fromISODate } from '../../lib/dates'
 import { pluralize } from '../../lib/plural'
 import { useTheme, type ThemeChoice } from '../../lib/theme'
 import styles from './Home.module.css'
@@ -225,7 +227,7 @@ export function AccountSheet({
           ) : (
             <ul className={styles.notifList}>
               {notifications.map((n) => (
-                <NotificationRow key={n.id} n={n} />
+                <NotificationRow key={n.id} n={n} onOpen={onClose} />
               ))}
             </ul>
           )}
@@ -248,9 +250,39 @@ export function AccountSheet({
   )
 }
 
-function NotificationRow({ n }: { n: AppNotification }) {
+/** Уведомление; о встрече — кнопка, которая открывает её день. */
+function NotificationRow({ n, onOpen }: { n: AppNotification; onOpen: () => void }) {
+  const { go } = useNavigation()
+  const { setSelectedDate } = useCalendar()
+  const date = n.date
+  const cls = `${styles.notif} ${n.read ? '' : styles.notifNew}`
+  if (!date) {
+    return (
+      <li className={cls}>
+        <NotificationBody n={n} />
+      </li>
+    )
+  }
   return (
-    <li className={`${styles.notif} ${n.read ? '' : styles.notifNew}`}>
+    <li>
+      <button
+        type="button"
+        className={`${cls} ${styles.notifButton}`}
+        onClick={() => {
+          setSelectedDate(fromISODate(date))
+          go('day')
+          onOpen()
+        }}
+      >
+        <NotificationBody n={n} />
+      </button>
+    </li>
+  )
+}
+
+function NotificationBody({ n }: { n: AppNotification }) {
+  return (
+    <>
       <span className={styles.notifIcon}>
         {n.from ? (
           <Avatar initials={userInitials(n.from)} color={userColor(n.from.username)} size={34} ring={false} />
@@ -266,6 +298,6 @@ function NotificationRow({ n }: { n: AppNotification }) {
         </span>
       </span>
       {!n.read && <i className={styles.notifDot} aria-label="непрочитанное" />}
-    </li>
+    </>
   )
 }
