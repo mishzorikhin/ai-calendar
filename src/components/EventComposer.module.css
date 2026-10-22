@@ -76,7 +76,7 @@
 .hint {
   margin: 6px 4px 0;
   font-size: 13px;
-  color: #b42318;
+  color: var(--danger-ink);
 }
 
 /* Сегодняшнее прошедшее время: доступно, но визуально уходит на второй план. */
@@ -116,13 +116,13 @@
 }
 
 .ok {
-  background: rgba(76, 196, 109, 0.12);
-  color: #1d6b34;
+  background: var(--success-bg);
+  color: var(--success-ink);
 }
 
 .warn {
-  background: rgba(240, 139, 61, 0.14);
-  color: #8a4210;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
 }
 
 /* «Сдвинуть на 11:00» — выход из пересечения в один тап. */
@@ -134,7 +134,7 @@
   background: var(--surface);
   font-size: 13.5px;
   font-weight: 600;
-  color: #8a4210;
+  color: var(--warn-ink);
 }
 
 .actions {
@@ -195,7 +195,7 @@
 
 .deleteSure {
   border-radius: 22px;
-  background: rgba(180, 35, 24, 0.12);
+  background: var(--danger-bg);
 }
 
 /* Куда сохранится событие: основной подключённый календарь. */
@@ -253,4 +253,227 @@
   justify-content: center;
   padding: 0 10px;
   white-space: nowrap;
+}
+
+/* --- Подробнее: ссылка, заметки, дорога, несколько дней ----------------------- */
+
+.placeRow {
+  position: relative;
+}
+
+.placeRow .subtitle {
+  padding-right: 104px;
+}
+
+/* «На карте» — внутри поля места, справа. */
+.mapLink {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.details {
+  margin-top: 12px;
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+
+.detailsToggle {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 18px;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.detailsTitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.detailsTitle small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.chevron,
+.chevronOpen {
+  flex-shrink: 0;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.detailsBody {
+  overflow: hidden;
+  padding: 0 12px;
+}
+
+.detailsBody > :last-child {
+  margin-bottom: 14px;
+}
+
+.detailsBody .subtitle {
+  margin-top: 0;
+  background: var(--surface);
+}
+
+.detailsBody .subtitle + .subtitle {
+  margin-top: 8px;
+}
+
+.notes {
+  height: auto;
+  padding: 12px 16px;
+  line-height: 1.4;
+  resize: none;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.label svg {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
+.detailsBody .row {
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+.multiRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.multiRow .pick {
+  height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  background: var(--surface);
+}
+
+/* --- Ссылка, место и заметки в просмотре ---------------------------------------- */
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.linkPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.linkPill:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.linkJoin {
+  background: var(--surface-ink);
+  color: var(--ink-inverse);
+}
+
+.notesText {
+  margin: 12px 4px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+/* Ответ на приглашение: две крупные кнопки. */
+.rsvp {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Задача, под которую поставлено время (план ассистента). */
+.taskLink {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  text-align: left;
+  color: var(--ink);
+}
+
+.taskCheck {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 2px var(--ink-soft);
+}
+
+.taskDone .taskCheck {
+  background: var(--green);
+  box-shadow: none;
+  color: var(--on-accent);
+}
+
+.taskText {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.taskDone .taskText {
+  color: var(--ink-2);
+  text-decoration: line-through;
 }

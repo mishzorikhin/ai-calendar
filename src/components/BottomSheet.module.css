@@ -8,7 +8,7 @@
 .backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(20, 15, 30, 0.3);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
@@ -45,7 +45,7 @@
   width: 38px;
   height: 5px;
   border-radius: 3px;
-  background: #dcdce2;
+  background: var(--handle);
 }
 
 .handleZone .handleLight {

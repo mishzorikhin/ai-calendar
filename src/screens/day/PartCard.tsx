@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, type MouseEvent } from 'react'
 import { MoonIcon, PlusIcon, SunIcon } from '../../components/Icons'
 import { Pressable } from '../../components/ui'
@@ -23,6 +23,7 @@ export function PartCard({
   nowMins,
   onCreate,
   onEvent,
+  onMove,
 }: {
   part: DayPart
   index: number
@@ -36,15 +37,19 @@ export function PartCard({
   onCreate: (start: number) => void
   /** Открыть событие для правки. */
   onEvent: (event: CalendarEvent) => void
+  /** Перенести событие перетаскиванием. */
+  onMove?: (event: CalendarEvent, next: { start: number; end: number }) => void
 }) {
   const Icon = PART_ICON[part.id]
-  const hours = (part.to - part.from) / 60
+  // Ночные события (до 6 утра) относятся к утру: шкала утра начинается с часа самого раннего из них.
+  const from = Math.min(part.from, ...events.map((e) => Math.floor(e.start / 60) * 60))
+  const hours = (part.to - from) / 60
   const wrap = useRef<HTMLDivElement>(null)
-  const nowInside = nowMins !== null && nowMins >= part.from && nowMins < part.to
+  const nowInside = nowMins !== null && nowMins >= from && nowMins < part.to
 
   const scrollToNow = useEffectEvent(() => {
     if (nowMins === null) return
-    wrap.current?.scrollTo({ top: Math.max(0, ((nowMins - part.from) / 60) * HOUR_H - 80), behavior: 'smooth' })
+    wrap.current?.scrollTo({ top: Math.max(0, ((nowMins - from) / 60) * HOUR_H - 80), behavior: 'smooth' })
   })
 
   // Новый день — шкала с начала, а не с позиции, на которой остался предыдущий день.
@@ -63,38 +68,32 @@ export function PartCard({
   const onTimelineClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target instanceof Element && e.target.closest('[data-event]')) return
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top
-    const mins = part.from + Math.floor((y / HOUR_H) * 2) * 30
-    onCreate(Math.min(Math.max(mins, part.from), part.to - 30))
+    const mins = from + Math.floor((y / HOUR_H) * 2) * 30
+    onCreate(Math.min(Math.max(mins, from), part.to - 30))
   }
 
   return (
-    <motion.section
+    <m.section
       layout
       transition={spring}
       className={`${styles.part} ${styles[part.id]}`}
       style={{ zIndex: index + 1, flex: expanded ? '1 1 0%' : '0 0 auto', borderRadius: 30 }}
     >
-      <motion.button
-        layout="position"
-        type="button"
-        className={styles.partHead}
-        onClick={onOpen}
-        aria-expanded={expanded}
-      >
+      <m.button layout="position" type="button" className={styles.partHead} onClick={onOpen} aria-expanded={expanded}>
         <span className={styles.partTitle}>{part.title}</span>
         {!expanded && events.length > 0 && (
-          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={styles.partCount}>
+          <m.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={styles.partCount}>
             {pluralize(events.length, ['событие', 'события', 'событий'])}
-          </motion.span>
+          </m.span>
         )}
         <span className={styles.partIcon}>
           <Icon size={15} strokeWidth={2} />
         </span>
-      </motion.button>
+      </m.button>
 
       <AnimatePresence initial={false}>
         {expanded && (
-          <motion.div
+          <m.div
             key="tl"
             ref={wrap}
             layout
@@ -104,7 +103,7 @@ export function PartCard({
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
           >
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={dateKey}
                 className={styles.timeline}
                 style={{ height: hours * HOUR_H }}
@@ -117,31 +116,27 @@ export function PartCard({
               >
                 {Array.from({ length: hours }, (_, h) => (
                   <span key={h} className={`${styles.hour} tnum`} style={{ top: h * HOUR_H }}>
-                    {formatMinutes(part.from + h * 60)}
+                    {formatMinutes(from + h * 60)}
                   </span>
                 ))}
                 {events.map((e, i) => (
-                  <EventCard key={e.id} event={e} from={part.from} to={part.to} index={i} onOpen={onEvent} />
+                  <EventCard key={e.id} event={e} from={from} to={part.to} index={i} onOpen={onEvent} onMove={onMove} />
                 ))}
                 {nowInside && nowMins !== null && (
-                  <span className={styles.now} style={{ top: ((nowMins - part.from) / 60) * HOUR_H }}>
+                  <span className={styles.now} style={{ top: ((nowMins - from) / 60) * HOUR_H }}>
                     <b className="tnum">{formatMinutes(nowMins)}</b>
                     <i />
                   </span>
                 )}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
             {/* Клавиатурный (и явный) способ сделать то же, что тап по пустому времени. */}
-            <Pressable
-              className={styles.addInPart}
-              scale={0.97}
-              onClick={() => onCreate(firstFreeTime(events, part.from))}
-            >
+            <Pressable className={styles.addInPart} scale={0.97} onClick={() => onCreate(firstFreeTime(events, from))}>
               <PlusIcon size={15} /> Добавить событие · или нажмите на свободное время
             </Pressable>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
-    </motion.section>
+    </m.section>
   )
 }

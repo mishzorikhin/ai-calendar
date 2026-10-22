@@ -26,7 +26,15 @@ export function usePushEvents(): void {
     const onMessage = (e: MessageEvent) => {
       const data = e.data as { type?: unknown; url?: unknown } | null
       if (data?.type === 'push:open' && typeof data.url === 'string') openFromNotification(data.url)
-      if (data?.type === 'push:changed') void qc.invalidateQueries({ queryKey: keys.tasks })
+      // Ответили из уведомления («Готово», «Да» на предложение) — данные поменялись на сервере.
+      if (data?.type === 'push:changed') {
+        void qc.invalidateQueries({ queryKey: keys.tasks })
+        void qc.invalidateQueries({ queryKey: keys.allEvents })
+        void qc.invalidateQueries({ queryKey: keys.allMonths })
+        void qc.invalidateQueries({ queryKey: keys.suggestions })
+      }
+      // Пришло предложение, пока приложение открыто, — карточка появится на главной.
+      if (data?.type === 'push:show') void qc.invalidateQueries({ queryKey: keys.suggestions })
     }
     navigator.serviceWorker.addEventListener('message', onMessage)
     return () => navigator.serviceWorker.removeEventListener('message', onMessage)

@@ -1,6 +1,7 @@
 import { createContext, use, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { spanOrigin } from '../domain/span'
 import type { DatedEvent } from '../domain/types'
-import { startOfDay } from '../lib/dates'
+import { fromISODate, startOfDay } from '../lib/dates'
 
 /**
  * Открытая шторка события: без `event` — создание на дату и время
@@ -20,10 +21,12 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<ComposerRequest | null>(null)
 
   const open = useCallback((opts?: { date?: Date; start?: number; event?: DatedEvent }) => {
+    // День многодневного события открывает событие целиком: с первого дня и исходным временем.
+    const event = opts?.event && spanOrigin(opts.event, fromISODate)
     setRequest({
-      date: startOfDay(opts?.event?.date ?? opts?.date ?? new Date()),
-      start: opts?.event?.start ?? opts?.start ?? null,
-      event: opts?.event,
+      date: startOfDay(event?.date ?? opts?.date ?? new Date()),
+      start: event?.start ?? opts?.start ?? null,
+      event,
     })
   }, [])
   const close = useCallback(() => setRequest(null), [])

@@ -4,8 +4,8 @@
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(120% 50% at 50% 0%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 60%),
-    linear-gradient(180deg, #efeef2 0%, #e8e7ed 60%, #e2e2ea 100%);
+    radial-gradient(120% 50% at 50% 0%, var(--chat-glow) 0%, transparent 60%),
+    linear-gradient(180deg, var(--chat-1) 0%, var(--chat-2) 60%, var(--chat-3) 100%);
 }
 
 .live {
@@ -22,13 +22,13 @@
   justify-content: space-between;
   border-radius: 20px;
   background: #000;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--on-dark-2);
   font-size: 13px;
   letter-spacing: -0.01em;
 }
 
 .live b {
-  color: var(--ink-inverse);
+  color: var(--on-dark);
   margin-right: 2px;
 }
 
@@ -41,7 +41,7 @@
   position: absolute;
   inset: 0;
   z-index: 68;
-  background: rgba(20, 15, 30, 0.2);
+  background: var(--scrim-soft);
 }
 
 .tasks {
@@ -52,8 +52,8 @@
   z-index: 69;
   padding: 8px;
   border-radius: 28px;
-  background: #121116;
-  color: var(--ink-inverse);
+  background: var(--surface-dark);
+  color: var(--on-dark);
   box-shadow: var(--shadow-lg);
   transform-origin: 50% 0;
 }
@@ -124,10 +124,10 @@
   margin-left: 8px;
   padding: 4px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--on-dark-fill);
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--ink-inverse);
+  color: var(--on-dark);
 }
 
 .taskText small {
@@ -149,7 +149,7 @@
   gap: 6px;
   text-align: left;
   overflow: hidden;
-  background: linear-gradient(180deg, #d8edc5 0px, #eef6e6 60px, #fbfcf9 130px);
+  background: linear-gradient(180deg, var(--morning-1) 0px, var(--morning-2) 60px, var(--morning-3) 130px);
   box-shadow: var(--shadow-md);
   flex-shrink: 0;
   -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
@@ -189,7 +189,7 @@
   font-size: 9.5px;
   font-weight: 600;
   color: var(--ink);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 6px var(--shadow-c2);
 }
 
 .previewCard small {
@@ -226,11 +226,11 @@
   display: inline-block;
   padding: 12px 16px;
   border-radius: 22px 22px 22px 8px;
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  background: var(--bubble);
+  box-shadow: inset 0 0 0 1px var(--bubble-line);
   font-size: 16px;
   letter-spacing: -0.015em;
-  color: rgba(20, 20, 30, 0.82);
+  color: var(--bubble-ink);
 }
 
 /* После .bubble: одинаковая специфичность, побеждает порядок. */
@@ -267,8 +267,8 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  background: var(--bubble);
+  box-shadow: inset 0 0 0 1px var(--bubble-line);
   font-size: 12px;
   font-weight: 500;
   color: var(--ink-2);
@@ -348,12 +348,47 @@
   color: var(--ink-3);
 }
 
-.attach {
-  margin-bottom: 6px;
-  width: 38px;
-  height: 38px;
+.attachBtn {
+  flex: none;
+  margin-bottom: 3px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+}
+
+.attachBtn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+/* Прикреплённая картинка над полем ввода. */
+.attachment {
+  margin: 0 0 8px 58px;
+  padding: 6px 6px 6px 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.attachmentThumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.attachmentText {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
 .dictation {
@@ -373,10 +408,10 @@
 @keyframes pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(15, 15, 18, 0.25);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--surface-ink) 25%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(15, 15, 18, 0);
+    box-shadow: 0 0 0 8px transparent;
   }
 }
 
@@ -385,7 +420,7 @@
 }
 
 .toolLink:active {
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--glass-strong);
 }
 
 /* Недоставленное сообщение: тот же пузырь, но приглушённый, с подписью и действиями. */
@@ -401,7 +436,7 @@
 .bubbleFailed {
   max-width: 100%;
   opacity: 0.55;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 0 1.5px var(--glass-line);
 }
 
 /* Ответ оборвался: реплика уже в истории, строка с ошибкой — на стороне ассистента. */
@@ -433,7 +468,7 @@
 
 .failedRetry {
   color: var(--blue);
-  background: rgba(58, 120, 242, 0.12);
+  background: var(--accent-bg);
 }
 
 .failedRetry:disabled {

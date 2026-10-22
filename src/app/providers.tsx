@@ -4,6 +4,7 @@ import { BarProvider } from './bar'
 import { CalendarProvider } from './calendar'
 import { ComposerProvider } from './composer'
 import { NavigationProvider } from './navigation'
+import { UndoProvider } from './undo'
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
@@ -11,7 +12,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <CalendarProvider>
         <AssistantProvider>
           <ComposerProvider>
-            <BarProvider>{children}</BarProvider>
+            <BarProvider>
+              <UndoProvider>{children}</UndoProvider>
+            </BarProvider>
           </ComposerProvider>
         </AssistantProvider>
       </CalendarProvider>

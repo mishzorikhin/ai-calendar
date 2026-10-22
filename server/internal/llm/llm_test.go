@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -150,5 +151,20 @@ func TestChatErrors(t *testing.T) {
 	}
 	if (*Client)(nil).Ready() {
 		t.Fatal("nil-клиент не готов")
+	}
+}
+
+func TestMessageWithImages(t *testing.T) {
+	plain, _ := json.Marshal(Message{Role: "user", Content: "привет"})
+	if string(plain) != `{"role":"user","content":"привет"}` {
+		t.Fatalf("без картинки: %s", plain)
+	}
+	raw, _ := json.Marshal(Message{Role: "user", Content: "что тут?", Images: []string{"data:image/png;base64,AAA="}})
+	want := `{"role":"user","content":[{"text":"что тут?","type":"text"},{"image_url":{"url":"data:image/png;base64,AAA="},"type":"image_url"}]}`
+	if string(raw) != want {
+		t.Fatalf("с картинкой:\n%s\nждали\n%s", raw, want)
+	}
+	if !RejectedRequest(&httpError{400}) || RejectedRequest(&httpError{500}) || RejectedRequest(errors.New("x")) {
+		t.Fatal("RejectedRequest")
 	}
 }

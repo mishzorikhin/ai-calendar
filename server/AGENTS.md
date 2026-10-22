@@ -35,7 +35,14 @@ internal/api/     http.go (ошибки, JSON, middleware), api.go (маршру
                   событий во внешние календари, фоновый цикл), integrations.go (маршруты календарей,
                   OAuth, лента .ics с VALARM), push.go (ключ VAPID, подписки, настройки, проверка, «отложить»,
                   pushTo, устройства), reminders.go (фоновый цикл напоминаний, чистая planReminders), alarms.go (свои
-                  напоминания без события поверх отложенных), repeat.go (развёртка повторов eventsBetween), spa.go (раздача UI)
+                  напоминания без события поверх отложенных), repeat.go (развёртка повторов eventsBetween), spa.go (раздача UI),
+                  profile.go (профиль и его текст для промпта), slots.go (чистый поиск окон freeSlots), memory.go (память,
+                  отбор фактов selectMemories, evidence), people.go (карточки людей, упоминания в тексте),
+                  personal_tools.go (инструменты профиля, памяти и людей), suggestions.go (предложения ассистента:
+                  чистая planSuggestions, accept/dismiss), planning.go (раскладка задач и массовый перенос:
+                  чистые placeItems/planTasks/shiftPlan), account.go (сессии, пароль, выгрузка, удаление аккаунта),
+                  habits.go (habitStreak, отметки, doneAt), insights.go (чистая weekInsights),
+                  infer.go (выводы из поведения: чистая inferHabits, фоновый inferAll)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 
@@ -112,7 +119,9 @@ web/              embed.go + dist/ (собранный UI, в git только R
 ## Ассистент (`internal/llm`)
 
 - Инструменты описаны и исполняются в `internal/api/chat.go`: `get_day_schedule`, `find_free_slots`, `create_event`, `update_event`, `delete_event`,
-  `list_tasks`, `create_task`, `update_task`, `delete_task`, `list_users`. У `create_event`/`update_event` есть `reminders`. Они вызывают то же хранилище
+  `list_tasks`, `create_task`, `update_task`, `delete_task`, `list_users`, `create_reminder`, `list_reminders`; персонализация — в
+  `personal_tools.go`: `update_profile`, `remember`, `forget`, `list_memories`, `list_people`, `save_person`, `forget_person`.
+  У `create_event`/`update_event` есть `reminders`. Они вызывают то же хранилище
   с тем же контекстом пользователя, что и обычные хендлеры, и обязаны проходить ту же валидацию;
   `internal/llm` отвечает за HTTP-клиент и один раунд модели; цикл инструментов — в `api/chat.go`.
 - Удаления требуют явного подтверждения по системному промпту; не ослабляйте это требование.
@@ -127,6 +136,14 @@ web/              embed.go + dist/ (собранный UI, в git только R
   Реплика пользователя сохраняется до вызова модели, непустой ответ — при завершении хендлера.
   Тесты — на фейковом HTTP-сервере, без настоящего ключа и платных запросов.
 - Ключ — только `LLM_API_KEY` из окружения; без него чат отвечает заглушкой.
+- **Персонализация.** Системный промпт = `chatRules` + `profileSummary` (имя и профиль) + отобранные факты памяти
+  (`selectMemories`: правила/предпочтения, даты ≤ 14 дней, совпадение основ слов, бюджет `memoryBudget`) + карточки
+  упомянутых людей (`mentionedPeople`). Окна (`find_free_slots`) — только через чистую `freeSlots` с границами профиля,
+  перерывом, дорогой и «святыми» блоками; правила меняйте там и в `TestFreeSlots`.
+- **Запись в память только со слов пользователя:** `remember` и `save_person` требуют `evidence` — дословный фрагмент одной
+  из последних реплик пользователя (`chatTurn.userTexts`, проверка `evidenceOK`). Не ослабляйте это: так текст чужого
+  события или результата инструмента не попадёт в память. С выключенной памятью (`Profile.Memory`) инструменты записи
+  модели не передаются, факты и люди в промпт не идут — это проверяет `TestChatMemoryOff`.
 
 ## Как писать хендлеры
 
@@ -151,7 +168,8 @@ web/              embed.go + dist/ (собранный UI, в git только R
 - Файловое: все изменения под `s.mu.Lock()`, затем `s.save()` (при ошибке записи — `rollback`); чтения под
   `RLock` и возвращают копии (`slices.Clone`).
 - PostgreSQL: таблицы `users`, `sessions`, `events`, `messages`, `tasks`, `task_members`, `notifications`,
-  `integrations`, `push_subscriptions`, `notify_settings`, `sent_reminders`, `snoozes`, `server_keys` создаёт миграция при старте; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
+  `integrations`, `push_subscriptions`, `notify_settings`, `sent_reminders`, `snoozes`, `server_keys`, `profiles`, `memories`,
+  `people`, `suggestions` создаёт миграция при старте; новые таблицы добавляйте и в `mustWipe` тестов; миграции идемпотентные (`IF NOT EXISTS`) и без потери данных: новые колонки с `DEFAULT`.
   Тест — `TEST_DATABASE_URL=… go test -race ./internal/store -run TestPostgres -count=1`
   (без переменной пропускается). `mustWipe` выполняет `TRUNCATE … RESTART IDENTITY`: только отдельная
   одноразовая тестовая БД, никогда рабочая. Не подставляйте продакшен `DATABASE_URL` в тестовую переменную.

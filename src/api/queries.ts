@@ -10,14 +10,27 @@ import type {
   EventPatch,
   IntegrationPatch,
   IntegrationsInfo,
+  Memory,
+  MemoryKind,
+  MemoryPatch,
   NewEvent,
   NewIntegration,
   NewTask,
   NotifySettings,
+  Person,
+  PersonInput,
+  AuthSession,
+  WeekInsights,
+  Suggestion,
+  Profile,
+  ProfilePatch,
   PushInfo,
+  Rsvp,
+  SearchResult,
   Task,
   TaskPatch,
 } from '../domain/types'
+import { withCheck } from '../domain/habit'
 import { isSameDay, toISODate } from '../lib/dates'
 import { apiErrorText } from './api'
 import { useApi } from './provider'
@@ -44,6 +57,13 @@ export const keys = {
   /** id подписки этого браузера — чтобы отметить его в списке устройств. */
   pushDeviceId: ['push-device-id'] as const,
   alarms: ['alarms'] as const,
+  profile: ['profile'] as const,
+  search: (q: string) => ['search', q] as const,
+  memories: ['memories'] as const,
+  people: ['people'] as const,
+  suggestions: ['suggestions'] as const,
+  sessions: ['auth-sessions'] as const,
+  week: (start: string) => ['week', start] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -91,8 +111,8 @@ export function useCreateEvent() {
   })
 }
 
-/** Поля события из патча: occurrence/skip — указания серверу, а '' у повтора — «без повтора». */
-function eventFields({ occurrence: _o, skip: _s, repeat, ...fields }: EventPatch): Partial<DatedEvent> {
+/** Поля события из патча: occurrence/skip/attendees — указания серверу, а '' у повтора — «без повтора». */
+function eventFields({ occurrence: _o, skip: _s, attendees: _a, repeat, ...fields }: EventPatch): Partial<DatedEvent> {
   return repeat === undefined ? fields : { ...fields, repeat: repeat || undefined }
 }
 
@@ -124,6 +144,19 @@ export function useUpdateEvent() {
     onError: (_err, _vars, ctx) => {
       for (const [key, data] of ctx?.previous ?? []) qc.setQueryData(key, data)
     },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+    },
+  })
+}
+
+/** Ответ на приглашение: отказ убирает встречу из дня сразу. */
+export function useRsvp() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ event, status }: { event: DatedEvent; status: Rsvp }) => api.rsvpEvent(event.id, status),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.allEvents })
       void qc.invalidateQueries({ queryKey: keys.allMonths })
@@ -203,6 +236,63 @@ export function useLogout() {
   })
 }
 
+/** Обзор недели, в которую входит start. */
+export function useWeekInsights(start: Date) {
+  const api = useApi()
+  return useQuery<WeekInsights>({ queryKey: keys.week(toISODate(start)), queryFn: () => api.getWeekInsights(start) })
+}
+
+/** Устройства, где выполнен вход. */
+export function useSessions() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.sessions, queryFn: () => api.getSessions() })
+  return { ...query, sessions: query.data ?? NO_SESSIONS }
+}
+const NO_SESSIONS: AuthSession[] = []
+
+/** Завершить сеанс одного устройства (id) или всех остальных (null). */
+export function useEndSessions() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string | null) => (id === null ? api.logoutOthers() : api.deleteSession(id)),
+    // Сервер снял push-подписки всех устройств — это устройство подписывается заново при сверке.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['push-device'] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+  })
+}
+
+export function useChangePassword() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ current, next }: { current: string; next: string }) => api.changePassword(current, next),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.sessions })
+      void qc.invalidateQueries({ queryKey: ['push-device'] })
+    },
+  })
+}
+
+/** Выгрузка всех своих данных (текст JSON-файла). */
+export function useExportData() {
+  const api = useApi()
+  return useMutation({ mutationFn: () => api.exportData() })
+}
+
+/** Удалить аккаунт: подписка устройства снимается, кэш стирается — как при выходе. */
+export function useDeleteAccount() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (password: string) => {
+      await api.deleteAccount(password)
+      await Promise.race([disablePush(api).catch(() => {}), new Promise((r) => setTimeout(r, 2500))])
+    },
+    onSuccess: () => qc.clear(),
+  })
+}
+
 export function useUpdateMe() {
   const api = useApi()
   const qc = useQueryClient()
@@ -259,8 +349,8 @@ const NO_NOTIFICATIONS: AppNotification[] = []
 
 /**
  * Уведомления с периодической проверкой: бейдж непрочитанных на аватаре.
- * Новое уведомление значит, что с вами поделились задачей, — тогда перечитываем
- * и задачи: общая задача появляется без перезагрузки и без отдельного опроса.
+ * Новое уведомление значит, что с вами поделились задачей или позвали на встречу, — тогда
+ * перечитываем задачи и дни: они появляются без перезагрузки и без отдельного опроса.
  */
 export function useNotifications() {
   const api = useApi()
@@ -276,7 +366,12 @@ export function useNotifications() {
   const seen = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (newest === undefined) return
-    if (seen.current !== undefined && newest > seen.current) void qc.invalidateQueries({ queryKey: keys.tasks })
+    if (seen.current !== undefined && newest > seen.current) {
+      // Новое уведомление — общая задача, приглашение, перенос или отмена встречи: перечитываем их.
+      void qc.invalidateQueries({ queryKey: keys.tasks })
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+    }
     seen.current = newest
   }, [newest, qc])
   return { ...query, notifications, unread: notifications.filter((n) => !n.read).length }
@@ -351,6 +446,13 @@ export function useUpdateTask() {
                 done: patch.done ?? t.done,
                 due: patch.due ?? t.due,
                 category: patch.category === undefined ? t.category : patch.category || undefined,
+                estimate: patch.estimate === undefined ? t.estimate : patch.estimate || undefined,
+                cadence: patch.cadence ?? t.cadence,
+                checks: patch.check
+                  ? withCheck(t.checks ?? [], patch.check, true)
+                  : patch.uncheck
+                    ? withCheck(t.checks ?? [], patch.uncheck, false)
+                    : t.checks,
               }
             : t,
         ),
@@ -402,7 +504,10 @@ export type ChatStream = {
  * Сообщение, на которое не пришёл ответ: живёт локально, пока его не повторят или не сотрут.
  * delivered — сервер реплику получил (она уже в истории), оборвался только ответ.
  */
-export type FailedMessage = { id: number; text: string; error: string; delivered: boolean }
+export type FailedMessage = { id: number; text: string; image?: string; error: string; delivered: boolean }
+
+/** Пометка картинки в истории — та же, что пишет сервер. */
+export const IMAGE_MARK = '📎 фото'
 
 /**
  * Отправка сообщения ассистенту. Пузырь пользователя добавляем оптимистично —
@@ -423,15 +528,16 @@ export function useSendChat() {
   useEffect(() => () => active.current?.abort(), [])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, image?: string) => {
       const value = text.trim()
-      if (!value || active.current) return
+      if ((!value && !image) || active.current) return
+      const shown = image ? `${value}\n${IMAGE_MARK}`.trim() : value
       const ctl = new AbortController()
       active.current = ctl
       setFailed((list) => list.filter((m) => m.text !== value))
       qc.setQueryData<ChatMessage[]>(keys.messages, (list = []) => [
         ...list,
-        { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: value },
+        { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: shown },
       ])
       setStream({ text: '', tools: [], done: false, error: null })
       let error: string | null = null
@@ -465,6 +571,7 @@ export function useSendChat() {
             }
           },
           ctl.signal,
+          image,
         )
       } catch (err) {
         error = apiErrorText(err)
@@ -477,6 +584,10 @@ export function useSendChat() {
           qc.invalidateQueries({ queryKey: keys.allEvents }),
           qc.invalidateQueries({ queryKey: keys.allMonths }),
           qc.invalidateQueries({ queryKey: keys.tasks }),
+          // Ассистент мог запомнить факт, добавить человека или поменять профиль.
+          qc.invalidateQueries({ queryKey: keys.memories }),
+          qc.invalidateQueries({ queryKey: keys.people }),
+          qc.invalidateQueries({ queryKey: keys.profile }),
         ])
       } finally {
         active.current = null
@@ -485,7 +596,7 @@ export function useSendChat() {
       setStream(null)
       if (error) {
         const message = error
-        setFailed((list) => [...list, { id: Date.now(), text: value, error: message, delivered }])
+        setFailed((list) => [...list, { id: Date.now(), text: value, image, error: message, delivered }])
       }
     },
     [api, qc],
@@ -685,4 +796,202 @@ export function useDeleteDevice() {
       void qc.invalidateQueries({ queryKey: keys.push })
     },
   })
+}
+
+// --- Персонализация: профиль, память, люди ------------------------------------
+
+/** Профиль пользователя: ритм дня, рабочее время, манера общения ассистента. */
+export function useProfile() {
+  const api = useApi()
+  const session = useSession()
+  return useQuery({
+    queryKey: keys.profile,
+    queryFn: () => api.getProfile(),
+    enabled: api.mode === 'local' || !!session,
+    staleTime: 5 * 60_000,
+  })
+}
+
+/** Изменение профиля — сразу в кэше, откат при ошибке. */
+export function useUpdateProfile() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: ProfilePatch) => api.updateProfile(patch),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: keys.profile })
+      const previous = qc.getQueryData<Profile>(keys.profile)
+      if (previous) qc.setQueryData<Profile>(keys.profile, { ...previous, ...patch })
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.profile, ctx?.previous),
+    onSuccess: (profile) => qc.setQueryData(keys.profile, profile),
+  })
+}
+
+const NO_MEMORIES: Memory[] = []
+
+/** Факты в памяти ассистента, новые первыми. */
+export function useMemories() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.memories, queryFn: () => api.getMemories() })
+  return { ...query, memories: query.data ?? NO_MEMORIES }
+}
+
+export function useCreateMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { kind: MemoryKind; text: string; date?: string }) => api.createMemory(input),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+/** Правка факта; «Нет» у догадки (rejected) убирает её из списка сразу. */
+export function useUpdateMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: MemoryPatch }) => api.updateMemory(id, patch),
+    onMutate: async ({ id, patch }) => {
+      await qc.cancelQueries({ queryKey: keys.memories })
+      const previous = qc.getQueryData<Memory[]>(keys.memories)
+      const { rejected, ...fields } = patch
+      qc.setQueryData<Memory[]>(keys.memories, (list = []) =>
+        rejected ? list.filter((m) => m.id !== id) : list.map((m) => (m.id === id ? { ...m, ...fields } : m)),
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.memories, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+export function useDeleteMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteMemory(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.memories })
+      const previous = qc.getQueryData<Memory[]>(keys.memories)
+      qc.setQueryData<Memory[]>(keys.memories, (list = []) => list.filter((m) => m.id !== id))
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => qc.setQueryData(keys.memories, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+export function useDeleteAllMemories() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.deleteAllMemories(),
+    onSuccess: () => qc.setQueryData<Memory[]>(keys.memories, []),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+const NO_PEOPLE: Person[] = []
+
+export function usePeople() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.people, queryFn: () => api.getPeople() })
+  return { ...query, people: query.data ?? NO_PEOPLE }
+}
+
+/** Создать (id нет) или заменить карточку человека. */
+export function useSavePerson() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: number; input: PersonInput }) =>
+      id === undefined ? api.createPerson(input) : api.updatePerson(id, input),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
+  })
+}
+
+const NO_SUGGESTIONS: Suggestion[] = []
+
+/** Предложения ассистента, ждущие ответа (карточки на главной). */
+export function useSuggestions() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.suggestions, queryFn: () => api.getSuggestions() })
+  return { ...query, suggestions: query.data ?? NO_SUGGESTIONS }
+}
+
+/** Убрать карточку сразу, вернуть при ошибке. */
+function useAnswerSuggestion<V extends { id: number }>(fn: (vars: V) => Promise<unknown>, after: (vars: V) => void) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: keys.suggestions })
+      const previous = qc.getQueryData<Suggestion[]>(keys.suggestions)
+      qc.setQueryData<Suggestion[]>(keys.suggestions, (list = []) => list.filter((s) => s.id !== vars.id))
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.suggestions, ctx?.previous),
+    onSuccess: (_data, vars) => after(vars),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.suggestions }),
+  })
+}
+
+/** «Да»: сервер создаёт событие или задачу — перечитываем их. */
+export function useAcceptSuggestion() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useAnswerSuggestion(
+    ({ id }: { id: number }) => api.acceptSuggestion(id),
+    () => {
+      void qc.invalidateQueries({ queryKey: keys.allEvents })
+      void qc.invalidateQueries({ queryKey: keys.allMonths })
+      void qc.invalidateQueries({ queryKey: keys.tasks })
+    },
+  )
+}
+
+/** «Нет»; mute — «не предлагать такое» (меняет профиль). */
+export function useDismissSuggestion() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useAnswerSuggestion(
+    ({ id, mute }: { id: number; mute?: boolean }) => api.dismissSuggestion(id, mute),
+    ({ mute }) => {
+      if (mute) void qc.invalidateQueries({ queryKey: keys.profile })
+    },
+  )
+}
+
+export function useDeletePerson() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deletePerson(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.people })
+      const previous = qc.getQueryData<Person[]>(keys.people)
+      qc.setQueryData<Person[]>(keys.people, (list = []) => list.filter((p) => p.id !== id))
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => qc.setQueryData(keys.people, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
+  })
+}
+
+const NO_RESULT: SearchResult = { events: [], tasks: [] }
+
+/** Поиск по событиям и задачам: от 2 символов, пока печатают — прошлый результат. */
+export function useSearch(query: string) {
+  const api = useApi()
+  const q = query.trim()
+  const query_ = useQuery({
+    queryKey: keys.search(q),
+    queryFn: () => api.search(q),
+    enabled: [...q].length >= 2,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  })
+  return { ...query_, result: [...q].length >= 2 ? (query_.data ?? NO_RESULT) : NO_RESULT }
 }

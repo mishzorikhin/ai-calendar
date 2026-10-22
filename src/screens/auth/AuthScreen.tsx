@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useState, type FormEvent } from 'react'
 import { apiErrorText } from '../../api/api'
 import { useLogin, useRegister } from '../../api/queries'
@@ -31,15 +31,15 @@ export function AuthScreen() {
     }
   }
 
-  const switchMode = (m: Mode) => {
-    setMode(m)
+  const switchMode = (next: Mode) => {
+    setMode(next)
     login.reset()
     register.reset()
   }
 
   return (
     <div className={styles.root}>
-      <motion.div
+      <m.div
         className={styles.card}
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -54,16 +54,16 @@ export function AuthScreen() {
         </p>
 
         <div className={styles.mode} role="tablist" aria-label="Вход или регистрация">
-          {(['login', 'register'] as const).map((m) => (
+          {(['login', 'register'] as const).map((option) => (
             <button
-              key={m}
+              key={option}
               type="button"
               role="tab"
-              aria-selected={mode === m}
-              className={`${styles.modeBtn} ${mode === m ? styles.modeOn : ''}`}
-              onClick={() => switchMode(m)}
+              aria-selected={mode === option}
+              className={`${styles.modeBtn} ${mode === option ? styles.modeOn : ''}`}
+              onClick={() => switchMode(option)}
             >
-              {m === 'login' ? 'Вход' : 'Регистрация'}
+              {option === 'login' ? 'Вход' : 'Регистрация'}
             </button>
           ))}
         </div>
@@ -111,7 +111,7 @@ export function AuthScreen() {
             {pending ? 'Секунду…' : mode === 'login' ? 'Войти' : 'Создать аккаунт'}
           </Pill>
         </form>
-      </motion.div>
+      </m.div>
     </div>
   )
 }

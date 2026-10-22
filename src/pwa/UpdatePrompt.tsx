@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Pill } from '../components/ui'
@@ -32,7 +32,7 @@ export function UpdatePrompt() {
   return (
     <AnimatePresence>
       {(needRefresh || offlineReady) && (
-        <motion.div
+        <m.div
           key={needRefresh ? 'update' : 'offline'}
           className={styles.toast}
           role="status"
@@ -54,7 +54,7 @@ export function UpdatePrompt() {
           ) : (
             <span>Приложение готово к работе без сети</span>
           )}
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

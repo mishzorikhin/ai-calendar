@@ -29,7 +29,31 @@ export type CalendarEvent = {
   repeatUntil?: string
   /** Дни, убранные из серии (ГГГГ-ММ-ДД). */
   exdates?: string[]
+  /** У вхождения серии — её первый день (ГГГГ-ММ-ДД). */
+  seriesDate?: string
+  /** Заметки и ссылка (созвон, билет). Место — subtitle. */
+  notes?: string
+  url?: string
+  /** Сколько минут добираться: время до начала занято, придёт «пора выезжать». */
+  travel?: number
+  /** Последний день многодневного события, ГГГГ-ММ-ДД. */
+  endDate?: string
+  /**
+   * У дня многодневного события: исходные первый день и время. start/end дня — отрезок этого дня
+   * (первый — до полуночи, последний — с полуночи, средние — на весь день).
+   */
+  span?: { date: string; start: number; end: number; allDay?: boolean }
+  /** Кого владелец пригласил и что они ответили. */
+  attendees?: Attendee[]
+  /** Чужая встреча, куда пригласили: от кого и мой ответ. Такое событие — только для чтения. */
+  invite?: Invite
+  /** Задача, под которую поставлено это время (план ассистента). */
+  taskId?: string
 }
+
+export type Rsvp = 'pending' | 'accepted' | 'declined'
+export type Attendee = { username: string; name: string; status: Rsvp }
+export type Invite = { from: User; status: Rsvp }
 
 export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
 
@@ -65,6 +89,15 @@ export type NewEvent = Pick<CalendarEvent, 'title' | 'start' | 'end'> & {
   repeatUntil?: string
   /** На весь день: start 0, end 1440, время не занимает. */
   allDay?: boolean
+  notes?: string
+  url?: string
+  travel?: number
+  /** Последний день многодневного события (end — время в этот день). */
+  endDate?: string
+  /** Логины, кого пригласить. */
+  attendees?: string[]
+  /** Задача, под которую ставится это время. */
+  taskId?: string
 }
 
 /** Частичное обновление события. subtitle: '' очищает место/заметку. */
@@ -86,6 +119,13 @@ export type EventPatch = {
   skip?: Date
   /** true — на весь день; false — снова со временем (вместе с start и end). */
   allDay?: boolean
+  /** '' очищает заметки и ссылку; endDate: '' — снова однодневное. */
+  notes?: string
+  url?: string
+  travel?: number
+  endDate?: string
+  /** Новый полный список приглашённых (логины). */
+  attendees?: string[]
 }
 
 /** Значки событий по числам месяца. */
@@ -95,7 +135,10 @@ export type ChatMessage = { id: number; role: 'user' | 'ai'; text: string }
 
 /** Тег задачи — свободный текст; PRESET_TAGS в PrepCard дают подсказки с иконками. */
 export type TaskCategory = string
-export type TaskKind = 'task' | 'goal'
+export type TaskKind = 'task' | 'goal' | 'habit'
+
+/** Как часто делается привычка: каждый день, по будням, раз в неделю. */
+export type Cadence = 'daily' | 'weekdays' | 'weekly'
 
 /** Пользователь аккаунта: логин для @упоминаний, name — отображаемое имя. */
 export type User = {
@@ -111,6 +154,9 @@ export type AppNotification = {
   id: number
   text: string
   taskId?: string
+  /** Уведомление о встрече: какой день открыть. */
+  eventId?: string
+  date?: string
   from?: User
   read: boolean
   createdAt: string
@@ -131,6 +177,15 @@ export type Task = {
   members?: User[]
   /** Роль текущего пользователя: владелец удаляет задачу, участник — выходит из неё. */
   role?: 'owner' | 'member'
+  /** Когда задачу завели (ISO). */
+  createdAt?: string
+  /** Сколько минут займёт (нет — час при планировании). */
+  estimate?: number
+  /** Когда закрыли (ISO), ставит сервер. */
+  doneAt?: string
+  /** У привычки: частота и дни, когда она выполнена (ГГГГ-ММ-ДД, по порядку). */
+  cadence?: Cadence
+  checks?: string[]
 }
 
 /** Новая задача (до сохранения). members — логины участников, с которыми поделиться. */
@@ -141,6 +196,8 @@ export type NewTask = {
   category?: TaskCategory
   due?: string
   members?: string[]
+  estimate?: number
+  cadence?: Cadence
 }
 
 /** Частичное обновление задачи. category: '' очищает категорию; members — добавить участников. */
@@ -152,6 +209,12 @@ export type TaskPatch = {
   done?: boolean
   due?: string
   members?: string[]
+  /** 0 — без оценки. */
+  estimate?: number
+  cadence?: Cadence
+  /** Отметить привычку выполненной в этот день (ГГГГ-ММ-ДД) или снять отметку. */
+  check?: string
+  uncheck?: string
 }
 
 /** Вид подключённого календаря. */
@@ -241,4 +304,117 @@ export type PushDevice = {
   id: string
   label: string
   createdAt: string
+}
+
+// --- Персонализация ассистента (server/internal/model/personal.go) ----------------------
+
+export type Focus = 'none' | 'morning' | 'afternoon' | 'evening'
+
+/** «Святой» отрезок дня: ассистент его не занимает. days — дни недели (0 — воскресенье), пусто — каждый день. */
+export type ProtectedBlock = { title: string; start: number; end: number; days?: number[] }
+
+export type SuggestionKind = 'lunch' | 'stale_task' | 'date' | 'overload' | 'plan_tasks'
+
+/** Что делает «Да»: event — создать событие, task — задачу, chat — открыть чат с запросом. */
+export type SuggestionAction =
+  | { type: 'event'; title: string; date: string; start: number; end: number; badge?: Badge }
+  | { type: 'task'; title: string; due?: string }
+  | { type: 'chat'; prompt: string }
+
+/** Предложение ассистента: он сам заметил, что можно улучшить в расписании. */
+export type Suggestion = {
+  id: number
+  kind: SuggestionKind
+  key: string
+  title: string
+  body: string
+  action: SuggestionAction
+  status: 'pending' | 'accepted' | 'dismissed'
+  createdAt: string
+  expiresAt: string
+}
+
+/** Что пользователь рассказал о себе. Время — минуты от полуночи. */
+export type Profile = {
+  wakeUp: number
+  /** ≤ wakeUp — ложится после полуночи. */
+  bedTime: number
+  workStart: number
+  workEnd: number
+  workDays: number[]
+  focus: Focus
+  meetingMinutes: number
+  bufferMinutes: number
+  protected: ProtectedBlock[]
+  tone: 'brief' | 'detailed'
+  address: 'ty' | 'vy'
+  about?: string
+  /** Ассистент запоминает факты из разговоров. */
+  memory: boolean
+  /** Предложений ассистента в день (0 — не присылать) и выключенные виды. */
+  proactive: number
+  muted?: SuggestionKind[]
+  /** Анкета при первом входе пройдена или пропущена. */
+  onboarded: boolean
+}
+
+export type ProfilePatch = Partial<Profile>
+
+export type MemoryKind = 'person' | 'place' | 'habit' | 'preference' | 'rule' | 'date' | 'other'
+
+/** Факт в памяти ассистента. source: inferred — догадка по поведению (ждёт «Верно» / «Нет»). */
+export type Memory = {
+  id: number
+  kind: MemoryKind
+  text: string
+  /** ГГГГ-ММ-ДД или --ММ-ДД (каждый год). */
+  date?: string
+  source: 'user' | 'inferred'
+  confirmed: boolean
+  key?: string
+  createdAt: string
+  updatedAt: string
+  /** Когда факт последний раз пригодился ассистенту. */
+  usedAt?: string
+}
+
+export type MemoryPatch = { kind?: MemoryKind; text?: string; date?: string; confirmed?: boolean; rejected?: boolean }
+
+/** Карточка человека из окружения пользователя. */
+export type Person = {
+  id: number
+  name: string
+  aliases?: string[]
+  relation?: string
+  place?: string
+  /** Обычная длительность встречи; 0/нет — как в профиле. */
+  meetingMinutes?: number
+  /** ГГГГ-ММ-ДД или --ММ-ДД. */
+  birthday?: string
+  notes?: string
+  /** Логин на сервере. */
+  username?: string
+}
+
+export type PersonInput = Omit<Person, 'id'>
+
+/** Результат поиска: события (серия — ближайшим вхождением, предстоящие первыми) и задачи. */
+export type SearchResult = { events: DatedEvent[]; tasks: Task[] }
+
+/** Вход с устройства: id — начало хэша токена, label — «Chrome · Android». */
+export type AuthSession = { id: string; label: string; createdAt: string; lastSeen: string; current?: boolean }
+
+/** Обзор недели с понедельника `start` (минуты). */
+export type WeekInsights = {
+  start: string
+  days: { date: string; minutes: number; events: number }[]
+  byBadge: Partial<Record<Badge, number>>
+  minutes: number
+  /** В среднем за четыре прошлые недели. */
+  average: number
+  /** Свободные отрезки от 90 минут в рабочие часы. */
+  focus: number
+  /** Задачи, закрытые на этой неделе. */
+  done: number
+  busiest?: string
 }

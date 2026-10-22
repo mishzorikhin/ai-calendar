@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { useTasks, useUpdateTask } from '../../api/queries'
 import { CheckIcon, ChevronDownIcon } from '../../components/Icons'
@@ -27,7 +27,7 @@ export function TasksPill() {
 
   return (
     <>
-      <motion.button
+      <m.button
         type="button"
         className={styles.live}
         initial={{ scaleX: 0.6, opacity: 0 }}
@@ -37,7 +37,7 @@ export function TasksPill() {
         aria-expanded={open}
         aria-controls="assistant-tasks"
       >
-        <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
+        <m.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
           {isError ? (
             'Задачи недоступны'
           ) : (
@@ -45,16 +45,16 @@ export function TasksPill() {
               <b className="tnum">{active.length}</b> {plural(active.length, ['задача', 'задачи', 'задач'])}
             </>
           )}
-        </motion.span>
-        <motion.span className={styles.liveChevron} animate={{ rotate: open ? 180 : 0 }} transition={spring}>
+        </m.span>
+        <m.span className={styles.liveChevron} animate={{ rotate: open ? 180 : 0 }} transition={spring}>
           <ChevronDownIcon size={14} strokeWidth={2.4} />
-        </motion.span>
-      </motion.button>
+        </m.span>
+      </m.button>
 
       <AnimatePresence>
         {open && (
           <>
-            <motion.div
+            <m.div
               key="scrim"
               className={styles.tasksScrim}
               initial={{ opacity: 0 }}
@@ -63,7 +63,7 @@ export function TasksPill() {
               onClick={() => setOpen(false)}
               aria-hidden="true"
             />
-            <motion.ul
+            <m.ul
               key="tasks"
               id="assistant-tasks"
               className={styles.tasks}
@@ -102,7 +102,7 @@ export function TasksPill() {
                   </Pressable>
                 </li>
               ))}
-            </motion.ul>
+            </m.ul>
           </>
         )}
       </AnimatePresence>

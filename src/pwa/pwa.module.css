@@ -10,7 +10,7 @@
   padding: 10px 10px 10px 18px;
   border-radius: 22px;
   background: var(--surface-dark);
-  color: var(--ink-inverse);
+  color: var(--on-dark);
   font-size: 14px;
   box-shadow: var(--shadow-lg);
 }
@@ -21,7 +21,7 @@
 }
 
 .toast .dismiss {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--on-dark-fill);
 }
 
 .offline {
@@ -40,7 +40,7 @@
   padding: 7px 14px;
   border-radius: 999px;
   background: var(--surface-dark);
-  color: var(--ink-inverse);
+  color: var(--on-dark);
   font-size: 12.5px;
   white-space: nowrap;
   box-shadow: var(--shadow-md);
@@ -108,7 +108,7 @@
   padding: 6px 6px 6px 8px;
   border-radius: 24px;
   background: var(--surface-dark);
-  color: var(--ink-inverse);
+  color: var(--on-dark);
   box-shadow: var(--shadow-lg);
 }
 
@@ -131,7 +131,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--on-dark-fill);
 }
 
 .pushText {

@@ -1,0 +1,148 @@
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.head h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.label {
+  margin: 20px 4px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  font-size: 16px;
+}
+
+.hint {
+  margin: 0 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.error {
+  margin: 0 4px;
+  font-size: 13px;
+  color: var(--danger-ink);
+}
+
+.devices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 10px 8px 10px;
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+
+.deviceIcon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.deviceText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deviceName {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceSub {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.wide {
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.danger {
+  margin-top: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 14.5px;
+  color: var(--danger-ink);
+}
+
+.dangerBox {
+  margin-top: 26px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--danger-bg);
+}
+
+.dangerTitle {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--danger-ink);
+}
+
+.dangerBox .input {
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dangerBox .danger {
+  margin-top: 0;
+}
+
+.dangerSure {
+  border-radius: 22px;
+  background: var(--surface);
+}

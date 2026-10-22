@@ -1,9 +1,10 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigation } from '../../app/navigation'
-import { ArrowRightIcon, BackIcon, CloseIcon, MicIcon, StopIcon } from '../../components/Icons'
+import { ArrowRightIcon, BackIcon, CloseIcon, ImageIcon, MicIcon, StopIcon } from '../../components/Icons'
 import { CircleButton, Pill, Waveform } from '../../components/ui'
 import { useKeyboardInset } from '../../lib/hooks'
+import { compressImage } from '../../lib/image'
 import { softSpring, spring } from '../../lib/motion'
 import { useDictation } from '../../lib/speech'
 import { CHAT_CATEGORIES, QUICK_PROMPTS, type ChatCategoryId } from '../../mocks/assistant'
@@ -16,19 +17,35 @@ export function ChatComposer({
   initialText,
   focusOnMount,
   busy,
+  canAttach,
   onSend,
 }: {
   initialText: string
   focusOnMount: boolean
   /** Ассистент отвечает — повторная отправка заблокирована. */
   busy?: boolean
-  onSend: (text: string) => void
+  /** Можно приложить картинку (только с сервером). */
+  canAttach?: boolean
+  onSend: (text: string, image?: string) => void
 }) {
   const { back } = useNavigation()
   const [text, setText] = useState(initialText)
   const [category, setCategory] = useState<ChatCategoryId | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  const file = useRef<HTMLInputElement>(null)
+  const [image, setImage] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const kb = useKeyboardInset()
+
+  const attach = async (picked: File | undefined) => {
+    if (!picked) return
+    setImageError(null)
+    try {
+      setImage(await compressImage(picked))
+    } catch {
+      setImageError('Не получилось открыть картинку')
+    }
+  }
 
   // Диктовка: распознанный текст дописывается к тому, что уже было в поле.
   const base = useRef('')
@@ -74,19 +91,21 @@ export function ChatComposer({
 
   const send = () => {
     const value = text.trim()
-    if (value && !busy) {
+    if ((value || image) && !busy) {
       stop()
       setText('')
+      setImage(null)
       base.current = ''
-      onSend(value)
+      onSend(value, image ?? undefined)
     }
   }
+  const ready = Boolean(text || image)
 
   const active = CHAT_CATEGORIES.find((c) => c.id === category)
   const chipsKey = text ? 'quick' : active ? `cat-${active.id}` : 'cats'
 
   return (
-    <motion.div
+    <m.div
       className={styles.composer}
       style={{ paddingBottom: `max(var(--safe-bottom), ${kb + 10}px)` }}
       initial={{ y: 40, opacity: 0 }}
@@ -95,7 +114,7 @@ export function ChatComposer({
     >
       <div className={styles.chipsViewport}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
+          <m.div
             key={chipsKey}
             className={`${styles.chips} scroll-x`}
             initial={{ opacity: 0, x: 30 }}
@@ -134,9 +153,29 @@ export function ChatComposer({
                 </Pill>
               ))
             )}
-          </motion.div>
+          </m.div>
         </AnimatePresence>
       </div>
+
+      {(image || imageError) && (
+        <div className={styles.attachment}>
+          {image && <img src={image} alt="Прикреплённая картинка" className={styles.attachmentThumb} />}
+          <span className={styles.attachmentText} role={imageError ? 'alert' : undefined}>
+            {imageError ?? 'Картинка уйдёт с сообщением'}
+          </span>
+          <CircleButton
+            tone="glass"
+            size={40}
+            onClick={() => {
+              setImage(null)
+              setImageError(null)
+            }}
+            aria-label="Убрать картинку"
+          >
+            <CloseIcon size={14} />
+          </CircleButton>
+        </div>
+      )}
 
       <div className={styles.row}>
         <CircleButton tone="glass" size={48} onClick={back} aria-label="Закрыть чат">
@@ -160,19 +199,39 @@ export function ChatComposer({
                 send()
               }
             }}
-            placeholder={listening ? 'Слушаю…' : 'Спросите что угодно…'}
+            placeholder={listening ? 'Слушаю…' : image ? 'Что с ней сделать?' : 'Спросите что угодно…'}
             enterKeyHint="send"
             aria-label="Сообщение"
           />
           {listening && text.length < 6 && (
             <span className={styles.dictation}>
-              <Waveform bars={14} height={18} color="rgba(60,60,90,0.5)" />
+              <Waveform bars={14} height={18} color="var(--ink-3)" />
             </span>
           )}
+          {canAttach && !listening && (
+            <button
+              type="button"
+              className={styles.attachBtn}
+              onClick={() => file.current?.click()}
+              aria-label="Приложить фото или скриншот"
+            >
+              <ImageIcon size={20} />
+            </button>
+          )}
+          <input
+            ref={file}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              void attach(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
         </label>
         <AnimatePresence mode="popLayout" initial={false}>
-          {text && !listening ? (
-            <motion.span
+          {ready && !listening ? (
+            <m.span
               key="send"
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -189,9 +248,9 @@ export function ChatComposer({
               >
                 <ArrowRightIcon size={20} strokeWidth={2.2} />
               </CircleButton>
-            </motion.span>
+            </m.span>
           ) : supported ? (
-            <motion.span
+            <m.span
               key="mic"
               initial={{ scale: 0.4, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -207,10 +266,10 @@ export function ChatComposer({
               >
                 {listening ? <StopIcon size={18} /> : <MicIcon size={20} />}
               </CircleButton>
-            </motion.span>
+            </m.span>
           ) : null}
         </AnimatePresence>
       </div>
-    </motion.div>
+    </m.div>
   )
 }

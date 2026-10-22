@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { useApi } from '../../api/provider'
 import { useDayEvents, useMe, useNotifications, useTasks } from '../../api/queries'
@@ -8,21 +8,22 @@ import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { TapToSay } from '../../components/BottomBar'
-import { ArrowRightIcon, CalendarIcon, PlusIcon } from '../../components/Icons'
+import { ArrowRightIcon, CalendarIcon, ChartIcon, PlusIcon, SearchIcon, SlidersIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
-import { Avatar, Pill, Pressable } from '../../components/ui'
+import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import type { DatedEvent, Task } from '../../domain/types'
 import { MONTHS_GENITIVE, MONTHS_SHORT, WEEKDAYS, addDays, pad2, startOfDay } from '../../lib/dates'
 import { minutesOf, useNow } from '../../lib/hooks'
 import { itemVariants } from '../../lib/motion'
 import { pluralize } from '../../lib/plural'
 import { InstallBanner } from '../../pwa/InstallBanner'
-import { AccountSheet, userColor, userInitials } from './AccountSheet'
-import { CalendarsSheet } from './calendars/CalendarsSheet'
-import { RemindersSheet } from './reminders/RemindersSheet'
+import { userColor, userInitials } from '../../lib/avatar'
 import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
+import { HomeSheets, type HomeSheet } from './HomeSheets'
 import { NextEvent } from './NextEvent'
+import { HabitCards } from './HabitCards'
 import { PrepCard } from './PrepCard'
+import { SuggestionCards } from './SuggestionCards'
 import { TaskSheet } from './TaskSheet'
 import { TasksGrid } from './TasksGrid'
 import styles from './Home.module.css'
@@ -38,7 +39,7 @@ export function Home() {
   const [taskSheet, setTaskSheet] = useState<Task | 'new' | null>(null)
   // Вернулись со страницы входа Google/Microsoft — сразу открываем «Календари» с результатом.
   const [oauthReturn] = useState(readOAuthReturn)
-  const [sheet, setSheet] = useState<'account' | 'calendars' | 'reminders' | null>(oauthReturn ? 'calendars' : null)
+  const [sheet, setSheet] = useState<HomeSheet | null>(oauthReturn ? 'calendars' : null)
   useEffect(clearOAuthReturn, [])
   const user = me.data ?? session?.user
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.
@@ -60,7 +61,7 @@ export function Home() {
       ? { ...tomorrows[0], date: tomorrow }
       : undefined
   const { tasks, isError: tasksFailed, refetch: refetchTasks } = useTasks()
-  const openTasks = tasks.filter((t) => !t.done).length
+  const openTasks = tasks.filter((t) => !t.done && t.kind !== 'habit').length
 
   return (
     <Sheet>
@@ -68,7 +69,7 @@ export function Home() {
         <TapToSay />
       </BarSlot>
 
-      <motion.header variants={itemVariants} className={styles.top}>
+      <m.header variants={itemVariants} className={styles.top}>
         <Pressable className={styles.todayLink} scale={0.97} onClick={() => openDay(today)}>
           <span className={styles.todayLabel}>
             {WEEKDAYS[today.getDay()]}, {today.getDate()} {MONTHS_GENITIVE[today.getMonth()]}
@@ -78,6 +79,14 @@ export function Home() {
           </span>
         </Pressable>
         <div className={styles.topRight}>
+          <CircleButton tone="white" size={44} onClick={() => setSheet('search')} aria-label="Поиск">
+            <SearchIcon size={19} />
+          </CircleButton>
+          {api.mode === 'local' && (
+            <CircleButton tone="white" size={44} onClick={() => setSheet('account')} aria-label="Настройки">
+              <SlidersIcon size={19} />
+            </CircleButton>
+          )}
           {api.mode === 'server' && user && (
             <Pressable
               className={styles.accountBtn}
@@ -96,14 +105,17 @@ export function Home() {
             </span>
           </Pressable>
         </div>
-      </motion.header>
+      </m.header>
 
-      <motion.section variants={itemVariants} className={styles.goals}>
+      <m.section variants={itemVariants} className={styles.goals}>
         <div className={styles.goalsHead}>
           <div>
             <h1 className={`display ${styles.goalsTitle}`}>Сегодня</h1>
             <p className="caption">{pluralize(todays.length, ['событие', 'события', 'событий'])} в календаре</p>
           </div>
+          <Pill small tone="ghost" className={styles.weekPill} onClick={() => setSheet('week')}>
+            <ChartIcon size={15} /> Неделя
+          </Pill>
         </div>
         {next ? (
           <NextEvent event={next} onOpen={() => openDay(next.date)} />
@@ -113,38 +125,41 @@ export function Home() {
             <span className={styles.meetingSub}>Нажмите, чтобы что-нибудь запланировать</span>
           </Pressable>
         )}
-      </motion.section>
+      </m.section>
+
+      {session && <SuggestionCards />}
 
       <InstallBanner />
 
-      <motion.div variants={itemVariants} className={styles.label}>
+      <m.div variants={itemVariants} className={styles.label}>
         <span>Задачи и цели{tasksFailed ? ' · не загрузились' : tasks.length > 0 ? ` · ${openTasks}` : ''}</span>
         <Pressable className={styles.labelAdd} aria-label="Добавить задачу" onClick={() => setTaskSheet('new')}>
           <PlusIcon size={15} strokeWidth={2.4} />
         </Pressable>
-      </motion.div>
+      </m.div>
 
       {tasksFailed ? (
-        <motion.div variants={itemVariants} className={styles.failCard}>
+        <m.div variants={itemVariants} className={styles.failCard}>
           <span className={`title ${styles.failTitle}`}>Задачи не загрузились</span>
           <span className={styles.meetingSub}>Проверьте соединение и попробуйте ещё раз</span>
           <Pill tone="dark" small className={styles.failRetry} onClick={() => void refetchTasks()}>
             Повторить
           </Pill>
-        </motion.div>
+        </m.div>
       ) : tasks.length === 0 ? (
-        <motion.div variants={itemVariants}>
+        <m.div variants={itemVariants}>
           <Pressable className={styles.free} scale={0.98} onClick={() => setTaskSheet('new')}>
             <span className={`title ${styles.meetingTitle}`}>Задач пока нет</span>
             <span className={styles.meetingSub}>Нажмите, чтобы добавить — или попросите ассистента</span>
           </Pressable>
-        </motion.div>
+        </m.div>
       ) : (
         <>
           <TasksGrid onEdit={setTaskSheet} />
-          <motion.div variants={itemVariants}>
+          <HabitCards onEdit={setTaskSheet} />
+          <m.div variants={itemVariants}>
             <PrepCard onEdit={setTaskSheet} />
-          </motion.div>
+          </m.div>
         </>
       )}
 
@@ -156,19 +171,8 @@ export function Home() {
             onClose={() => setTaskSheet(null)}
           />
         )}
-        {sheet === 'account' && (
-          <AccountSheet
-            key="account-sheet"
-            onClose={() => setSheet(null)}
-            onCalendars={() => setSheet('calendars')}
-            onReminders={() => setSheet('reminders')}
-          />
-        )}
-        {sheet === 'reminders' && <RemindersSheet key="reminders-sheet" onClose={() => setSheet(null)} />}
-        {sheet === 'calendars' && (
-          <CalendarsSheet key="calendars-sheet" notice={oauthReturn} onClose={() => setSheet(null)} />
-        )}
       </AnimatePresence>
+      <HomeSheets sheet={sheet} onSheet={setSheet} oauthReturn={oauthReturn} onDay={openDay} onTask={setTaskSheet} />
     </Sheet>
   )
 }

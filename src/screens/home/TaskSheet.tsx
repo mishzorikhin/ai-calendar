@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { apiErrorText } from '../../api/api'
 import { useApi } from '../../api/provider'
-import { useCreateTask, useDeleteTask, useTaskMembers, useUpdateTask, useUserSearch } from '../../api/queries'
+import { useCreateTask, useTaskMembers, useUpdateTask, useUserSearch } from '../../api/queries'
+import { useUndoable } from '../../components/useUndoable'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
 import { CheckIcon, CloseIcon, TrashIcon } from '../../components/Icons'
 import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import { toISODate } from '../../lib/dates'
-import type { Task, TaskKind, User } from '../../domain/types'
-import { userColor, userInitials } from './AccountSheet'
+import type { Cadence, Task, TaskKind, User } from '../../domain/types'
+import { userColor, userInitials } from '../../lib/avatar'
+import { CADENCES } from '../../domain/habit'
+import { EstimateField } from './EstimateField'
 import { TAG_PRESETS } from './tags'
 import styles from './Home.module.css'
 
@@ -19,7 +22,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
   const api = useApi()
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
+  const undoable = useUndoable()
 
   const [title, setTitle] = useState(task?.title ?? '')
   const [subtitle, setSubtitle] = useState(task?.subtitle ?? '')
@@ -29,12 +32,14 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
     task?.category && !TAG_PRESETS.some((p) => p.id === task.category) ? task.category : '',
   )
   const [due, setDue] = useState(task?.due ?? '')
+  const [estimate, setEstimate] = useState(task?.estimate ?? 0)
+  const [cadence, setCadence] = useState<Cadence>(task?.cadence ?? 'daily')
   const [confirmDelete, setConfirmDelete] = useState(false)
   // Логины, с которыми поделиться при создании (для существующей — live через API).
   const [pendingMembers, setPendingMembers] = useState<string[]>([])
 
-  const pending = createTask.isPending || updateTask.isPending || deleteTask.isPending
-  const error = createTask.error ?? updateTask.error ?? deleteTask.error
+  const pending = createTask.isPending || updateTask.isPending || undoable.pending
+  const error = createTask.error ?? updateTask.error ?? undoable.error
   const tag = customTag.trim() || category
 
   const save = () => {
@@ -50,6 +55,8 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
             kind,
             category: tag,
             due: kind === 'goal' ? due : '',
+            estimate: kind === 'task' ? estimate : 0,
+            ...(kind === 'habit' && { cadence }),
           },
         },
         { onSuccess: onClose },
@@ -63,6 +70,8 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
         kind,
         category: tag,
         due: kind === 'goal' && due ? due : undefined,
+        estimate: kind === 'task' && estimate ? estimate : undefined,
+        cadence: kind === 'habit' ? cadence : undefined,
         members: pendingMembers.length > 0 ? pendingMembers : undefined,
       },
       { onSuccess: onClose },
@@ -75,7 +84,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
       setConfirmDelete(true)
       return
     }
-    deleteTask.mutate(task.id, { onSuccess: onClose })
+    undoable.removeTask(task, { onSuccess: onClose })
   }
 
   return (
@@ -161,7 +170,36 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
           >
             Цель
           </Pill>
+          <Pill
+            small
+            tone={kind === 'habit' ? 'dark' : 'ghost'}
+            aria-pressed={kind === 'habit'}
+            onClick={() => setKind('habit')}
+          >
+            Привычка
+          </Pill>
         </div>
+
+        {kind === 'habit' && (
+          <>
+            <p className={styles.sheetLabel}>Как часто</p>
+            <div className={styles.tagRow}>
+              {CADENCES.map((c) => (
+                <Pill
+                  key={c.id}
+                  small
+                  tone={cadence === c.id ? 'dark' : 'ghost'}
+                  aria-pressed={cadence === c.id}
+                  onClick={() => setCadence(c.id)}
+                >
+                  {c.label}
+                </Pill>
+              ))}
+            </div>
+          </>
+        )}
+
+        {kind === 'task' && <EstimateField value={estimate} onChange={setEstimate} />}
 
         {kind === 'goal' && (
           <>

@@ -220,6 +220,11 @@ async function handleAction(action: string, msg: PushMessage): Promise<void> {
     // Не вышло (нет сети или сессии) — открываем приложение, отметить можно там.
     return openApp(msg.url ?? '/')
   }
+  if ((action === 'accept' || action === 'dismiss') && msg.suggestionId) {
+    const ok = await apiFetch(`/api/suggestions/${msg.suggestionId}/${action}`, 'POST', {})
+    if (ok) return notifyClients('push:changed')
+    return openApp(msg.url ?? '/')
+  }
   if (action === 'snooze') {
     const ok = await apiFetch('/api/push/snooze', 'POST', {
       minutes: SNOOZE_MINUTES[msg.kind],

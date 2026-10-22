@@ -178,6 +178,36 @@ describe('withOfflineQueue: чтение с неотправленными оп�
     expect(tasks.find((t) => t.id === 'task-1')).toBeUndefined() // в базе её нет — мержить не во что
   })
 
+  it('отметки привычки офлайн: не склеиваются и ложатся на список', async () => {
+    const habit = {
+      id: 'task-7',
+      title: 'Зарядка',
+      kind: 'habit',
+      cadence: 'daily',
+      done: false,
+      checks: ['2026-10-20'],
+    }
+    // Список задач с сервера приходит, а правки упираются в обрыв сети.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'GET' ? json([habit]) : Promise.reject(new TypeError('fetch failed')),
+      ),
+    )
+    const a = api()
+    await a.updateTask('task-7', { check: '2026-10-21' })
+    await a.updateTask('task-7', { check: '2026-10-22' })
+    await a.updateTask('task-7', { uncheck: '2026-10-20' })
+    const ops = await outbox.list()
+    expect(ops.map((op) => op.body)).toEqual([
+      { check: '2026-10-21' },
+      { check: '2026-10-22' },
+      { uncheck: '2026-10-20' },
+    ])
+    const [got] = await a.getTasks()
+    expect(got?.checks).toEqual(['2026-10-21', '2026-10-22'])
+  })
+
   it('getMonthDots: значок отложенного события дорисовывается', async () => {
     netDown()
     const a = api()

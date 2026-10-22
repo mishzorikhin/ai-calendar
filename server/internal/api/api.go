@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +22,9 @@ import (
 const (
 	maxTitle    = 120
 	maxSubtitle = 200
+	maxNotes    = 2000
+	maxLinkLen  = 500
+	maxTravel   = 240
 	maxMessage  = 2000
 	dayMinutes  = 24 * 60
 )
@@ -55,6 +59,10 @@ type server struct {
 	limits  *limits
 	// confirms — удаления, которые ассистент предложил и ждут согласия пользователя.
 	confirms *confirmations
+	// suggester — когда кому последний раз считали предложения ассистента.
+	suggester suggester
+	// inferrer — когда кому последний раз делали выводы из поведения.
+	inferrer inferrer
 
 	closedRegistration bool
 	proxy              ProxyMode
@@ -92,12 +100,20 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/auth/logout", s.authed(s.logout))
 	mux.Handle("GET /api/me", s.authed(s.me))
 	mux.Handle("PATCH /api/me", s.authed(s.updateMe))
+	mux.Handle("DELETE /api/me", s.authed(s.deleteAccount))
+	mux.Handle("POST /api/auth/password", s.authed(s.changePassword))
+	mux.Handle("GET /api/auth/sessions", s.authed(s.listSessions))
+	mux.Handle("DELETE /api/auth/sessions/{id}", s.authed(s.deleteSession))
+	mux.Handle("POST /api/auth/logout-others", s.authed(s.logoutOthers))
+	mux.Handle("GET /api/export", s.authed(s.exportData))
 	mux.Handle("GET /api/users", s.authed(s.searchUsers))
 	mux.Handle("GET /api/events", s.authed(s.listEvents))
 	mux.Handle("POST /api/events", s.authed(s.createEvent))
 	mux.Handle("PATCH /api/events/{id}", s.authed(s.updateEvent))
 	mux.Handle("DELETE /api/events/{id}", s.authed(s.deleteEvent))
+	mux.Handle("POST /api/events/{id}/rsvp", s.authed(s.rsvp))
 	mux.Handle("GET /api/month", s.authed(s.monthDots))
+	mux.Handle("GET /api/search", s.authed(s.search))
 	mux.Handle("GET /api/tasks", s.authed(s.listTasks))
 	mux.Handle("POST /api/tasks", s.authed(s.createTask))
 	mux.Handle("PATCH /api/tasks/{id}", s.authed(s.updateTask))
@@ -117,6 +133,21 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("GET /api/reminders", s.authed(s.listAlarms))
 	mux.Handle("POST /api/reminders", s.authed(s.createAlarmHandler))
 	mux.Handle("DELETE /api/reminders/{id}", s.authed(s.deleteAlarm))
+	mux.Handle("GET /api/profile", s.authed(s.getProfile))
+	mux.Handle("PATCH /api/profile", s.authed(s.updateProfile))
+	mux.Handle("GET /api/memories", s.authed(s.listMemories))
+	mux.Handle("POST /api/memories", s.authed(s.createMemory))
+	mux.Handle("DELETE /api/memories", s.authed(s.deleteAllMemories))
+	mux.Handle("PATCH /api/memories/{id}", s.authed(s.updateMemory))
+	mux.Handle("DELETE /api/memories/{id}", s.authed(s.deleteMemory))
+	mux.Handle("GET /api/people", s.authed(s.listPeople))
+	mux.Handle("POST /api/people", s.authed(s.createPerson))
+	mux.Handle("PATCH /api/people/{id}", s.authed(s.updatePerson))
+	mux.Handle("DELETE /api/people/{id}", s.authed(s.deletePerson))
+	mux.Handle("GET /api/insights/week", s.authed(s.weekInsightsHandler))
+	mux.Handle("GET /api/suggestions", s.authed(s.listSuggestions))
+	mux.Handle("POST /api/suggestions/{id}/accept", s.authed(s.acceptSuggestion))
+	mux.Handle("POST /api/suggestions/{id}/dismiss", s.authed(s.dismissSuggestion))
 	mux.Handle("GET /api/messages", s.authed(s.listMessages))
 	mux.Handle("POST /api/chat", s.authed(s.chat))
 	mux.Handle("GET /api/integrations", s.authed(s.listIntegrations))
@@ -174,7 +205,7 @@ func (s *server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, nonNil(s.eventsOn(r.Context(), date)))
+	writeJSON(w, http.StatusOK, nonNil(s.withAttendees(r.Context(), s.eventsOn(r.Context(), date))))
 	return nil
 }
 
@@ -192,6 +223,15 @@ type eventInput struct {
 	RepeatUntil string       `json:"repeatUntil"`
 	// AllDay — на весь день: Start и End не нужны (станут 0 и 1440).
 	AllDay bool `json:"allDay"`
+	// Notes — заметки, URL — ссылка, Travel — минуты дороги, EndDate — последний день многодневного.
+	Notes   string `json:"notes"`
+	URL     string `json:"url"`
+	Travel  int    `json:"travel"`
+	EndDate string `json:"endDate"`
+	// Attendees — логины приглашённых.
+	Attendees []string `json:"attendees"`
+	// TaskID — задача, под которую ставится это время (должна быть видна пользователю).
+	TaskID string `json:"taskId"`
 }
 
 // validateReminders проверяет напоминания и упорядочивает их: раньше — первее.
@@ -217,6 +257,53 @@ func validateReminders(r []int) ([]int, error) {
 func validateSubtitle(v string) error {
 	if utf8.RuneCountInString(v) > maxSubtitle {
 		return badRequest("Подзаголовок не длиннее %d символов", maxSubtitle)
+	}
+	return nil
+}
+
+// validateDetails — заметки, ссылка и дорога (по отдельности).
+func validateDetails(notes, link string, travel int) error {
+	if utf8.RuneCountInString(notes) > maxNotes {
+		return badRequest("Заметки — не длиннее %d символов", maxNotes)
+	}
+	if link != "" {
+		u, err := url.Parse(link)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(link) > maxLinkLen {
+			return badRequest("Ссылка — адрес http(s):// не длиннее %d символов", maxLinkLen)
+		}
+	}
+	if travel < 0 || travel > maxTravel {
+		return badRequest("Дорога — от 0 до %d минут", maxTravel)
+	}
+	return nil
+}
+
+// validateEventShape — проверки, где поля события зависят друг от друга: интервал времени,
+// многодневное событие (конец позже начала, не длиннее MaxSpanDays, без повтора).
+func validateEventShape(e model.Event) error {
+	if e.EndDate == "" {
+		return validateRange(e.Start, e.End)
+	}
+	first, err := parseDate(e.Date)
+	if err != nil {
+		return err
+	}
+	last, err := parseDate(e.EndDate)
+	if err != nil {
+		return err
+	}
+	if !last.After(first) {
+		return badRequest("Последний день должен быть позже первого")
+	}
+	if last.Sub(first) > model.MaxSpanDays*24*time.Hour {
+		return badRequest("Многодневное событие — не длиннее %d дней", model.MaxSpanDays)
+	}
+	if e.Repeat != model.RepeatNone {
+		return badRequest("Многодневное событие не повторяется")
+	}
+	// Время — начало в первый день и конец в последний: конец может быть «раньше» начала.
+	if e.Start < 0 || e.Start >= dayMinutes || e.End <= 0 || e.End > dayMinutes {
+		return badRequest("Время задано неверно: начало %d, конец %d (минуты от полуночи)", e.Start, e.End)
 	}
 	return nil
 }
@@ -247,7 +334,11 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if in.AllDay {
 		in.Start, in.End = 0, dayMinutes
 	}
-	if err := validateRange(in.Start, in.End); err != nil {
+	in.Notes, in.URL = strings.TrimSpace(in.Notes), strings.TrimSpace(in.URL)
+	if err := validateDetails(in.Notes, in.URL, in.Travel); err != nil {
+		return err
+	}
+	if err := validateEventShape(model.Event{Date: in.Date, Start: in.Start, End: in.End, EndDate: in.EndDate, Repeat: in.Repeat}); err != nil {
 		return err
 	}
 	if in.Badge == "" {
@@ -263,12 +354,27 @@ func (s *server) createEvent(w http.ResponseWriter, r *http.Request) error {
 	if err := validateRepeat(in.Repeat, in.RepeatUntil, in.Date); err != nil {
 		return err
 	}
+	guests, err := s.resolveAttendees(r.Context(), in.Attendees)
+	if err != nil {
+		return err
+	}
+	if in.TaskID != "" {
+		if _, err := s.store.Task(r.Context(), in.TaskID); err != nil {
+			return badRequest("Задача %q не найдена", in.TaskID)
+		}
+	}
 	ev, err := s.createEventSynced(r.Context(), model.Event{
 		Date: in.Date, Title: in.Title, Subtitle: in.Subtitle, Start: in.Start, End: in.End, Badge: in.Badge, Highlight: true,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, AllDay: in.AllDay,
+		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate, TaskID: in.TaskID,
 	})
 	if err != nil {
 		return err
+	}
+	if len(guests) > 0 {
+		if ev.Attendees, err = s.setAttendees(r.Context(), ev, guests); err != nil {
+			return err
+		}
 	}
 	writeJSON(w, http.StatusCreated, ev)
 	return nil
@@ -292,7 +398,14 @@ type eventPatchInput struct {
 	// Skip — убрать из серии один день (удалить «только это»).
 	Skip *string `json:"skip"`
 	// AllDay: true — на весь день; false — снова со временем (передайте start и end).
-	AllDay *bool `json:"allDay"`
+	AllDay *bool   `json:"allDay"`
+	Notes  *string `json:"notes"`
+	URL    *string `json:"url"`
+	Travel *int    `json:"travel"`
+	// EndDate: "" — снова однодневное.
+	EndDate *string `json:"endDate"`
+	// Attendees — новый полный список логинов приглашённых.
+	Attendees *[]string `json:"attendees"`
 }
 
 // remindersPatch разбирает поле reminders PATCH-запроса: нет поля — не менять.
@@ -340,11 +453,22 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	for _, v := range []*string{in.Notes, in.URL} {
+		if v != nil {
+			*v = strings.TrimSpace(*v)
+		}
+	}
 	for _, d := range []*string{in.Occurrence, in.Skip} {
 		if d != nil {
 			if _, err := parseDate(*d); err != nil {
 				return err
 			}
+		}
+	}
+	var guests []model.User
+	if in.Attendees != nil {
+		if guests, err = s.resolveAttendees(r.Context(), *in.Attendees); err != nil {
+			return err
 		}
 	}
 	id := r.PathValue("id")
@@ -370,6 +494,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	patch := model.EventPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Date: in.Date, Start: in.Start, End: in.End, Badge: in.Badge,
 		Reminders: reminders, Repeat: in.Repeat, RepeatUntil: in.RepeatUntil, SkipDate: in.Skip, AllDay: in.AllDay,
+		Notes: in.Notes, URL: in.URL, Travel: in.Travel, EndDate: in.EndDate,
 	}
 	if in.Occurrence != nil {
 		if err := seriesPatch(current, *in.Occurrence, &patch); err != nil {
@@ -378,12 +503,16 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 	}
 	merged := current
 	merged.Apply(patch)
-	if err := validateRange(merged.Start, merged.End); err != nil {
+	if err := validateDetails(merged.Notes, merged.URL, merged.Travel); err != nil {
+		return err
+	}
+	if err := validateEventShape(merged); err != nil {
 		return err
 	}
 	if err := validateRepeat(merged.Repeat, merged.RepeatUntil, merged.Date); err != nil {
 		return err
 	}
+	attendees := s.store.Attendees(r.Context(), []string{id})[id]
 	patched, err := s.updateEventSynced(r.Context(), current, patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -391,12 +520,24 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	// Перенос встречи — тем, кого позвали и кто не отказался (до замены списка: новые узнают из приглашения).
+	if patched.Date != current.Date || patched.Start != current.Start || patched.AllDay != current.AllDay {
+		s.notifyAttendeesChange(r.Context(), attendees, patched, "Перенесли: «%s»", "Перенёс ")
+	}
+	patched.Attendees = attendees
+	if in.Attendees != nil {
+		if patched.Attendees, err = s.setAttendees(r.Context(), patched, guests); err != nil {
+			return err
+		}
+	}
 	writeJSON(w, http.StatusOK, patched)
 	return nil
 }
 
 func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) error {
-	current, err := s.store.Event(r.Context(), r.PathValue("id"))
+	id := r.PathValue("id")
+	attendees := s.store.Attendees(r.Context(), []string{id})[id]
+	current, err := s.store.Event(r.Context(), id)
 	if err == nil {
 		err = s.deleteEventSynced(r.Context(), current)
 	}
@@ -406,6 +547,7 @@ func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+	s.notifyAttendeesChange(r.Context(), attendees, current, "Отменили: «%s»", "Отменил ")
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -449,8 +591,20 @@ type taskInput struct {
 	Kind     model.TaskKind     `json:"kind"`
 	Category model.TaskCategory `json:"category"`
 	Due      string             `json:"due"`
+	// Estimate — сколько минут займёт: 0 (не указано) или 15–480.
+	Estimate int `json:"estimate"`
+	// Cadence — у привычки (по умолчанию daily).
+	Cadence model.Cadence `json:"cadence"`
 	// Members — логины, с кем поделиться (@имя в title/subtitle работает так же).
 	Members []string `json:"members"`
+}
+
+// validateEstimate — оценка задачи: 0 (не указано) или от 15 минут до 8 часов.
+func validateEstimate(v int) error {
+	if v != 0 && (v < model.MinEstimate || v > model.MaxEstimate) {
+		return badRequest("Оценка — от %d минут до %d часов", model.MinEstimate, model.MaxEstimate/60)
+	}
+	return nil
 }
 
 // validTaskDue проверяет дату дедлайна цели (пустая — без дедлайна).
@@ -479,7 +633,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 		in.Kind = model.TaskKindTask
 	}
 	if !in.Kind.Valid() {
-		return badRequest("kind должен быть task или goal")
+		return badRequest("kind должен быть task, goal или habit")
 	}
 	if in.Category != "" && !in.Category.Valid() {
 		return badRequest("category не длиннее 24 символов")
@@ -487,13 +641,23 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 	if !validTaskDue(in.Due) {
 		return badRequest("due должен быть в формате ГГГГ-ММ-ДД")
 	}
+	if err := validateEstimate(in.Estimate); err != nil {
+		return err
+	}
+	if in.Kind == model.TaskKindHabit && in.Cadence == "" {
+		in.Cadence = model.CadenceDaily
+	}
+	if in.Cadence != "" && (!in.Cadence.Valid() || in.Kind != model.TaskKindHabit) {
+		return badRequest("cadence — только у привычки: daily, weekdays или weekly")
+	}
 	// Явный members — строго: незнакомые логины отклоняем до создания.
 	users, unknown := s.resolveUsernames(r.Context(), in.Members)
 	if len(unknown) > 0 {
 		return badRequest("Нет пользователей: @%s", strings.Join(unknown, ", @"))
 	}
 	t, err := s.store.CreateTask(r.Context(), model.Task{
-		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind, Category: in.Category, Due: in.Due,
+		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind, Category: in.Category, Due: in.Due, Estimate: in.Estimate,
+		Cadence: in.Cadence,
 	})
 	if err != nil {
 		return err
@@ -533,7 +697,12 @@ type taskPatchInput struct {
 	Category *model.TaskCategory `json:"category"`
 	Done     *bool               `json:"done"`
 	Due      *string             `json:"due"`
+	Estimate *int                `json:"estimate"`
 	Members  []string            `json:"members"`
+	Cadence  *model.Cadence      `json:"cadence"`
+	// Check и Uncheck — отметить привычку выполненной в этот день (ГГГГ-ММ-ДД) или снять отметку.
+	Check   string `json:"check"`
+	Uncheck string `json:"uncheck"`
 }
 
 func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
@@ -554,13 +723,18 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if in.Kind != nil && !in.Kind.Valid() {
-		return badRequest("kind должен быть task или goal")
+		return badRequest("kind должен быть task, goal или habit")
 	}
 	if in.Category != nil && *in.Category != "" && !in.Category.Valid() {
 		return badRequest("category не длиннее 24 символов")
 	}
 	if in.Due != nil && !validTaskDue(*in.Due) {
 		return badRequest("due должен быть в формате ГГГГ-ММ-ДД")
+	}
+	if in.Estimate != nil {
+		if err := validateEstimate(*in.Estimate); err != nil {
+			return err
+		}
 	}
 	users, unknown := s.resolveUsernames(r.Context(), in.Members)
 	if len(unknown) > 0 {
@@ -575,10 +749,31 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), model.TaskPatch{
+	if in.Cadence != nil && !in.Cadence.Valid() {
+		return badRequest("cadence: daily, weekdays или weekly")
+	}
+	patch := model.TaskPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind,
-		Category: in.Category, Done: in.Done, Due: in.Due,
-	})
+		Category: in.Category, Done: in.Done, Due: in.Due, Estimate: in.Estimate, Cadence: in.Cadence,
+	}
+	if in.Check != "" || in.Uncheck != "" {
+		date, on := in.Check, true
+		if date == "" {
+			date, on = in.Uncheck, false
+		}
+		if _, err := time.Parse(time.DateOnly, date); err != nil {
+			return badRequest("check/uncheck — дата ГГГГ-ММ-ДД")
+		}
+		checks := withCheck(before.Checks, date, on)
+		patch.Checks = &checks
+	}
+	// Задачу сделали привычкой без частоты — каждый день.
+	if in.Kind != nil && *in.Kind == model.TaskKindHabit && before.Cadence == "" && in.Cadence == nil {
+		daily := model.CadenceDaily
+		patch.Cadence = &daily
+	}
+	stampDone(before, &patch, time.Now())
+	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return notFound("Задача")

@@ -18,6 +18,9 @@ type Occurrence struct {
 	ETag       string
 	Title      string
 	Location   string
+	// Notes — описание события, URL — ссылка (или ссылка на созвон, найденная в описании).
+	Notes      string
+	URL        string
 	Start, End time.Time
 	AllDay     bool
 	ReadOnly   bool
@@ -177,6 +180,8 @@ func occurrenceOf(c *Component, def *time.Location) (Occurrence, bool) {
 		UID:      c.Text("UID"),
 		Title:    strings.TrimSpace(c.Text("SUMMARY")),
 		Location: strings.TrimSpace(c.Text("LOCATION")),
+		Notes:    strings.TrimSpace(c.Text("DESCRIPTION")),
+		URL:      strings.TrimSpace(c.Text("URL")),
 		Start:    start,
 		AllDay:   allDay,
 	}

@@ -63,6 +63,21 @@ type Event struct {
 	ETag       string `json:"etag,omitempty"`
 	ReadOnly   bool   `json:"readOnly,omitempty"`
 	AllDay     bool   `json:"allDay,omitempty"`
+	// Travel — сколько минут добираться до места: время до начала тоже занято, напоминание —
+	// «пора выезжать».
+	Travel int `json:"travel,omitempty"`
+	// Notes — заметки, URL — ссылка (созвон, билет). Место — Subtitle.
+	Notes string `json:"notes,omitempty"`
+	URL   string `json:"url,omitempty"`
+	// EndDate — последний день многодневного события (пусто — однодневное). В хранилище одна
+	// запись; по дням его разворачивает API (eventsBetween): у вхождений Date — свой день,
+	// Start/End — отрезок этого дня, а Span — исходные день и время.
+	EndDate string     `json:"endDate,omitempty"`
+	Span    *EventSpan `json:"span,omitempty"`
+	// Attendees — кого владелец пригласил и что они ответили (видят владелец и участники).
+	Attendees []Attendee `json:"attendees,omitempty"`
+	// Invite — у приглашённого: от кого приглашение и его ответ. Такое событие у него только для чтения.
+	Invite *Invite `json:"invite,omitempty"`
 	// Reminders — за сколько минут до начала напомнить. nil — как в настройках
 	// пользователя (события внешних календарей и созданные до напоминаний), [] — не напоминать.
 	Reminders []int `json:"reminders"`
@@ -70,11 +85,56 @@ type Event struct {
 	// RepeatUntil — последний (пусто — бессрочно), ExDates — дни, убранные из серии.
 	// В хранилище лежит одна запись; вхождения по дням разворачивает API (repeat.go)
 	// с тем же id и датой вхождения в Date.
-	Repeat      Repeat    `json:"repeat,omitempty"`
-	RepeatUntil string    `json:"repeatUntil,omitempty"`
-	ExDates     []string  `json:"exdates,omitempty"`
-	CreatedAt   time.Time `json:"createdAt,omitempty"`
+	Repeat      Repeat   `json:"repeat,omitempty"`
+	RepeatUntil string   `json:"repeatUntil,omitempty"`
+	ExDates     []string `json:"exdates,omitempty"`
+	// SeriesDate — у вхождения серии: её первый день (Date — день вхождения).
+	SeriesDate string `json:"seriesDate,omitempty"`
+	// TaskID — задача, под которую ассистент поставил это время (план дня); задаётся при создании.
+	TaskID    string    `json:"taskId,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }
+
+// RSVP — ответ на приглашение.
+type RSVP string
+
+const (
+	RSVPPending  RSVP = "pending"
+	RSVPAccepted RSVP = "accepted"
+	RSVPDeclined RSVP = "declined"
+)
+
+func (r RSVP) Valid() bool {
+	return r == RSVPPending || r == RSVPAccepted || r == RSVPDeclined
+}
+
+// Attendee — приглашённый на встречу пользователь сервера и его ответ.
+type Attendee struct {
+	UserID   int64  `json:"-"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Status   RSVP   `json:"status"`
+}
+
+// Invite — приглашение глазами приглашённого.
+type Invite struct {
+	From   User `json:"from"`
+	Status RSVP `json:"status"`
+}
+
+// MaxAttendees — сколько людей можно пригласить на одну встречу.
+const MaxAttendees = 20
+
+// EventSpan — исходные начало и конец многодневного события у его вхождения в другой день.
+type EventSpan struct {
+	Date   string `json:"date"`
+	Start  int    `json:"start"`
+	End    int    `json:"end"`
+	AllDay bool   `json:"allDay,omitempty"`
+}
+
+// MaxSpanDays — самое длинное многодневное событие.
+const MaxSpanDays = 60
 
 // Repeat — правило повтора события.
 type Repeat string
@@ -118,6 +178,11 @@ type EventPatch struct {
 	ExDates     *[]string
 	// AllDay: true — на весь день (время 0–1440), false — снова со временем (Start и End — из патча).
 	AllDay *bool
+	// Notes, URL, Travel; EndDate: "" — снова однодневное.
+	Notes   *string
+	URL     *string
+	Travel  *int
+	EndDate *string
 }
 
 // Apply применяет патч к событию на месте.
@@ -164,25 +229,55 @@ func (e *Event) Apply(p EventPatch) {
 	if p.SkipDate != nil && !slices.Contains(e.ExDates, *p.SkipDate) {
 		e.ExDates = append(slices.Clone(e.ExDates), *p.SkipDate)
 	}
+	if p.Notes != nil {
+		e.Notes = *p.Notes
+	}
+	if p.URL != nil {
+		e.URL = *p.URL
+	}
+	if p.Travel != nil {
+		e.Travel = *p.Travel
+	}
+	if p.EndDate != nil {
+		e.EndDate = *p.EndDate
+	}
 }
 
 // OnlyReminders — патч меняет только напоминания: во внешний календарь писать нечего.
 func (p EventPatch) OnlyReminders() bool {
 	return p.Reminders != nil && p.Title == nil && p.Subtitle == nil && p.Date == nil &&
-		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil && p.AllDay == nil
+		p.Start == nil && p.End == nil && p.Badge == nil && p.Repeat == nil && p.RepeatUntil == nil && p.SkipDate == nil && p.ExDates == nil && p.AllDay == nil &&
+		p.Notes == nil && p.URL == nil && p.Travel == nil && p.EndDate == nil
 }
 
-// TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).
+// TaskKind — вид карточки: задача (с категорией), цель (с дедлайном) или привычка (с отметками).
 type TaskKind string
 
 const (
-	TaskKindTask TaskKind = "task"
-	TaskKindGoal TaskKind = "goal"
+	TaskKindTask  TaskKind = "task"
+	TaskKindGoal  TaskKind = "goal"
+	TaskKindHabit TaskKind = "habit"
 )
 
 func (k TaskKind) Valid() bool {
-	return k == TaskKindTask || k == TaskKindGoal
+	return k == TaskKindTask || k == TaskKindGoal || k == TaskKindHabit
 }
+
+// Cadence — как часто делается привычка.
+type Cadence string
+
+const (
+	CadenceDaily    Cadence = "daily"
+	CadenceWeekdays Cadence = "weekdays"
+	CadenceWeekly   Cadence = "weekly"
+)
+
+func (c Cadence) Valid() bool {
+	return c == CadenceDaily || c == CadenceWeekdays || c == CadenceWeekly
+}
+
+// MaxHabitChecks — сколько отметок привычки храним (старые отбрасываются).
+const MaxHabitChecks = 400
 
 // TaskCategory — свободный тег задачи (учёба, спорт, работа или любой свой).
 // Константы — готовые значения с иконками в интерфейсе, а не ограничение.
@@ -216,6 +311,32 @@ type Task struct {
 	Category TaskCategory `json:"category,omitempty"`
 	Done     bool         `json:"done"`
 	Due      string       `json:"due,omitempty"`
+	// Estimate — сколько минут займёт (0 — не указано, планируется как DefaultEstimate).
+	Estimate int `json:"estimate,omitempty"`
+	// DoneAt — когда закрыли (ставит сервер); для обзора недели.
+	DoneAt time.Time `json:"doneAt,omitzero"`
+	// Cadence и Checks — у привычки: как часто и в какие дни отмечена (ГГГГ-ММ-ДД, по порядку).
+	Cadence Cadence  `json:"cadence,omitempty"`
+	Checks  []string `json:"checks,omitempty"`
+	// Postponed — сколько раз срок переносили на более поздний (для выводов ассистента).
+	Postponed int `json:"postponed,omitempty"`
+	// CreatedAt — когда задачу завели: по нему ассистент замечает давно открытые.
+	CreatedAt time.Time `json:"createdAt,omitzero"`
+}
+
+// Оценка задачи: сколько минут она займёт.
+const (
+	DefaultEstimate = 60
+	MinEstimate     = 15
+	MaxEstimate     = 480
+)
+
+// Minutes — оценка задачи для планирования (по умолчанию — час).
+func (t Task) Minutes() int {
+	if t.Estimate > 0 {
+		return t.Estimate
+	}
+	return DefaultEstimate
 }
 
 // TaskRole — роль пользователя в совместной задаче.
@@ -227,12 +348,17 @@ const (
 // TaskPatch — частичное обновление задачи: nil-поля не трогаем.
 // Category: указатель на "" — очистить категорию.
 type TaskPatch struct {
-	Title    *string
-	Subtitle *string
-	Kind     *TaskKind
-	Category *TaskCategory
-	Done     *bool
-	Due      *string
+	Title     *string
+	Subtitle  *string
+	Kind      *TaskKind
+	Category  *TaskCategory
+	Done      *bool
+	Due       *string
+	Estimate  *int
+	DoneAt    *time.Time
+	Cadence   *Cadence
+	Checks    *[]string
+	Postponed *int
 }
 
 // Apply применяет патч к задаче на месте.
@@ -255,6 +381,21 @@ func (t *Task) Apply(p TaskPatch) {
 	if p.Due != nil {
 		t.Due = *p.Due
 	}
+	if p.Estimate != nil {
+		t.Estimate = *p.Estimate
+	}
+	if p.DoneAt != nil {
+		t.DoneAt = *p.DoneAt
+	}
+	if p.Cadence != nil {
+		t.Cadence = *p.Cadence
+	}
+	if p.Checks != nil {
+		t.Checks = slices.Clone(*p.Checks)
+	}
+	if p.Postponed != nil {
+		t.Postponed = *p.Postponed
+	}
 }
 
 type Role string
@@ -274,10 +415,13 @@ type Message struct {
 
 // Notification — уведомление в шторке аккаунта: «@misha поделился с вами задачей».
 type Notification struct {
-	ID        int       `json:"id"`
-	UserID    int64     `json:"userId"`
-	From      *User     `json:"from,omitempty"`
-	TaskID    string    `json:"taskId,omitempty"`
+	ID     int    `json:"id"`
+	UserID int64  `json:"userId"`
+	From   *User  `json:"from,omitempty"`
+	TaskID string `json:"taskId,omitempty"`
+	// EventID и Date — уведомление о встрече (приглашение, ответ): по нажатию открывается день.
+	EventID   string    `json:"eventId,omitempty"`
+	Date      string    `json:"date,omitempty"`
 	Text      string    `json:"text"`
 	Read      bool      `json:"read"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -418,6 +562,8 @@ const (
 	PushTest   PushKind = "test"
 	// PushReminder — своё напоминание без события («напомни позвонить маме в 18:00»).
 	PushReminder PushKind = "reminder"
+	// PushSuggest — предложение ассистента с кнопками «Да» и «Нет».
+	PushSuggest PushKind = "suggest"
 )
 
 // PushMessage — содержимое уведомления; service worker показывает его как есть.
@@ -433,6 +579,19 @@ type PushMessage struct {
 	TaskID string `json:"taskId,omitempty"`
 	// Badge — сколько встреч и задач ещё осталось сегодня: число на иконке приложения.
 	Badge *int `json:"badge,omitempty"`
+	// SuggestionID и SuggestionAction — для кнопок предложения ассистента (что делает «Да»).
+	SuggestionID     int64  `json:"suggestionId,omitempty"`
+	SuggestionAction string `json:"suggestionAction,omitempty"`
+}
+
+// Session — вход с устройства. ID — начало хэша токена (сам токен и хэш наружу не отдаются).
+type Session struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+	LastSeen  time.Time `json:"lastSeen"`
+	// Current — сессия этого запроса.
+	Current bool `json:"current,omitempty"`
 }
 
 // Snooze — отложенное уведомление («Напомнить через 10 минут»).

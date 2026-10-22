@@ -331,9 +331,9 @@ func (s *server) itemOf(ctx context.Context, e model.Event) (calsync.Item, *time
 // календарь — сначала создаёт событие там. Не получилось — событие остаётся
 // в приложении, а ошибка видна в настройках календаря.
 func (s *server) createEventSynced(ctx context.Context, e model.Event) (model.Event, error) {
-	// Серия и событие на весь день остаются в приложении: во внешний календарь пишутся только
+	// Серия, многодневное и событие на весь день остаются в приложении: во внешний календарь пишутся только
 	// разовые события со временем (весь день там — отдельный формат дат, который мы не пишем).
-	if target, ok := s.primaryTarget(ctx); ok && e.Repeat == model.RepeatNone && !e.AllDay {
+	if target, ok := s.primaryTarget(ctx); ok && e.Repeat == model.RepeatNone && !e.AllDay && e.EndDate == "" {
 		it, loc, err := s.itemOf(ctx, e)
 		if err != nil {
 			return model.Event{}, err
@@ -373,6 +373,9 @@ func (s *server) updateEventSynced(ctx context.Context, cur model.Event, patch m
 	}
 	if cur.Source != "" && (patch.Repeat != nil && *patch.Repeat != model.RepeatNone || patch.SkipDate != nil) {
 		return model.Event{}, badRequest("Повтор можно задать только событию приложения — у подключённого календаря он задаётся там")
+	}
+	if cur.Source != "" && patch.EndDate != nil && *patch.EndDate != "" {
+		return model.Event{}, badRequest("Несколько дней можно выбрать только у события приложения")
 	}
 	if cur.Source != "" && patch.AllDay != nil && *patch.AllDay {
 		return model.Event{}, badRequest("«Весь день» можно выбрать только у события приложения — у подключённого календаря это меняется там")

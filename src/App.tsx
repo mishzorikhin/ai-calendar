@@ -1,5 +1,5 @@
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
-import { useEffect, type ComponentType } from 'react'
+import { AnimatePresence, LazyMotion, MotionConfig, m } from 'framer-motion'
+import { Suspense, lazy, useEffect, type ComponentType } from 'react'
 import type { CalendarApi } from './api/api'
 import { ApiProvider } from './api/provider'
 import { useSyncTimeZone } from './api/queries'
@@ -10,6 +10,7 @@ import { SessionGate } from './app/session-gate'
 import { BottomBar } from './components/BottomBar'
 import { Device } from './components/Device'
 import { EventComposer } from './components/EventComposer'
+import { UndoToast } from './components/UndoToast'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { fromISODate, toISODate } from './lib/dates'
 import { screenVariants } from './lib/motion'
@@ -19,11 +20,17 @@ import { UpdatePrompt } from './pwa/UpdatePrompt'
 import { useAppBadge } from './pwa/useAppBadge'
 import { useLaunchAction } from './pwa/useLaunchAction'
 import { usePushEvents } from './pwa/usePushEvents'
-import { Chat } from './screens/chat/Chat'
 import { Day } from './screens/day/Day'
 import { Home } from './screens/home/Home'
 import { Month } from './screens/month/Month'
 import styles from './App.module.css'
+
+// Чанк с возможностями анимаций начинает грузиться сразу при старте, параллельно с первым рендером.
+const motionFeatures = import('./lib/motionFeatures').then((r) => r.default)
+const loadMotionFeatures = () => motionFeatures
+
+// Чат открывают не сразу — его код (и разметка потока ответа) грузится по первому переходу.
+const Chat = lazy(() => import('./screens/chat/Chat').then((mod) => ({ default: mod.Chat })))
 
 const SCREENS: Record<Route, ComponentType> = {
   home: Home,
@@ -66,7 +73,7 @@ function Screens() {
   const Screen = SCREENS[route]
   return (
     <AnimatePresence custom={dir}>
-      <motion.div
+      <m.div
         key={route}
         className={styles.layer}
         custom={dir}
@@ -75,31 +82,37 @@ function Screens() {
         animate="center"
         exit="exit"
       >
-        <Screen />
-      </motion.div>
+        <Suspense fallback={null}>
+          <Screen />
+        </Suspense>
+      </m.div>
     </AnimatePresence>
   )
 }
 
 export function App({ api }: { api: CalendarApi }) {
   return (
-    <MotionConfig reducedMotion="user">
-      <ApiProvider api={api}>
-        <AppProviders>
-          <Device>
-            <RouteHashSync />
-            <SessionGate>
-              <Screens />
-              <BottomBar />
-              <VoiceOverlay />
-              <EventComposer />
-            </SessionGate>
-            <OfflineBadge />
-            <UpdatePrompt />
-            <PushToast />
-          </Device>
-        </AppProviders>
-      </ApiProvider>
-    </MotionConfig>
+    // LazyMotion: компоненты m.* без встроенных возможностей (их грузит loadMotionFeatures); strict ловит забытый motion.*.
+    <LazyMotion features={loadMotionFeatures} strict>
+      <MotionConfig reducedMotion="user">
+        <ApiProvider api={api}>
+          <AppProviders>
+            <Device>
+              <RouteHashSync />
+              <SessionGate>
+                <Screens />
+                <BottomBar />
+                <VoiceOverlay />
+                <EventComposer />
+                <UndoToast />
+              </SessionGate>
+              <OfflineBadge />
+              <UpdatePrompt />
+              <PushToast />
+            </Device>
+          </AppProviders>
+        </ApiProvider>
+      </MotionConfig>
+    </LazyMotion>
   )
 }

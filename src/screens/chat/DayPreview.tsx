@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useDayEvents } from '../../api/queries'
 import { useCalendar } from '../../app/calendar'
 import { useNavigation } from '../../app/navigation'
@@ -19,7 +19,7 @@ export function DayPreview() {
     .slice(0, 3)
 
   return (
-    <motion.button
+    <m.button
       type="button"
       className={styles.preview}
       onClick={() => {
@@ -44,6 +44,6 @@ export function DayPreview() {
           </span>
         </span>
       ))}
-    </motion.button>
+    </m.button>
   )
 }

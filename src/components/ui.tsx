@@ -1,4 +1,4 @@
-import { motion, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
+import { m, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { spring } from '../lib/motion'
 import styles from './ui.module.css'
@@ -8,7 +8,7 @@ type PressableProps = HTMLMotionProps<'button'> & { scale?: number }
 /** Кнопка с мягким «нажатием», как на iOS. */
 export function Pressable({ scale = 0.94, className, type = 'button', ...rest }: PressableProps) {
   return (
-    <motion.button
+    <m.button
       type={type}
       whileTap={{ scale }}
       transition={spring}
@@ -76,7 +76,7 @@ export function MeDot({ size = 32 }: { size?: number }) {
   const still = useReducedMotion()
   return (
     <span className={`${styles.avatar} ${styles.avatarRing} ${styles.meDot}`} style={{ width: size, height: size }}>
-      <motion.i
+      <m.i
         animate={still ? undefined : { scale: [1, 1.18, 1] }}
         transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
       />
@@ -103,7 +103,7 @@ export function Dots() {
   return (
     <span className={styles.dots} role="img" aria-label="Загрузка">
       {[0, 1, 2].map((i) => (
-        <motion.i
+        <m.i
           key={i}
           animate={still ? undefined : { opacity: [0.25, 1, 0.25], y: [0, -2, 0] }}
           transition={{ duration: 1, repeat: Infinity, delay: i * 0.16 }}
@@ -127,7 +127,7 @@ export function Waveform({
   return (
     <span className={styles.wave} style={{ height }} aria-hidden="true">
       {Array.from({ length: bars }, (_, i) => (
-        <motion.i
+        <m.i
           key={i}
           style={{ background: color, scaleY: 0.3 + ((i * 37) % 50) / 100 }}
           animate={

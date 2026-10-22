@@ -1,37 +1,111 @@
 :root {
+  /*
+   * Тема: каждый цвет — light-dark(светлая, тёмная). Какая сработает, решает color-scheme:
+   * «Как в системе» — light dark (по настройке устройства), явный выбор — data-theme на <html>
+   * (lib/theme.ts). Градиенты и тени собираются из таких же токенов.
+   */
+  color-scheme: light dark;
+
   /* Палитра */
-  --bg: #f3f2f5;
-  --surface: #ffffff;
-  --surface-2: #f4f4f6;
-  --surface-3: #ececf0;
-  --ink: #0d0d10;
-  --ink-2: #6b6b73;
+  --bg: light-dark(#f3f2f5, #0c0c10);
+  --surface: light-dark(#ffffff, #19191f);
+  --surface-2: light-dark(#f4f4f6, #222229);
+  --surface-3: light-dark(#ececf0, #2d2d35);
+  /* Приподнятый элемент поверх --surface-2 (ползунок переключателя): в тёмной теме светлее фона. */
+  --raised: light-dark(#ffffff, #393942);
+  --ink: light-dark(#0d0d10, #f3f3f6);
+  --ink-2: light-dark(#6b6b73, #a7a7b1);
   /* Для крупного второстепенного текста (≥ 3:1 по WCAG для крупного шрифта). */
-  --ink-soft: #85858d;
+  --ink-soft: light-dark(#85858d, #8b8b95);
   --ink-3: var(--ink-soft);
-  --ink-inverse: #ffffff;
-  /* Тёмные плашки: подсказки, тосты, нижняя капсула */
-  --surface-dark: #15141a;
-  /* Почти чёрные кнопки и выбранные дни */
-  --surface-ink: #0f0f12;
-  --line: rgba(15, 15, 30, 0.06);
-  --weekend: #e5484d;
+  /* Текст на заливке --ink и --surface-ink (в тёмной теме они светлые). */
+  --ink-inverse: light-dark(#ffffff, #0d0d10);
+  /* Текст на цветных заливках (значки, «сейчас», вечерний слой) — белый в обеих темах. */
+  --on-accent: #ffffff;
+  /* Тёмные плашки: подсказки, тосты, список задач в чате — тёмные в обеих темах. */
+  --surface-dark: light-dark(#15141a, #2a2932);
+  --on-dark: #ffffff;
+  --on-dark-2: rgba(255, 255, 255, 0.72);
+  --on-dark-fill: rgba(255, 255, 255, 0.14);
+  /* Почти чёрные (в тёмной теме — почти белые) кнопки и выбранные дни */
+  --surface-ink: light-dark(#0f0f12, #f0eff4);
+  --line: light-dark(rgba(15, 15, 30, 0.06), rgba(255, 255, 255, 0.08));
+  --weekend: light-dark(#e5484d, #ff6b70);
   --red: #ff3b4f;
-  --blue: #3a78f2;
+  --blue: light-dark(#3a78f2, #5a8ff5);
   --green: #4cc46d;
   --orange: #f08b3d;
   --yellow: #f5c445;
   --purple: #9b7af0;
   --gold: #f5b83d;
-  --lavender: #e3e5f8;
-  /* Текст ошибок и успеха: контраст на белом ≥ 4.5:1 */
-  --danger-ink: #b42318;
-  --danger-bg: rgba(180, 35, 24, 0.1);
-  --success-ink: #1f7a3a;
-  --success-bg: rgba(76, 196, 109, 0.14);
+  --lavender: light-dark(#e3e5f8, #2b2e4a);
+  /* Текст ошибок, успеха и предупреждений: контраст на фоне ≥ 4.5:1 */
+  --danger-ink: light-dark(#b42318, #ff8f85);
+  --danger-bg: light-dark(rgba(180, 35, 24, 0.1), rgba(255, 110, 100, 0.14));
+  --success-ink: light-dark(#1f7a3a, #7fd895);
+  --success-bg: light-dark(rgba(76, 196, 109, 0.14), rgba(76, 196, 109, 0.16));
+  --warn-ink: light-dark(#8a4210, #f5aa6e);
+  --warn-bg: light-dark(rgba(240, 139, 61, 0.14), rgba(240, 139, 61, 0.16));
+  --accent-bg: light-dark(rgba(58, 120, 242, 0.12), rgba(90, 143, 245, 0.18));
+  --accent-line: light-dark(rgba(58, 120, 242, 0.35), rgba(90, 143, 245, 0.5));
 
-  /* Нижняя панель — розово-сиреневый градиент из референса */
-  --bar-gradient: linear-gradient(100deg, #f6c4bd 0%, #f1d0d6 34%, #e3d6ec 62%, #cdd2f3 100%);
+  /* Стекло: полупрозрачные кнопки и плашки поверх градиентов */
+  --glass: light-dark(rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.08));
+  --glass-weak: light-dark(rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.06));
+  --glass-strong: light-dark(rgba(255, 255, 255, 0.85), rgba(40, 40, 48, 0.85));
+  --glass-line: light-dark(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.1));
+  --glass-ink: light-dark(rgba(30, 30, 50, 0.72), rgba(240, 238, 248, 0.78));
+  --avatar-ink: rgba(30, 30, 60, 0.75);
+  /* Розовая стеклянная кнопка ассистента */
+  --pink-1: light-dark(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.16));
+  --pink-2: light-dark(rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.05));
+  --pink-line: light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.2));
+  --pink-glow: light-dark(rgba(220, 120, 130, 0.22), rgba(225, 110, 135, 0.22));
+  --pink-ink: light-dark(rgba(70, 40, 50, 0.8), rgba(255, 225, 235, 0.9));
+  /* Переливающийся текст «думает…» */
+  --shimmer-1: light-dark(rgba(40, 30, 60, 0.38), rgba(235, 230, 250, 0.38));
+  --shimmer-2: light-dark(rgba(40, 30, 60, 0.95), rgba(235, 230, 250, 0.95));
+  /* Затемнение под шторками и ручка шторки */
+  --scrim: light-dark(rgba(20, 15, 30, 0.3), rgba(0, 0, 0, 0.55));
+  --scrim-soft: light-dark(rgba(20, 15, 30, 0.2), rgba(0, 0, 0, 0.4));
+  --handle: light-dark(#dcdce2, #4a4a54);
+  --sheet-shadow: light-dark(rgba(120, 70, 100, 0.08), rgba(0, 0, 0, 0.4));
+
+  /* Нижняя панель — розово-сиреневый градиент из референса (в тёмной теме — приглушённый) */
+  --bar-1: light-dark(#f6c4bd, #3b2629);
+  --bar-2: light-dark(#f1d0d6, #3a2733);
+  --bar-3: light-dark(#e3d6ec, #30283d);
+  --bar-4: light-dark(#cdd2f3, #262a45);
+  --bar-gradient: linear-gradient(100deg, var(--bar-1) 0%, var(--bar-2) 34%, var(--bar-3) 62%, var(--bar-4) 100%);
+  --bar-ink: light-dark(rgba(55, 40, 65, 0.6), rgba(240, 225, 240, 0.62));
+  --bar-ink-2: light-dark(rgba(55, 40, 65, 0.72), rgba(240, 225, 240, 0.8));
+  --bar-glow: light-dark(rgba(225, 110, 135, 0.4), rgba(225, 110, 135, 0.3));
+
+  /* Части суток на шкале дня */
+  --morning-1: light-dark(#d6ecc2, #24361f);
+  --morning-2: light-dark(#e9f4de, #1f2a1d);
+  --morning-3: light-dark(#f7faf3, #1b211b);
+  --morning-4: light-dark(#fdfdfc, #19191f);
+  --afternoon-1: light-dark(#e3e9f2, #232a36);
+  --afternoon-2: light-dark(#d2dbe8, #1d232e);
+  --night-1: light-dark(#7f8a9b, #2c3242);
+  --night-2: light-dark(#a3adbc, #262b39);
+  --night-3: light-dark(#b8c0cc, #212531);
+
+  /* Карточка задачи-цели на главной */
+  --trip-glow: light-dark(rgba(250, 222, 205, 0.95), rgba(140, 90, 80, 0.45));
+  --trip-1: light-dark(#dfe4f8, #252a40);
+  --trip-2: light-dark(#e6e1f3, #2a2638);
+  --trip-3: light-dark(#f0e2e6, #33272d);
+
+  /* Фон чата */
+  --chat-1: light-dark(#efeef2, #121217);
+  --chat-2: light-dark(#e8e7ed, #101015);
+  --chat-3: light-dark(#e2e2ea, #0e0e13);
+  --chat-glow: light-dark(rgba(255, 255, 255, 0.7), rgba(120, 110, 160, 0.12));
+  --bubble: light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.07));
+  --bubble-line: light-dark(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.08));
+  --bubble-ink: light-dark(rgba(20, 20, 30, 0.82), rgba(240, 240, 246, 0.9));
 
   /* Радиусы */
   --r-sheet: 40px;
@@ -41,9 +115,14 @@
   --r-sm: 14px;
 
   /* Тени */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 45, 0.05), 0 2px 8px rgba(20, 20, 45, 0.04);
-  --shadow-md: 0 2px 6px rgba(20, 20, 45, 0.05), 0 12px 32px rgba(20, 20, 45, 0.08);
-  --shadow-lg: 0 4px 12px rgba(20, 20, 45, 0.06), 0 24px 60px rgba(20, 20, 45, 0.14);
+  --shadow-c1: light-dark(rgba(20, 20, 45, 0.04), rgba(0, 0, 0, 0.3));
+  --shadow-c2: light-dark(rgba(20, 20, 45, 0.05), rgba(0, 0, 0, 0.35));
+  --shadow-c3: light-dark(rgba(20, 20, 45, 0.06), rgba(0, 0, 0, 0.4));
+  --shadow-c4: light-dark(rgba(20, 20, 45, 0.08), rgba(0, 0, 0, 0.45));
+  --shadow-c5: light-dark(rgba(20, 20, 45, 0.14), rgba(0, 0, 0, 0.6));
+  --shadow-sm: 0 1px 2px var(--shadow-c2), 0 2px 8px var(--shadow-c1);
+  --shadow-md: 0 2px 6px var(--shadow-c2), 0 12px 32px var(--shadow-c4);
+  --shadow-lg: 0 4px 12px var(--shadow-c3), 0 24px 60px var(--shadow-c5);
 
   /* Безопасные зоны (на реальном телефоне — из env()) */
   --safe-top: max(env(safe-area-inset-top, 0px), 14px);
@@ -56,8 +135,15 @@
   --z-bar: 30;
   --z-overlay: 25;
   --z-sheet: 50;
+}
 
+/* Явный выбор темы в настройках перекрывает системную. */
+:root[data-theme='light'] {
   color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 *,

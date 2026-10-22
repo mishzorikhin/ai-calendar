@@ -1,6 +1,6 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { useAssistant } from '../app/assistant'
+import { useAssistant, type VoiceMode } from '../app/assistant'
 import { useNavigation } from '../app/navigation'
 import { softSpring, spring } from '../lib/motion'
 import { speechSupported, useDictation } from '../lib/speech'
@@ -12,13 +12,17 @@ import styles from './VoiceOverlay.module.css'
  * затем пользователь проверяет текст и отправляет или правит его.
  * В браузерах без SpeechRecognition оверлей не показывается — кнопки запуска скрыты.
  */
+/** Запрос ассистенту из надиктованного: для задачи — с явной просьбой её добавить. */
+export const voiceRequest = (heard: string, mode: VoiceMode) => (mode === 'task' ? `${TASK_PREFIX}${heard}` : heard)
+export const TASK_PREFIX = 'Добавь задачу: '
+
 export function VoiceOverlay() {
   if (!speechSupported) return null
   return <VoiceOverlayInner />
 }
 
 function VoiceOverlayInner() {
-  const { voice, setVoice, setPrompt, setDraft } = useAssistant()
+  const { voice, setVoice, voiceMode, setPrompt, setDraft } = useAssistant()
   const { route, go } = useNavigation()
   const visible = voice !== 'idle' && route !== 'chat'
   const [text, setText] = useState('')
@@ -51,7 +55,7 @@ function VoiceOverlayInner() {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
+        <m.div
           key="voice"
           className={styles.overlay}
           initial={{ opacity: 0 }}
@@ -59,7 +63,7 @@ function VoiceOverlayInner() {
           exit={{ opacity: 0, transition: { duration: 0.25 } }}
           onClick={() => setVoice('idle')}
         >
-          <motion.div
+          <m.div
             className={styles.panel}
             role="dialog"
             aria-label="Голосовой ввод"
@@ -71,7 +75,7 @@ function VoiceOverlayInner() {
           >
             <span className={styles.label} aria-live="polite">
               {voice === 'recording' && (
-                <motion.i
+                <m.i
                   animate={still ? undefined : { scale: [1, 1.5, 1], opacity: [1, 0.4, 1] }}
                   transition={{ duration: 1.2, repeat: Infinity }}
                 />
@@ -81,11 +85,17 @@ function VoiceOverlayInner() {
             <p className={styles.text}>
               {text && `${text} `}
               {interim && <span className={styles.placeholder}>{interim}</span>}
-              {!heard && <span className={styles.placeholder}>Скажите, что нужно запланировать</span>}
+              {!heard && (
+                <span className={styles.placeholder}>
+                  {voiceMode === 'task'
+                    ? 'Скажите задачу — например, «купить подарок маме до пятницы»'
+                    : 'Скажите, что нужно запланировать'}
+                </span>
+              )}
             </p>
             <AnimatePresence initial={false} mode="wait">
               {voice === 'review' ? (
-                <motion.div
+                <m.div
                   key="actions"
                   className={styles.actions}
                   initial={{ opacity: 0, y: 10 }}
@@ -97,7 +107,7 @@ function VoiceOverlayInner() {
                     className={styles.send}
                     disabled={!heard}
                     onClick={() => {
-                      setPrompt(heard)
+                      setPrompt(voiceRequest(heard, voiceMode))
                       setVoice('idle')
                       go('chat')
                     }}
@@ -107,7 +117,7 @@ function VoiceOverlayInner() {
                   <Pill
                     tone="ghost"
                     onClick={() => {
-                      setDraft(heard)
+                      setDraft(voiceRequest(heard, voiceMode))
                       setVoice('idle')
                       go('chat')
                     }}
@@ -117,20 +127,20 @@ function VoiceOverlayInner() {
                   <Pill tone="ghost" onClick={() => setVoice('idle')}>
                     Отмена
                   </Pill>
-                </motion.div>
+                </m.div>
               ) : (
-                <motion.div key="stop" className={styles.actions} exit={{ opacity: 0 }}>
+                <m.div key="stop" className={styles.actions} exit={{ opacity: 0 }}>
                   <Pill tone="dark" small onClick={() => setVoice('review')}>
                     Готово
                   </Pill>
                   <Pill tone="ghost" small onClick={() => setVoice('idle')}>
                     Отмена
                   </Pill>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   )
