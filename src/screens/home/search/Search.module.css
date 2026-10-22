@@ -1,0 +1,151 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.field:focus-within {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+/* Рамка фокуса — у всего поля (с иконкой), а не у самого input. */
+.input:focus-visible {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--ink-soft);
+}
+
+.input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.state {
+  margin: 14px 4px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.state:empty {
+  display: none;
+}
+
+.label {
+  margin: 18px 4px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  width: 100%;
+  min-height: 58px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.when {
+  flex-shrink: 0;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.when small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.done {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.check {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  color: var(--ink-inverse);
+}
+
+.checkOn {
+  background: var(--ink);
+  box-shadow: none;
+}

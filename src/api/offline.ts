@@ -1,4 +1,5 @@
 import type { CalendarEvent, DatedEvent, EventPatch, MonthDots, NewTask, Task, TaskPatch } from '../domain/types'
+import { withCheck } from '../domain/habit'
 import { toISODate } from '../lib/dates'
 import { ApiError, type CalendarApi } from './api'
 import { getOutbox, newTempId, requestOutboxSync, type Outbox, type PendingOp } from './outbox'
@@ -44,6 +45,18 @@ function eventBody(op: PendingOp): Record<string, unknown> {
 const remindersOf = (v: unknown): number[] | null =>
   Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : null
 
+/** Заметки, ссылка, дорога и последний день из тела операции поверх события ('' — убрать). */
+function details(body: Record<string, unknown>, e: Partial<CalendarEvent>): Partial<CalendarEvent> {
+  const text = (key: 'notes' | 'url' | 'endDate') =>
+    typeof body[key] === 'string' ? (body[key] as string) || undefined : e[key]
+  return {
+    notes: text('notes'),
+    url: text('url'),
+    endDate: text('endDate'),
+    travel: typeof body.travel === 'number' ? body.travel || undefined : e.travel,
+  }
+}
+
 function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: string): CalendarEvent[] {
   const list = base.map((e) => ({ ...e }))
   const findIdx = (id: string) => list.findIndex((e) => e.id === id)
@@ -62,6 +75,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           highlight: true,
           reminders: remindersOf(body.reminders),
           allDay: body.allDay === true || undefined,
+          ...details(body, {}),
         })
       }
     } else if (op.action === 'update') {
@@ -82,6 +96,7 @@ function mergeEvents(base: CalendarEvent[], ops: readonly PendingOp[], iso: stri
           badge: (body.badge as CalendarEvent['badge']) ?? e.badge,
           reminders: 'reminders' in body ? remindersOf(body.reminders) : e.reminders,
           allDay: typeof body.allDay === 'boolean' ? body.allDay || undefined : e.allDay,
+          ...details(body, e),
         }
       }
     } else {
@@ -106,10 +121,20 @@ function mergeTasks(base: Task[], ops: readonly PendingOp[]): Task[] {
         kind: (body.kind as Task['kind']) ?? 'task',
         category: typeof body.category === 'string' ? body.category : undefined,
         due: typeof body.due === 'string' ? body.due : undefined,
+        cadence: body.kind === 'habit' ? ((body.cadence as Task['cadence']) ?? 'daily') : undefined,
         done: false,
       })
     } else if (op.action === 'update') {
-      if (i >= 0) list[i] = { ...list[i]!, ...(body as Partial<Task>) }
+      const { check, uncheck, ...rest } = body as TaskPatch
+      const prev = list[i]
+      if (prev) {
+        const checks = check
+          ? withCheck(prev.checks ?? [], check, true)
+          : uncheck
+            ? withCheck(prev.checks ?? [], uncheck, false)
+            : prev.checks
+        list[i] = { ...prev, ...(rest as Partial<Task>), checks }
+      }
     } else if (i >= 0) {
       list.splice(i, 1)
     }
@@ -189,6 +214,10 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         repeat: input.repeat,
         repeatUntil: input.repeatUntil,
         allDay: input.allDay,
+        notes: input.notes,
+        url: input.url,
+        travel: input.travel,
+        endDate: input.endDate,
       }
     },
 
@@ -278,6 +307,8 @@ export function withOfflineQueue(api: CalendarApi, baseUrl = ''): CalendarApi {
         method: 'PATCH',
         path: '/api/tasks/:id',
         body: { ...patch },
+        // Отметки привычки не склеиваются: «отметить» и «снять» за разные дни — разные операции.
+        separate: patch.check !== undefined || patch.uncheck !== undefined,
       })
       return { id, ...patch } as Task
     },

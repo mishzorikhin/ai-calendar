@@ -8,7 +8,14 @@ import type {
   DatedEvent,
   Integration,
   IntegrationsInfo,
+  Invite,
+  Memory,
   NotifySettings,
+  Person,
+  AuthSession,
+  WeekInsights,
+  Suggestion,
+  Profile,
   PushDevice,
   PushInfo,
   Task,
@@ -100,6 +107,11 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
       return toEvent(await request<EventDTO>(`/api/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }))
     },
     deleteEvent: (id) => request<void>(`/api/events/${id}`, { method: 'DELETE' }),
+    rsvpEvent: (id, status) => post<Invite>(`/api/events/${id}/rsvp`, { status }),
+    async search(query) {
+      const res = await request<{ events: EventDTO[]; tasks: Task[] }>(`/api/search?q=${encodeURIComponent(query)}`)
+      return { events: res.events.map(toEvent), tasks: res.tasks }
+    },
     async getMonthDots(year, month) {
       const raw = await request<Record<string, Badge[]>>(`/api/month?year=${year}&month=${month + 1}`)
       return Object.fromEntries(Object.entries(raw).map(([day, badges]) => [Number(day), badges]))
@@ -109,10 +121,14 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     updateTask: (id, patch) => request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
     getMessages: () => request<ChatMessage[]>('/api/messages'),
-    async sendChat(text, onEvent, signal) {
+    async sendChat(text, onEvent, signal, image) {
       let res: Response
       try {
-        res = await send('/api/chat', { method: 'POST', body: JSON.stringify({ text }), signal })
+        res = await send('/api/chat', {
+          method: 'POST',
+          body: JSON.stringify(image ? { text, image } : { text }),
+          signal,
+        })
       } catch (e) {
         if (signal?.aborted) return
         throw e
@@ -224,6 +240,35 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     getAlarms: () => request<Alarm[]>('/api/reminders'),
     createAlarm: ({ text, at }) => post<Alarm>('/api/reminders', { text, at: at.toISOString() }),
     deleteAlarm: (id) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
+
+    getProfile: () => request<Profile>('/api/profile'),
+    updateProfile: (patch) => request<Profile>('/api/profile', { method: 'PATCH', body: JSON.stringify(patch) }),
+    getMemories: () => request<Memory[]>('/api/memories'),
+    createMemory: (input) => post<Memory>('/api/memories', input),
+    updateMemory: (id, patch) =>
+      request<Memory>(`/api/memories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteMemory: (id) => request<void>(`/api/memories/${id}`, { method: 'DELETE' }),
+    deleteAllMemories: () => request<void>('/api/memories', { method: 'DELETE' }),
+    getPeople: () => request<Person[]>('/api/people'),
+    createPerson: (input) => post<Person>('/api/people', input),
+    updatePerson: (id, input) => request<Person>(`/api/people/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    deletePerson: (id) => request<void>(`/api/people/${id}`, { method: 'DELETE' }),
+    getSessions: () => request<AuthSession[]>('/api/auth/sessions'),
+    deleteSession: (id) => request<void>(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    logoutOthers: () => post<void>('/api/auth/logout-others', {}),
+    changePassword: (current, next) => post<void>('/api/auth/password', { current, next }),
+    exportData: async () => JSON.stringify(await request<unknown>('/api/export'), null, 2),
+    async deleteAccount(password) {
+      await request<void>('/api/me', { method: 'DELETE', body: JSON.stringify({ password }) })
+      setSession(null)
+    },
+    getWeekInsights: (start) => request<WeekInsights>(`/api/insights/week?start=${toISODate(start)}`),
+    getSuggestions: () => request<Suggestion[]>('/api/suggestions'),
+    acceptSuggestion: async (id) =>
+      (await post<{ suggestion: Suggestion }>(`/api/suggestions/${id}/accept`, {})).suggestion,
+    dismissSuggestion: async (id, mute) => {
+      await post<unknown>(`/api/suggestions/${id}/dismiss`, mute ? { mute: true } : {})
+    },
   }
 }
 

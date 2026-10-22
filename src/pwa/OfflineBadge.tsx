@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useSyncExternalStore } from 'react'
 import { plural } from '../lib/plural'
 import { spring } from '../lib/motion'
@@ -39,7 +39,7 @@ export function OfflineBadge() {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
+        <m.div
           className={styles.offline}
           role="status"
           initial={{ opacity: 0, y: -12 }}
@@ -48,7 +48,7 @@ export function OfflineBadge() {
           transition={spring}
         >
           <i aria-hidden="true" /> {text}
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

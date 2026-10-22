@@ -1,6 +1,6 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useCalendarName } from '../../api/queries'
-import { DAY_PARTS } from '../../domain/calendar'
+import { DAY_PARTS, partOf } from '../../domain/calendar'
 import type { CalendarEvent } from '../../domain/types'
 import { formatMinutes } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
@@ -16,7 +16,7 @@ function AgendaSub({ event }: { event: CalendarEvent }) {
 export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: (e: CalendarEvent) => void }) {
   const groups = DAY_PARTS.map((part) => ({
     part,
-    items: events.filter((e) => e.start >= part.from && e.start < part.to),
+    items: events.filter((e) => partOf(e.start) === part.id),
   })).filter((g) => g.items.length > 0)
 
   let index = 0
@@ -27,7 +27,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
           <p className={styles.agendaPart}>{part.title}</p>
           <ul className={styles.agendaItems}>
             {items.map((e) => (
-              <motion.li
+              <m.li
                 key={e.id}
                 initial={{ opacity: 0, x: -12 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -35,7 +35,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
               >
                 <button
                   type="button"
-                  className={`${styles.agendaRow} ${e.highlight ? styles.eventNew : ''}`}
+                  className={`${styles.agendaRow} ${e.highlight ? styles.eventNew : ''} ${e.invite?.status === 'pending' ? styles.invitePending : ''}`}
                   onClick={() => onEvent(e)}
                   aria-label={`${formatMinutes(e.start)}–${formatMinutes(e.end)}, ${e.title}`}
                 >
@@ -49,7 +49,7 @@ export function Agenda({ events, onEvent }: { events: CalendarEvent[]; onEvent: 
                     <AgendaSub event={e} />
                   </span>
                 </button>
-              </motion.li>
+              </m.li>
             ))}
           </ul>
         </section>

@@ -1,16 +1,33 @@
-import type { ChatMessage, DatedEvent, NotifySettings, Task, User } from '../domain/types'
+import type { ChatMessage, DatedEvent, Memory, NotifySettings, Person, Profile, Task, User } from '../domain/types'
 import {
   LIMITS,
+  detailsError,
   isValidRange,
   messageError,
   normalizeReminders,
   remindersError,
+  spanError,
+  estimateError,
   subtitleError,
   titleError,
 } from '../domain/limits'
+import {
+  DEFAULT_PROFILE,
+  MEMORY_KINDS,
+  PROFILE_LIMITS,
+  applyProfilePatch,
+  isMemoryDate,
+  memoryTextError,
+  normalizePerson,
+  personError,
+  profileError,
+} from '../domain/profile'
 import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
 import { isRepeat, occursOn, shiftSeries } from '../domain/repeat'
-import { fromISODate, toISODate } from '../lib/dates'
+import { spanDay } from '../domain/span'
+import { withCheck } from '../domain/habit'
+import { weekInsights } from '../domain/insights'
+import { addDays, fromISODate, startOfWeek, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
 
@@ -25,6 +42,10 @@ type Snapshot = {
   nextId: number
   /** Настройки напоминаний: без сервера уведомлений нет, но выбор «по умолчанию» в редакторе тот же. */
   notify?: NotifySettings
+  /** Профиль, память и люди — ассистента без сервера нет, но их можно заполнить заранее. */
+  profile?: Profile
+  memories?: Memory[]
+  people?: Person[]
 }
 
 /** Первая ошибка проверки или null; отвечает так же, как сервер (400). */
@@ -70,6 +91,22 @@ function notifySettingsError(patch: Partial<NotifySettings>): string | null {
 /** Тихие часы — оба края или ни одного (как на сервере). */
 function quietError(s: NotifySettings): string | null {
   return s.quietFrom < 0 !== s.quietTo < 0 ? 'У тихих часов нужны и начало, и конец' : null
+}
+
+/** Без учёта регистра и «ё» — как поиск на сервере. */
+const fold = (s: string) => s.toLowerCase().replaceAll('ё', 'е')
+
+/** День, к которому вести из поиска: у серии — ближайшее вхождение с today (или последнее прошедшее). */
+function nearestDay(e: DatedEvent, today: string): string {
+  const first = toISODate(e.date)
+  if (!e.repeat) return first
+  const series = { ...e, date: first, repeat: e.repeat }
+  const start = new Date(Math.max(Date.parse(first), Date.parse(today)))
+  for (let i = 0; i < 400; i++) {
+    const day = toISODate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i))
+    if (occursOn(series, day)) return day
+  }
+  return first
 }
 
 function emptySnapshot(): Snapshot {
@@ -119,10 +156,14 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
   const eventsOn = (day: string, all: DatedEvent[] = events()): DatedEvent[] =>
     all.flatMap((e) => {
       const iso = toISODate(e.date)
+      if (e.endDate) {
+        const part = spanDay(e, iso, day)
+        return part ? [{ ...part, date: fromISODate(day) }] : []
+      }
       if (!e.repeat) return iso === day ? [e] : []
       if (!occursOn({ ...e, date: iso, repeat: e.repeat }, day)) return []
       // «Новое» — только у первого вхождения.
-      return [{ ...e, date: fromISODate(day), highlight: e.highlight && iso === day }]
+      return [{ ...e, date: fromISODate(day), seriesDate: iso, highlight: e.highlight && iso === day }]
     })
   const monthEvents = (year: number, month: number): DatedEvent[] => {
     const all = events()
@@ -145,7 +186,19 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
           subtitleError(subtitle),
           remindersError(input.reminders),
           repeatError(input.repeat, input.repeatUntil, toISODate(input.date)),
-        ) ?? (input.allDay || isValidRange(input.start, input.end) ? null : invalid('Время задано неверно'))
+          detailsError(input),
+          spanError({
+            date: toISODate(input.date),
+            endDate: input.endDate,
+            start: input.allDay ? 0 : input.start,
+            end: input.allDay ? LIMITS.dayMinutes : input.end,
+            repeat: input.repeat,
+          }),
+        ) ??
+        (input.allDay || input.endDate || isValidRange(input.start, input.end)
+          ? null
+          : invalid('Время задано неверно')) ??
+        (input.taskId && !data.tasks.some((t) => t.id === input.taskId) ? invalid('Задача не найдена') : null)
       if (bad) return bad
       const event: DatedEvent = {
         id: nextId('evt'),
@@ -161,6 +214,11 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         reminders: input.reminders ? normalizeReminders(input.reminders) : null,
         repeat: input.repeat,
         repeatUntil: input.repeat ? input.repeatUntil || undefined : undefined,
+        notes: input.notes?.trim() || undefined,
+        url: input.url?.trim() || undefined,
+        travel: input.travel || undefined,
+        endDate: input.endDate || undefined,
+        taskId: input.taskId || undefined,
       }
       data.events.push({ ...event, date: toISODate(event.date), createdAt: new Date().toISOString() })
       save()
@@ -214,14 +272,19 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
           : skip && !prev.exdates?.includes(skip)
             ? [...(prev.exdates ?? []), skip]
             : prev.exdates?.map(shift),
+        notes: patch.notes === undefined ? prev.notes : patch.notes.trim() || undefined,
+        url: patch.url === undefined ? prev.url : patch.url.trim() || undefined,
+        travel: patch.travel === undefined ? prev.travel : patch.travel || undefined,
+        endDate: patch.endDate === undefined ? prev.endDate : patch.endDate || undefined,
       }
-      const bad =
-        invalid(
-          title === undefined ? null : titleError(title),
-          subtitleError(subtitle),
-          remindersError(patch.reminders),
-          repeatError(next.repeat, next.repeatUntil, next.date),
-        ) ?? (isValidRange(next.start, next.end) ? null : invalid('Время задано неверно'))
+      const bad = invalid(
+        title === undefined ? null : titleError(title),
+        subtitleError(subtitle),
+        remindersError(patch.reminders),
+        repeatError(next.repeat, next.repeatUntil, next.date),
+        detailsError(next),
+        spanError(next),
+      )
       if (bad) return bad
       data.events[i] = next
       save()
@@ -234,12 +297,33 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(undefined)
     },
+    rsvpEvent: () => Promise.reject(NO_ACCOUNTS),
+    search(query) {
+      const q = query.trim()
+      if ([...q].length < 2 || [...q].length > 100) return invalid('Запрос — от 2 до 100 символов')!
+      const has = (s: string | undefined) => !!s && fold(s).includes(fold(q))
+      const today = toISODate(new Date())
+      const found = events()
+        .filter((e) => has(e.title) || has(e.subtitle) || has(e.notes))
+        .map((e) => ({ ...e, date: fromISODate(nearestDay(e, today)) }))
+        .sort((a, b) => {
+          const [da, db] = [toISODate(a.date), toISODate(b.date)]
+          const [fa, fb] = [da >= today, db >= today]
+          if (fa !== fb) return fa ? -1 : 1
+          return (fa ? da.localeCompare(db) : db.localeCompare(da)) || a.start - b.start
+        })
+        .slice(0, 30)
+      const tasks = data.tasks.filter((t) => has(t.title) || has(t.subtitle) || has(t.category)).slice(0, 20)
+      return reply({ events: found, tasks })
+    },
     getMonthDots: (year, month) => reply(monthDotsFor(year, month, monthEvents(year, month))),
     getTasks: () => reply([...data.tasks]),
     createTask(input) {
       const title = input.title.trim()
       const subtitle = input.subtitle?.trim()
-      const bad = invalid(titleError(title), subtitleError(subtitle))
+      const bad =
+        invalid(titleError(title), subtitleError(subtitle), estimateError(input.estimate)) ??
+        (input.cadence && input.kind !== 'habit' ? invalid('Частота — только у привычки') : null)
       if (bad) return bad
       const task: Task = {
         id: nextId('task'),
@@ -249,6 +333,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         category: input.category,
         done: false,
         due: input.due,
+        createdAt: new Date().toISOString(),
+        estimate: input.estimate || undefined,
+        cadence: input.kind === 'habit' ? (input.cadence ?? 'daily') : undefined,
       }
       data.tasks.push(task)
       save()
@@ -260,7 +347,14 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       const prev = data.tasks[i]!
       const title = patch.title?.trim()
       const subtitle = patch.subtitle?.trim()
-      const bad = invalid(title === undefined ? null : titleError(title), subtitleError(subtitle))
+      const bad = invalid(
+        title === undefined ? null : titleError(title),
+        subtitleError(subtitle),
+        estimateError(patch.estimate),
+        [patch.check, patch.uncheck].some((d) => d !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(d))
+          ? 'check/uncheck — дата ГГГГ-ММ-ДД'
+          : null,
+      )
       if (bad) return bad
       const task: Task = {
         ...prev,
@@ -270,8 +364,16 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         done: patch.done ?? prev.done,
         due: patch.due ?? prev.due,
       }
-      // '' очищает категорию; undefined — не трогает.
+      // '' очищает категорию, 0 — оценку; undefined — не трогает.
       if (patch.category !== undefined) task.category = patch.category || undefined
+      if (patch.estimate !== undefined) task.estimate = patch.estimate || undefined
+      if (patch.cadence) task.cadence = patch.cadence
+      if (task.kind === 'habit' && !task.cadence) task.cadence = 'daily'
+      if (patch.check) task.checks = withCheck(prev.checks ?? [], patch.check, true)
+      if (patch.uncheck) task.checks = withCheck(prev.checks ?? [], patch.uncheck, false)
+      // Как на сервере: закрытие ставит время, открытие снимает.
+      if (patch.done !== undefined && patch.done !== prev.done)
+        task.doneAt = patch.done ? new Date().toISOString() : undefined
       data.tasks[i] = task
       save()
       return reply(task)
@@ -285,7 +387,8 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     },
     getMessages: () => reply([...data.messages]),
     // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
-    async sendChat(text, onEvent) {
+    async sendChat(text, onEvent, _signal, image) {
+      if (image) return Promise.reject(new ApiError(400, 'Картинки ассистент смотрит только с сервером'))
       const bad = invalid(messageError(text.trim()))
       if (bad) return bad
       const answer = 'Ассистент отвечает только с сервером — запустите `make api` с переменной LLM_API_KEY.'
@@ -340,5 +443,127 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getAlarms: () => reply([]),
     createAlarm: () => Promise.reject(NO_PUSH),
     deleteAlarm: () => Promise.reject(NO_PUSH),
+
+    getProfile: () => reply({ ...DEFAULT_PROFILE, ...data.profile }),
+    updateProfile(patch) {
+      const next = applyProfilePatch({ ...DEFAULT_PROFILE, ...data.profile }, patch)
+      const bad = invalid(profileError(next))
+      if (bad) return bad
+      data.profile = next
+      save()
+      return reply(next)
+    },
+    getMemories: () => reply([...(data.memories ?? [])].sort((a, b) => b.id - a.id)),
+    createMemory(input) {
+      const text = input.text.trim()
+      const date = input.date?.trim() || undefined
+      const bad =
+        invalid(
+          MEMORY_KINDS.some((k) => k.id === input.kind) ? null : 'Неизвестный вид факта',
+          memoryTextError(text),
+          isMemoryDate(date) ? null : 'Дата — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)',
+        ) ??
+        ((data.memories?.length ?? 0) >= PROFILE_LIMITS.memories
+          ? invalid(`Память заполнена: не больше ${PROFILE_LIMITS.memories} фактов`)
+          : null)
+      if (bad) return bad
+      const now = new Date().toISOString()
+      const memory: Memory = {
+        id: data.nextId++,
+        kind: input.kind,
+        text,
+        date,
+        source: 'user',
+        confirmed: true,
+        createdAt: now,
+        updatedAt: now,
+      }
+      data.memories = [...(data.memories ?? []), memory]
+      save()
+      return reply(memory)
+    },
+    updateMemory(id, patch) {
+      const list = data.memories ?? []
+      const i = list.findIndex((m) => m.id === id)
+      const prev = list[i]
+      if (!prev) return Promise.reject(new ApiError(404, 'Факт не найден'))
+      const text = patch.text?.trim()
+      const bad = invalid(
+        text === undefined ? null : memoryTextError(text),
+        isMemoryDate(patch.date) ? null : 'Дата — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)',
+      )
+      if (bad) return bad
+      const next: Memory = {
+        ...prev,
+        kind: patch.kind ?? prev.kind,
+        date: patch.date === undefined ? prev.date : patch.date || undefined,
+        confirmed: patch.confirmed ?? prev.confirmed,
+        text: text ?? prev.text,
+        updatedAt: new Date().toISOString(),
+      }
+      data.memories = patch.rejected ? list.filter((m) => m.id !== id) : list.map((m) => (m.id === id ? next : m))
+      save()
+      return reply(next)
+    },
+    deleteMemory(id) {
+      const before = data.memories?.length ?? 0
+      data.memories = (data.memories ?? []).filter((m) => m.id !== id)
+      if (data.memories.length === before) return Promise.reject(new ApiError(404, 'Факт не найден'))
+      save()
+      return reply(undefined)
+    },
+    deleteAllMemories() {
+      data.memories = []
+      save()
+      return reply(undefined)
+    },
+    getPeople: () =>
+      reply([...(data.people ?? [])].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'ru'))),
+    createPerson(input) {
+      const bad =
+        invalid(personError(input)) ??
+        ((data.people?.length ?? 0) >= PROFILE_LIMITS.people
+          ? invalid(`Не больше ${PROFILE_LIMITS.people} человек`)
+          : null)
+      if (bad) return bad
+      const person: Person = { id: data.nextId++, ...normalizePerson(input) }
+      data.people = [...(data.people ?? []), person]
+      save()
+      return reply(person)
+    },
+    updatePerson(id, input) {
+      if (!data.people?.some((p) => p.id === id)) return Promise.reject(new ApiError(404, 'Человек не найден'))
+      const bad = invalid(personError(input))
+      if (bad) return bad
+      const person: Person = { id, ...normalizePerson(input) }
+      data.people = data.people.map((p) => (p.id === id ? person : p))
+      save()
+      return reply(person)
+    },
+    deletePerson(id) {
+      const before = data.people?.length ?? 0
+      data.people = (data.people ?? []).filter((p) => p.id !== id)
+      if (data.people.length === before) return Promise.reject(new ApiError(404, 'Человек не найден'))
+      save()
+      return reply(undefined)
+    },
+    getSessions: () => Promise.reject(NO_ACCOUNTS),
+    deleteSession: () => Promise.reject(NO_ACCOUNTS),
+    logoutOthers: () => Promise.reject(NO_ACCOUNTS),
+    changePassword: () => Promise.reject(NO_ACCOUNTS),
+    // Выгрузка работает и без сервера: всё, что лежит в этом браузере.
+    exportData: () => reply(JSON.stringify({ exportedAt: new Date().toISOString(), ...data }, null, 2)),
+    deleteAccount: () => Promise.reject(NO_ACCOUNTS),
+    getWeekInsights(start) {
+      const monday = startOfWeek(start)
+      const all = events()
+      const days = Array.from({ length: 35 }, (_, i) => toISODate(addDays(monday, i - 28)))
+      const list = days.flatMap((day) => eventsOn(day, all).map((e) => ({ ...e, date: day })))
+      return reply(weekInsights(monday, list, data.tasks, { ...DEFAULT_PROFILE, ...data.profile }))
+    },
+    // Предложения считает сервер: в локальном режиме их нет.
+    getSuggestions: () => reply([]),
+    acceptSuggestion: () => Promise.reject(new ApiError(404, 'Предложение не найдено')),
+    dismissSuggestion: () => reply(undefined),
   }
 }

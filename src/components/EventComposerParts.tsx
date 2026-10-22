@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { formatMinutes } from '../lib/dates'
 import { spring } from '../lib/motion'
@@ -47,6 +47,7 @@ export function ComposerStatus({
   conflicts,
   shift,
   onShift,
+  summary,
 }: {
   start: number
   end: number
@@ -55,11 +56,13 @@ export function ComposerStatus({
   conflicts: readonly string[]
   shift: number | null
   onShift: (start: number) => void
+  /** Своя строка вместо времени (многодневное событие): «21 октября 10:00 — 23 октября 18:00». */
+  summary?: string
 }) {
   return (
     <AnimatePresence initial={false} mode="popLayout">
-      <motion.div
-        key={allDay ? 'all-day' : conflicts.join() || 'free'}
+      <m.div
+        key={summary ?? (allDay ? 'all-day' : conflicts.join() || 'free')}
         className={`${styles.status} ${conflicts.length ? styles.warn : styles.ok}`}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -67,7 +70,9 @@ export function ComposerStatus({
         transition={spring}
       >
         <p role="status">
-          {allDay ? (
+          {summary ? (
+            summary
+          ) : allDay ? (
             'Весь день — время не занимает'
           ) : (
             <>
@@ -87,7 +92,7 @@ export function ComposerStatus({
             На {formatMinutes(shift)}
           </Pressable>
         )}
-      </motion.div>
+      </m.div>
     </AnimatePresence>
   )
 }

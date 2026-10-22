@@ -104,4 +104,16 @@ describe('уведомление из push', () => {
       ),
     ).toBe(false)
   })
+
+  it('предложение ассистента: «Да» и «Нет», у «обсудить» — только «Нет»', () => {
+    const task = parsePushMessage({ kind: 'suggest', title: 'x', suggestionId: 7, suggestionAction: 'task' })
+    expect(task.suggestionId).toBe(7)
+    expect(notificationActions(task).map((a) => a.action)).toEqual(['accept', 'dismiss'])
+    const chat = parsePushMessage({ kind: 'suggest', title: 'x', suggestionId: 8, suggestionAction: 'chat' })
+    expect(notificationActions(chat).map((a) => a.action)).toEqual(['dismiss'])
+    // Битый id — без кнопок, но уведомление показывается.
+    const broken = parsePushMessage({ kind: 'suggest', title: 'x', suggestionId: '7' })
+    expect(broken.suggestionId).toBeUndefined()
+    expect(notificationActions(broken)).toEqual([])
+  })
 })

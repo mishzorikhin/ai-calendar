@@ -98,10 +98,23 @@ type Store interface {
 	// UpdateUser меняет отображаемое имя текущего пользователя.
 	UpdateUser(ctx context.Context, name string) (model.User, error)
 	// CreateSession сохраняет токен (передаётся уже хэшированным).
-	CreateSession(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
+	// label — устройство («Chrome, Android»), видно в списке сессий.
+	CreateSession(ctx context.Context, userID int64, tokenHash, label string, expiresAt time.Time) error
 	// UserBySession — пользователь по хэшу токена; продлевает сессию, если та скоро истечёт.
 	UserBySession(ctx context.Context, tokenHash string) (model.User, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
+	// Sessions — действующие сессии текущего пользователя, последние активные первыми; ID — SessionIDLen
+	// первых знаков хэша.
+	Sessions(ctx context.Context) []model.Session
+	// DeleteSessionByID завершает сессию текущего пользователя по ID; ErrNotFound — нет такой.
+	DeleteSessionByID(ctx context.Context, id string) error
+	// DeleteOtherSessions завершает все сессии текущего пользователя, кроме keepHash.
+	DeleteOtherSessions(ctx context.Context, keepHash string) error
+	// SetPassword меняет хэш пароля текущего пользователя.
+	SetPassword(ctx context.Context, passHash string) error
+	// DeleteUser удаляет текущего пользователя и всё его: события, задачи, где он владелец (из чужих
+	// он просто выходит), чат, сессии, уведомления, подключения, push, память, людей, предложения.
+	DeleteUser(ctx context.Context) error
 
 	// Notifications — уведомления пользователя, новые первыми (до 100).
 	Notifications(ctx context.Context) []model.Notification
@@ -116,6 +129,24 @@ type Store interface {
 	// RepeatingEvents — повторяющиеся события пользователя, чья серия пересекает [from, to]:
 	// начинается не позже to и не закончилась до from.
 	RepeatingEvents(ctx context.Context, from, to string) []model.Event
+	// MultiDayEvents — многодневные события пользователя (EndDate), пересекающие [from, to]:
+	// начинаются не позже to и заканчиваются не раньше from. По дням их разворачивает API.
+	MultiDayEvents(ctx context.Context, from, to string) []model.Event
+	// SetAttendees заменяет приглашённых своего события (ответы оставшихся сохраняются, новые — pending).
+	// Возвращает список после замены; ErrNotFound — событие не своё.
+	SetAttendees(ctx context.Context, eventID string, users []model.User) ([]model.Attendee, error)
+	// Attendees — приглашённые на события ids, которые текущий пользователь создал или куда приглашён.
+	Attendees(ctx context.Context, ids []string) map[string][]model.Attendee
+	// InvitedEvents — чужие события, куда пригласили текущего пользователя (с его ответом в Invite.Status),
+	// пересекающие [from, to] с учётом повторов и многодневных; разворачивает их API.
+	InvitedEvents(ctx context.Context, from, to string) []model.Event
+	// InvitedEvent — одно такое событие; ErrNotFound — приглашения нет.
+	InvitedEvent(ctx context.Context, id string) (model.Event, error)
+	// SetRSVP — ответ текущего пользователя на приглашение.
+	SetRSVP(ctx context.Context, eventID string, status model.RSVP) error
+	// SearchEvents — свои события (записи, серия — одной), где query встречается в названии,
+	// месте или заметках без учёта регистра; не больше limit, новые записи первыми.
+	SearchEvents(ctx context.Context, query string, limit int) []model.Event
 	// SyncEvents приводит события источника source к списку events: совпавшие по
 	// ExternalID обновляются (id сохраняется), новые добавляются, остальные удаляются.
 	SyncEvents(ctx context.Context, source string, events []model.Event) (SyncStats, error)
@@ -153,6 +184,8 @@ type Store interface {
 	PushSubscriptions(ctx context.Context) []model.PushSubscription
 	// PushUserIDs — пользователи, у которых есть подписки (для планировщика напоминаний).
 	PushUserIDs(ctx context.Context) []int64
+	// UserIDs — все пользователи (для фоновых выводов из поведения).
+	UserIDs(ctx context.Context) []int64
 	// NotifySettings — настройки напоминаний текущего пользователя (по умолчанию — DefaultNotifySettings).
 	NotifySettings(ctx context.Context) (model.NotifySettings, error)
 	SetNotifySettings(ctx context.Context, ns model.NotifySettings) error
@@ -171,6 +204,33 @@ type Store interface {
 	// ServerKey — значение name из хранилища; если его ещё нет — сохраняет gen() и
 	// возвращает его (при гонке двух процессов оба получат одно значение).
 	ServerKey(ctx context.Context, name string, gen func() (string, error)) (string, error)
+
+	// Profile — профиль текущего пользователя (по умолчанию — DefaultProfile).
+	Profile(ctx context.Context) (model.Profile, error)
+	SetProfile(ctx context.Context, p model.Profile) error
+	// Memories — факты памяти текущего пользователя, новые первыми (с отклонёнными догадками).
+	Memories(ctx context.Context) []model.Memory
+	// AddMemory сохраняет факт текущего пользователя; ErrLimit — фактов уже MaxMemories.
+	AddMemory(ctx context.Context, m model.Memory) (model.Memory, error)
+	UpdateMemory(ctx context.Context, id int64, patch model.MemoryPatch) (model.Memory, error)
+	DeleteMemory(ctx context.Context, id int64) error
+	// DeleteMemories забывает все факты текущего пользователя.
+	DeleteMemories(ctx context.Context) error
+	// TouchMemories отмечает, что факты попали в запрос к модели (UsedAt).
+	TouchMemories(ctx context.Context, ids []int64, at time.Time) error
+	// People — карточки людей текущего пользователя по имени.
+	People(ctx context.Context) []model.Person
+	// SavePerson создаёт (ID 0) или заменяет карточку; ErrLimit — людей уже MaxPeople.
+	SavePerson(ctx context.Context, p model.Person) (model.Person, error)
+	DeletePerson(ctx context.Context, id int64) error
+
+	// AddSuggestion сохраняет предложение текущего пользователя; false — с таким Key уже было.
+	AddSuggestion(ctx context.Context, sg model.Suggestion) (model.Suggestion, bool, error)
+	// Suggestions — предложения текущего пользователя, созданные не раньше since, новые первыми.
+	Suggestions(ctx context.Context, since time.Time) []model.Suggestion
+	// AnswerSuggestion меняет статус ждущего ответа предложения; ErrNotFound — нет такого,
+	// ErrConflict — на него уже ответили.
+	AnswerSuggestion(ctx context.Context, id int64, status string) (model.Suggestion, error)
 }
 
 // ErrLimit — превышен предел записей.
@@ -208,6 +268,9 @@ func (u storedUser) public() model.User {
 type storedSession struct {
 	UserID    int64     `json:"userId"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	Label     string    `json:"label,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitzero"`
+	LastSeen  time.Time `json:"lastSeen,omitzero"`
 }
 
 type data struct {
@@ -226,10 +289,22 @@ type data struct {
 	Snoozes           []model.Snooze                 `json:"snoozes,omitempty"`
 	NextSnoozeID      int64                          `json:"nextSnoozeId,omitempty"`
 	// ServerKeys — ключи сервера, созданные им самим (закрытый ключ VAPID).
-	ServerKeys    map[string]string `json:"serverKeys,omitempty"`
-	NextID        int               `json:"nextId"`
-	NextUserID    int64             `json:"nextUserId"`
-	NextMessageID int               `json:"nextMessageId"`
+	ServerKeys map[string]string `json:"serverKeys,omitempty"`
+	// Персонализация: профили (по id пользователя), память ассистента и карточки людей.
+	Profiles     map[int64]model.Profile `json:"profiles,omitempty"`
+	Memories     []model.Memory          `json:"memories,omitempty"`
+	NextMemoryID int64                   `json:"nextMemoryId,omitempty"`
+	People       []model.Person          `json:"people,omitempty"`
+	NextPersonID int64                   `json:"nextPersonId,omitempty"`
+	// EventAttendees — приглашённые на события (по id события).
+	EventAttendees map[string][]storedAttendee `json:"eventAttendees,omitempty"`
+	// Suggestions — предложения ассистента (хранятся suggestionKeep, чтобы не повторяться).
+	Suggestions      []model.Suggestion `json:"suggestions,omitempty"`
+	NextSuggestionID int64              `json:"nextSuggestionId,omitempty"`
+
+	NextID        int   `json:"nextId"`
+	NextUserID    int64 `json:"nextUserId"`
+	NextMessageID int   `json:"nextMessageId"`
 }
 
 // fileStore — JSON-файл с атомарной записью (временный файл и rename).
@@ -435,6 +510,8 @@ func (s *fileStore) CreateEvent(ctx context.Context, e model.Event) (model.Event
 	e.ID = s.nextID("evt")
 	e.UserID = uid
 	e.CreatedAt = s.now()
+	// Участники, приглашение, отрезок дня и первый день серии — не поля записи: их собирают при чтении.
+	e.Attendees, e.Invite, e.Span, e.SeriesDate = nil, nil, nil, ""
 	s.d.Events = append(s.d.Events, e)
 	return e, s.save()
 }
@@ -480,6 +557,7 @@ func (s *fileStore) DeleteEvent(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	s.d.Events = slices.Delete(s.d.Events, i, i+1)
+	delete(s.d.EventAttendees, id)
 	return s.save()
 }
 
@@ -497,6 +575,7 @@ func (s *fileStore) Tasks(ctx context.Context) []model.Task {
 		}
 		t := t
 		t.Members = slices.Clone(t.Members)
+		t.Checks = slices.Clone(t.Checks)
 		s.decorateTask(&t, uid)
 		out = append(out, t)
 	}
@@ -516,6 +595,7 @@ func (s *fileStore) Task(ctx context.Context, id string) (model.Task, error) {
 	}
 	t := s.d.Tasks[i]
 	t.Members = slices.Clone(t.Members)
+	t.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&t, uid)
 	return t, nil
 }
@@ -529,9 +609,11 @@ func (s *fileStore) CreateTask(ctx context.Context, t model.Task) (model.Task, e
 	defer s.mu.Unlock()
 	t.ID = s.nextID("task")
 	t.OwnerID = uid
+	t.CreatedAt = s.now()
 	s.d.Tasks = append(s.d.Tasks, t)
 	out := t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }
@@ -550,6 +632,7 @@ func (s *fileStore) UpdateTask(ctx context.Context, id string, patch model.TaskP
 	s.d.Tasks[i].Apply(patch)
 	t := s.d.Tasks[i]
 	t.Members = slices.Clone(t.Members)
+	t.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&t, uid)
 	return t, s.save()
 }
@@ -597,6 +680,7 @@ func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID i
 	if slices.ContainsFunc(t.Members, func(m model.User) bool { return m.ID == memberID }) {
 		out := *t
 		out.Members = slices.Clone(t.Members)
+		out.Checks = slices.Clone(t.Checks)
 		s.decorateTask(&out, uid)
 		return out, nil // уже участник — не дублируем
 	}
@@ -607,6 +691,7 @@ func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID i
 	t.Members = append(t.Members, member)
 	out := *t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }
@@ -637,6 +722,7 @@ func (s *fileStore) RemoveTaskMember(ctx context.Context, taskID string, memberI
 	t.Members = slices.Delete(t.Members, j, j+1)
 	out := *t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }
@@ -787,7 +873,7 @@ func (s *fileStore) UpdateUser(ctx context.Context, name string) (model.User, er
 	return model.User{}, ErrNotFound
 }
 
-func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash, label string, expiresAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Заодно убираем истёкшие сессии: сами они пропадают, только если токен снова предъявят.
@@ -797,7 +883,7 @@ func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash str
 			delete(s.d.Sessions, h)
 		}
 	}
-	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt}
+	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt, Label: label, CreatedAt: now, LastSeen: now}
 	return s.save()
 }
 
@@ -814,9 +900,14 @@ func (s *fileStore) UserBySession(_ context.Context, tokenHash string) (model.Us
 		_ = s.save()
 		return model.User{}, ErrUnauthorized
 	}
-	// Скользящее продление: до конца меньше половины TTL — продлеваем заново.
-	if sess.ExpiresAt.Sub(now) < sessionRefresh {
-		sess.ExpiresAt = now.Add(SessionTTL)
+	// Скользящее продление: до конца меньше половины TTL — продлеваем заново. «Последний раз»
+	// пишем не чаще seenEvery, чтобы не перезаписывать файл на каждый запрос.
+	refresh := sess.ExpiresAt.Sub(now) < sessionRefresh
+	if refresh || now.Sub(sess.LastSeen) > seenEvery {
+		if refresh {
+			sess.ExpiresAt = now.Add(SessionTTL)
+		}
+		sess.LastSeen = now
 		s.d.Sessions[tokenHash] = sess
 		_ = s.save()
 	}
@@ -957,8 +1048,10 @@ func (s *fileStore) SyncEvents(ctx context.Context, source string, events []mode
 func mergeSynced(e *model.Event, in model.Event) bool {
 	changed := e.Date != in.Date || e.Title != in.Title || e.Subtitle != in.Subtitle ||
 		e.Start != in.Start || e.End != in.End || e.Badge != in.Badge ||
-		e.ETag != in.ETag || e.ReadOnly != in.ReadOnly || e.AllDay != in.AllDay
+		e.ETag != in.ETag || e.ReadOnly != in.ReadOnly || e.AllDay != in.AllDay ||
+		e.Notes != in.Notes || e.URL != in.URL
 	e.Date, e.Title, e.Subtitle = in.Date, in.Title, in.Subtitle
+	e.Notes, e.URL = in.Notes, in.URL
 	e.Start, e.End, e.Badge = in.Start, in.End, in.Badge
 	e.ETag, e.ReadOnly, e.AllDay = in.ETag, in.ReadOnly, in.AllDay
 	// Напоминания — настройка пользователя в приложении, синхронизация их не трогает.
@@ -1209,6 +1302,16 @@ func (s *fileStore) PushUserIDs(context.Context) []int64 {
 	return out
 }
 
+func (s *fileStore) UserIDs(context.Context) []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]int64, len(s.d.Users))
+	for i, u := range s.d.Users {
+		out[i] = u.ID
+	}
+	return out
+}
+
 func (s *fileStore) NotifySettings(ctx context.Context) (model.NotifySettings, error) {
 	uid, err := s.uid(ctx)
 	if err != nil {
@@ -1323,6 +1426,22 @@ func (s *fileStore) RepeatingEvents(ctx context.Context, from, to string) []mode
 	var out []model.Event
 	for _, e := range s.d.Events {
 		if e.UserID == uid && e.Repeat != model.RepeatNone && e.Date <= to && (e.RepeatUntil == "" || e.RepeatUntil >= from) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (s *fileStore) MultiDayEvents(ctx context.Context, from, to string) []model.Event {
+	uid, err := s.uid(ctx)
+	if err != nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Event
+	for _, e := range s.d.Events {
+		if e.UserID == uid && e.EndDate != "" && e.Date <= to && e.EndDate >= from {
 			out = append(out, e)
 		}
 	}

@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { useApi } from '../api/provider'
 import { useUpdateTask } from '../api/queries'
@@ -53,7 +53,7 @@ export function PushToast() {
   return (
     <AnimatePresence>
       {msg && (
-        <motion.div
+        <m.div
           key={shown}
           className={styles.push}
           role="status"
@@ -86,7 +86,7 @@ export function PushToast() {
           <Pressable className={styles.pushClose} onClick={() => setMsg(null)} aria-label="Скрыть уведомление">
             <CloseIcon size={16} />
           </Pressable>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

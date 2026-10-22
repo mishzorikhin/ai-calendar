@@ -23,13 +23,16 @@ type googleTime struct {
 }
 
 type googleEvent struct {
-	ID       string     `json:"id,omitempty"`
-	ETag     string     `json:"etag,omitempty"`
-	Status   string     `json:"status,omitempty"`
-	Summary  string     `json:"summary"`
-	Location string     `json:"location"`
-	Start    googleTime `json:"start"`
-	End      googleTime `json:"end"`
+	ID       string `json:"id,omitempty"`
+	ETag     string `json:"etag,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Summary  string `json:"summary"`
+	Location string `json:"location"`
+	// Description и HangoutLink только читаем: обратно описание не пишем (см. ItemOf).
+	Description string     `json:"description,omitempty"`
+	HangoutLink string     `json:"hangoutLink,omitempty"`
+	Start       googleTime `json:"start"`
+	End         googleTime `json:"end"`
 }
 
 func (g *Google) events() string {
@@ -77,7 +80,8 @@ func (g *Google) Fetch(ctx context.Context, from, to time.Time) ([]Occurrence, e
 }
 
 func googleOccurrence(it googleEvent) (Occurrence, bool) {
-	o := Occurrence{UID: it.ID, ExternalID: it.ID, ETag: it.ETag, Title: it.Summary, Location: it.Location}
+	o := Occurrence{UID: it.ID, ExternalID: it.ID, ETag: it.ETag, Title: it.Summary, Location: it.Location,
+		Notes: it.Description, URL: it.HangoutLink}
 	if o.Title == "" {
 		o.Title = "Без названия"
 	}

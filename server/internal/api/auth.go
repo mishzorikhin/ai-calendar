@@ -168,7 +168,7 @@ func (s *server) issueSession(r *http.Request, u model.User) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.CreateSession(r.Context(), u.ID, tokenHash(token), time.Now().Add(store.SessionTTL)); err != nil {
+	if err := s.store.CreateSession(r.Context(), u.ID, tokenHash(token), deviceLabel(r.UserAgent()), time.Now().Add(store.SessionTTL)); err != nil {
 		return nil, err
 	}
 	return map[string]any{"user": publicUser(u), "token": token}, nil

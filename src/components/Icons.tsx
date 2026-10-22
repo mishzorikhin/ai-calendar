@@ -268,6 +268,115 @@ export const LockIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const SlidersIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 7.5h9M17.5 7.5h2M4.5 16.5h2M10.5 16.5h9" />
+    <circle cx="15.5" cy="7.5" r="2" />
+    <circle cx="8.5" cy="16.5" r="2" />
+  </Svg>
+)
+
+export const SearchIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m16 16 4 4" />
+  </Svg>
+)
+
+export const BrainIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 4.5a3 3 0 0 0-3 3v.2A3 3 0 0 0 4.5 13a3 3 0 0 0 1.8 4.6A3 3 0 0 0 12 18.5v-11a3 3 0 0 0-3-3ZM15 4.5a3 3 0 0 1 3 3v.2a3 3 0 0 1 1.5 5.3 3 3 0 0 1-1.8 4.6A3 3 0 0 1 12 18.5" />
+    <path d="M12 7.5a3 3 0 0 1 3-3" />
+  </Svg>
+)
+
+export const PersonIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8.5" r="3.5" />
+    <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" />
+  </Svg>
+)
+
+export const ChartIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 19.5h14M7.5 16v-5M12 16V7M16.5 16v-3" />
+  </Svg>
+)
+
+export const FlameIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 20.5a6 6 0 0 0 6-6c0-3.5-2.5-5.5-3.5-8.5-1.5 2-2 3.5-2.5 5-1-1-1.5-2-1.5-3.5C8 9.5 6 12 6 14.5a6 6 0 0 0 6 6Z" />
+  </Svg>
+)
+
+export const MapIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 20.5s6-5.4 6-10.5a6 6 0 0 0-12 0c0 5.1 6 10.5 6 10.5Z" />
+    <circle cx="12" cy="10" r="2.2" />
+  </Svg>
+)
+
+export const VideoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="6.5" width="12" height="11" rx="2.5" />
+    <path d="m15.5 10.5 5-3v9l-5-3" />
+  </Svg>
+)
+
+export const NoteIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.5 4.5h11a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 18V6a1.5 1.5 0 0 1 1.5-1.5ZM8.5 9h7M8.5 12.5h7M8.5 16h4" />
+  </Svg>
+)
+
+export const CarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 16.5v-4l1.8-4.6a1.5 1.5 0 0 1 1.4-.9h7.6a1.5 1.5 0 0 1 1.4.9L19 12.5v4M5 16.5h14M5 16.5V18M19 16.5V18M5 12.5h14" />
+    <circle cx="8" cy="14.5" r=".6" fill="currentColor" />
+    <circle cx="16" cy="14.5" r=".6" fill="currentColor" />
+  </Svg>
+)
+
+export const ImageIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="5" width="16" height="14" rx="3" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="m4.5 17 4.5-4 3.5 3 2.5-2 4.5 3.5" />
+  </Svg>
+)
+
+export const UndoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 7.5 5 11.5l4 4M5 11.5h9a5 5 0 0 1 0 10h-2" />
+  </Svg>
+)
+
+export const DownloadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4.5v11M7.5 11l4.5 4.5 4.5-4.5M5 19.5h14" />
+  </Svg>
+)
+
+export const KeyIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="8" cy="15" r="3.5" />
+    <path d="m10.5 12.5 8-8M15.5 7.5l2 2M17.5 5.5l2 2" />
+  </Svg>
+)
+
+export const DeviceIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="3.5" width="10" height="17" rx="2.5" />
+    <path d="M11 17.5h2" />
+  </Svg>
+)
+
+export const SuggestIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9.5 17.5h5M10.5 20.5h3M12 3.5a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8v1.3h5v-1.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3.5Z" />
+  </Svg>
+)
+
 export const BADGE_ICON = {
   sleep: MoonIcon,
   routine: SparkIcon,

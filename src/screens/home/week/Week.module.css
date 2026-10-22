@@ -1,0 +1,176 @@
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.head h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.nav {
+  display: flex;
+  gap: 6px;
+}
+
+.error {
+  margin: 16px 4px 0;
+  font-size: 13px;
+  color: var(--danger-ink);
+}
+
+.hero {
+  margin: 22px 4px 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.hero b {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+
+.compare {
+  margin: 2px 4px 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.chart {
+  margin-top: 18px;
+  height: 180px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.col {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+.value {
+  height: 16px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar {
+  width: 70%;
+  max-width: 30px;
+  min-height: 0;
+  border-radius: 4px 4px 0 0;
+  background: var(--ink-soft);
+}
+
+.barTop {
+  background: var(--ink);
+}
+
+.day {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ink-2);
+  border-radius: 8px;
+}
+
+.today {
+  color: var(--ink);
+  font-weight: 650;
+  background: var(--surface-2);
+}
+
+.tiles {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tile {
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tile b {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.tile span {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.label {
+  margin: 20px 4px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.types {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.type {
+  display: grid;
+  grid-template-columns: 72px 1fr 84px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.typeTrack {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.typeBar {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--ink);
+}
+
+.typeValue {
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-2);
+}

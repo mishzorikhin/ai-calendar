@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { CardsIcon, ListIcon } from '../../components/Icons'
 import { Pressable } from '../../components/ui'
 import { spring } from '../../lib/motion'
@@ -26,7 +26,7 @@ export function ModeToggle({ mode, onChange }: { mode: DayMode; onChange: (m: Da
           onClick={() => onChange(id)}
           scale={0.9}
         >
-          {mode === id && <motion.i layoutId="mode-knob" className={styles.knob} transition={spring} />}
+          {mode === id && <m.i layoutId="mode-knob" className={styles.knob} transition={spring} />}
           <Icon size={17} />
           <span className={styles.toggleLabel}>{short}</span>
         </Pressable>

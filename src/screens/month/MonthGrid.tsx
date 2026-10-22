@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
+import { AnimatePresence, m, type PanInfo } from 'framer-motion'
 import { useMonthDots } from '../../api/queries'
 import { MONTHS_GENITIVE, WEEKDAYS_SHORT, isSameDay, monthGrid } from '../../lib/dates'
 import { BADGE_COLOR } from '../../lib/badges'
@@ -45,7 +45,7 @@ export function MonthGrid({
 
       <div className={styles.gridViewport}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
+          <m.div
             key={`${view.year}-${view.month}`}
             className={styles.grid}
             initial={{ opacity: 0, x: view.dir * 80 }}
@@ -64,7 +64,7 @@ export function MonthGrid({
               const isPicked = picked !== null && isSameDay(d, picked)
               const badges = dots?.[d.getDate()] ?? []
               return (
-                <motion.button
+                <m.button
                   key={d.getDate()}
                   type="button"
                   className={`${styles.day} ${d < today ? styles.dayPast : ''} ${isToday ? styles.today : ''}`}
@@ -79,7 +79,7 @@ export function MonthGrid({
                   aria-current={isToday ? 'date' : undefined}
                 >
                   {isPicked && !isToday && (
-                    <motion.i layoutId="month-picked" className={styles.picked} transition={spring} />
+                    <m.i layoutId="month-picked" className={styles.picked} transition={spring} />
                   )}
                   <span className={`${styles.num} tnum`}>{d.getDate()}</span>
                   {badges.length > 0 && (
@@ -90,10 +90,10 @@ export function MonthGrid({
                       <span className={`${styles.dotCount} tnum`}>{badges.length}</span>
                     </span>
                   )}
-                </motion.button>
+                </m.button>
               )
             })}
-          </motion.div>
+          </m.div>
         </AnimatePresence>
       </div>
     </>

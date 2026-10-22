@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import type { CalendarEvent } from '../../domain/types'
 import { BADGE_COLOR } from '../../lib/badges'
 import { spring } from '../../lib/motion'
@@ -9,7 +9,7 @@ export function AllDayStrip({ events, onOpen }: { events: CalendarEvent[]; onOpe
   return (
     <AnimatePresence initial={false}>
       {events.length > 0 && (
-        <motion.ul
+        <m.ul
           key="all-day"
           className={`${styles.allDay} scroll-x`}
           aria-label="Весь день"
@@ -31,7 +31,7 @@ export function AllDayStrip({ events, onOpen }: { events: CalendarEvent[]; onOpe
               </button>
             </li>
           ))}
-        </motion.ul>
+        </m.ul>
       )}
     </AnimatePresence>
   )

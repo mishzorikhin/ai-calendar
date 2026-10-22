@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
@@ -51,11 +51,11 @@ export function Month() {
         <TapToSay />
       </BarSlot>
 
-      <motion.header variants={itemVariants} className={styles.header}>
+      <m.header variants={itemVariants} className={styles.header}>
         <div className={styles.titles}>
           <div className={styles.yearRow}>
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.h1
+              <m.h1
                 key={view.year}
                 className={`display ${styles.year}`}
                 initial={{ opacity: 0, y: 14 }}
@@ -64,7 +64,7 @@ export function Month() {
                 transition={spring}
               >
                 {view.year}
-              </motion.h1>
+              </m.h1>
             </AnimatePresence>
             <CircleButton
               tone="white"
@@ -73,13 +73,13 @@ export function Month() {
               aria-label="Выбрать месяц"
               aria-expanded={pickerOpen}
             >
-              <motion.span animate={{ rotate: pickerOpen ? 180 : 0 }} transition={spring} className={styles.flex}>
+              <m.span animate={{ rotate: pickerOpen ? 180 : 0 }} transition={spring} className={styles.flex}>
                 <ChevronDownIcon size={16} strokeWidth={2.2} />
-              </motion.span>
+              </m.span>
             </CircleButton>
           </div>
           <AnimatePresence mode="popLayout" initial={false}>
-            <motion.h2
+            <m.h2
               key={view.month}
               className={`display ${styles.month}`}
               initial={{ opacity: 0, x: view.dir * 30 }}
@@ -89,7 +89,7 @@ export function Month() {
               aria-live="polite"
             >
               {MONTHS[view.month]}
-            </motion.h2>
+            </m.h2>
           </AnimatePresence>
         </div>
         <div className={styles.headerSide}>
@@ -105,7 +105,7 @@ export function Month() {
             </CircleButton>
           </div>
         </div>
-      </motion.header>
+      </m.header>
 
       <AnimatePresence initial={false}>
         {pickerOpen && (
@@ -121,13 +121,13 @@ export function Month() {
         )}
       </AnimatePresence>
 
-      <motion.div variants={itemVariants} className={styles.calendar}>
+      <m.div variants={itemVariants} className={styles.calendar}>
         <MonthGrid view={view} today={today} picked={picked} onPick={openDay} onSwipe={shift} />
-      </motion.div>
+      </m.div>
 
-      <motion.div variants={itemVariants}>
+      <m.div variants={itemVariants}>
         <TodayCard today={today} onOpen={() => openDay(today)} />
-      </motion.div>
+      </m.div>
     </Sheet>
   )
 }

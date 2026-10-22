@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion'
+import { m, useReducedMotion } from 'framer-motion'
 import { useTasks, useUpdateTask } from '../../api/queries'
 import { CheckIcon } from '../../components/Icons'
 import { Pressable } from '../../components/ui'
@@ -16,9 +16,9 @@ export function TasksGrid({ onEdit }: { onEdit: (task: Task) => void }) {
   return (
     <div className={styles.grid}>
       {goals.map((goal) => (
-        <motion.div layout transition={spring} variants={itemVariants} key={goal.id}>
+        <m.div layout transition={spring} variants={itemVariants} key={goal.id}>
           <GoalCard task={goal} onEdit={onEdit} />
-        </motion.div>
+        </m.div>
       ))}
     </div>
   )
@@ -39,12 +39,12 @@ function GoalCard({ task, onEdit }: { task: Task; onEdit: (task: Task) => void }
   const done = task.done
   return (
     <div className={`${styles.trip} ${done ? styles.tripDone : ''}`}>
-      <motion.i
+      <m.i
         className={styles.blobA}
         animate={still ? undefined : { y: [0, -6, 0], rotate: [0, 4, 0] }}
         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <motion.i
+      <m.i
         className={styles.blobB}
         animate={still ? undefined : { y: [0, 5, 0], x: [0, -4, 0] }}
         transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
@@ -65,9 +65,9 @@ function GoalCard({ task, onEdit }: { task: Task; onEdit: (task: Task) => void }
         aria-label={done ? 'Снять отметку' : 'Отметить выполненной'}
         aria-pressed={done}
       >
-        <motion.span animate={{ scale: done ? [0.6, 1.2, 1] : 1 }} transition={bouncy}>
+        <m.span animate={{ scale: done ? [0.6, 1.2, 1] : 1 }} transition={bouncy}>
           <CheckIcon size={18} strokeWidth={2.2} />
-        </motion.span>
+        </m.span>
       </Pressable>
     </div>
   )

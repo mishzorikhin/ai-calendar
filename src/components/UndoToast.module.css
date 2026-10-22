@@ -1,0 +1,41 @@
+.wrap {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--bar-h) + 10px);
+  z-index: var(--z-sheet);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 4px 4px 4px 18px;
+  border-radius: 20px;
+  background: var(--surface-dark);
+  color: var(--on-dark);
+  font-size: 14.5px;
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+}
+
+.toast > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.undo {
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: var(--on-dark-fill);
+  font-size: 14px;
+  font-weight: 600;
+}

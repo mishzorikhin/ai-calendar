@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { useDayEvents } from '../../api/queries'
 import { BarSlot } from '../../app/bar'
@@ -7,6 +7,7 @@ import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { CloseIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
+import { useUndoable } from '../../components/useUndoable'
 import { CircleButton, Pill } from '../../components/ui'
 import { DAY_PARTS, partOf } from '../../domain/calendar'
 import type { DayPartId } from '../../domain/types'
@@ -24,6 +25,7 @@ export function Day() {
   const { back } = useNavigation()
   const { selectedDate, setSelectedDate } = useCalendar()
   const composer = useComposer()
+  const { moveEvent } = useUndoable()
   const now = useNow()
   const [mode, setMode] = useState<DayMode>('timeline')
   // Раскрытая часть суток запоминается для конкретного дня; по умолчанию —
@@ -41,9 +43,9 @@ export function Day() {
         <ModeToggle mode={mode} onChange={setMode} />
       </BarSlot>
 
-      <motion.header variants={itemVariants} className={styles.header}>
+      <m.header variants={itemVariants} className={styles.header}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
+          <m.div
             key={key}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -55,12 +57,12 @@ export function Day() {
             <h2 className={`display ${styles.date}`}>
               {selectedDate.getDate()} {MONTHS_GENITIVE[selectedDate.getMonth()]}
             </h2>
-          </motion.div>
+          </m.div>
         </AnimatePresence>
         <div className={styles.headerActions}>
           <AnimatePresence initial={false}>
             {!isToday && (
-              <motion.span
+              <m.span
                 key="today"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -70,21 +72,21 @@ export function Day() {
                 <Pill small tone="white" onClick={() => setSelectedDate(now)}>
                   Сегодня
                 </Pill>
-              </motion.span>
+              </m.span>
             )}
           </AnimatePresence>
           <CircleButton tone="white" size={44} onClick={back} aria-label="Закрыть">
             <CloseIcon size={20} />
           </CircleButton>
         </div>
-      </motion.header>
+      </m.header>
 
       <AllDayStrip events={allDay} onOpen={(e) => composer.open({ event: { ...e, date: selectedDate } })} />
 
       <div className={styles.body}>
         <AnimatePresence mode="popLayout" initial={false}>
           {mode === 'timeline' ? (
-            <motion.div
+            <m.div
               key="timeline"
               id="day-view"
               className={styles.parts}
@@ -100,16 +102,17 @@ export function Day() {
                   index={i}
                   expanded={open === part.id}
                   onOpen={() => setOpened({ day: key, part: part.id })}
-                  events={events.filter((e) => e.start >= part.from && e.start < part.to)}
+                  events={events.filter((e) => partOf(e.start) === part.id)}
                   dateKey={key}
                   nowMins={isToday ? minutesOf(now) : null}
                   onCreate={(start) => composer.open({ date: selectedDate, start })}
                   onEvent={(e) => composer.open({ event: { ...e, date: selectedDate } })}
+                  onMove={(e, next) => moveEvent({ ...e, date: selectedDate }, next)}
                 />
               ))}
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div
+            <m.div
               key="agenda"
               id="day-view"
               className={`${styles.agenda} scroll-y`}
@@ -119,15 +122,15 @@ export function Day() {
               transition={spring}
             >
               <Agenda events={events} onEvent={(e) => composer.open({ event: { ...e, date: selectedDate } })} />
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
 
-      <motion.div variants={itemVariants}>
+      <m.div variants={itemVariants}>
         {/* Ключ по неделе: выбор дня в другой неделе (например, «Сегодня») переносит ленту на неё. */}
         <WeekStrip key={dayKey(startOfWeek(selectedDate))} selected={selectedDate} onSelect={setSelectedDate} />
-      </motion.div>
+      </m.div>
     </Sheet>
   )
 }

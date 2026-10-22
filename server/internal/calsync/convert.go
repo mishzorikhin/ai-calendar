@@ -2,6 +2,7 @@ package calsync
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,6 +27,9 @@ type Item struct {
 	End      time.Time
 	// AllDay — на весь день: в iCalendar пишется датой (VALUE=DATE), а не временем.
 	AllDay bool
+	// Notes и URL — заметки и ссылка события приложения (DESCRIPTION, URL).
+	Notes string
+	URL   string
 }
 
 // Ref — ссылка на событие во внешнем календаре и его версия.
@@ -35,19 +39,73 @@ type Ref struct {
 }
 
 // ItemOf переводит событие приложения (дата + минуты в поясе loc) во время.
+// У многодневного события конец — в его последний день (EndDate).
 func ItemOf(e model.Event, loc *time.Location) (Item, bool) {
 	d, err := time.ParseInLocation(time.DateOnly, e.Date, loc)
 	if err != nil {
 		return Item{}, false
 	}
+	last := d
+	if e.EndDate != "" {
+		if last, err = time.ParseInLocation(time.DateOnly, e.EndDate, loc); err != nil {
+			return Item{}, false
+		}
+	}
 	y, m, day := d.Date()
-	return Item{
+	ly, lm, lday := last.Date()
+	it := Item{
 		Title:    e.Title,
 		Location: e.Subtitle,
 		Start:    time.Date(y, m, day, 0, e.Start, 0, 0, loc),
-		End:      time.Date(y, m, day, 0, e.End, 0, 0, loc),
+		End:      time.Date(ly, lm, lday, 0, e.End, 0, 0, loc),
 		AllDay:   e.AllDay,
-	}, true
+	}
+	// Заметки и ссылку пишем только у своих событий: у события подключённого календаря они пришли
+	// оттуда (часто урезанные), и запись обратно испортила бы исходное описание.
+	if e.Source == "" {
+		it.Notes, it.URL = e.Notes, e.URL
+	}
+	return it, true
+}
+
+// maxNotes и maxURL — сколько описания и ссылки берём из внешнего события.
+const (
+	maxNotes = 2000
+	maxURL   = 500
+)
+
+// meetingHosts — сервисы видеозвонков: ссылку на них ищем в описании и месте, если URL нет.
+var meetingHosts = []string{"meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com", "telemost.yandex.ru",
+	"telemost.360.yandex.ru", "jazz.sber.ru", "salutejazz.ru", "meet.jit.si", "webex.com", "whereby.com", "ktalk.ru"}
+
+var linkRe = regexp.MustCompile(`https?://[^\s<>"']+`)
+
+// eventLink — ссылка события: своя (URL) или первая ссылка на созвон из описания и места.
+func eventLink(url string, texts ...string) string {
+	if valid := strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://"); valid && len(url) <= maxURL {
+		return url
+	}
+	for _, t := range texts {
+		for _, l := range linkRe.FindAllString(t, -1) {
+			l = strings.TrimRight(l, ".,);")
+			for _, h := range meetingHosts {
+				if strings.Contains(l, h) && len(l) <= maxURL {
+					return l
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// clipNotes — описание без лишних пробелов по краям, с переводами строк, не длиннее n символов.
+func clipNotes(s string, n int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	return strings.TrimSpace(string(r[:n-1])) + "…"
 }
 
 // ToEvents переводит вхождение в события дней пользователя (пояс loc) в окне
@@ -57,6 +115,8 @@ func ToEvents(o Occurrence, loc *time.Location, from, to string) []model.Event {
 	base := model.Event{
 		Title:      clip(o.Title, maxTitle),
 		Subtitle:   clip(o.Location, maxSubtitle),
+		Notes:      clipNotes(o.Notes, maxNotes),
+		URL:        eventLink(o.URL, o.Notes, o.Location),
 		Badge:      model.BadgeRoutine,
 		ExternalID: o.ExternalID,
 		ETag:       o.ETag,
@@ -171,10 +231,22 @@ func applyItem(ev *Component, it Item, now time.Time) {
 	if it.AllDay {
 		// Дата без времени и пояса: день один и тот же у всех, кто подписан на ленту.
 		ev.Set(Prop{Name: "DTSTART", Params: map[string]string{"VALUE": "DATE"}, Value: it.Start.Format("20060102")})
-		ev.Set(Prop{Name: "DTEND", Params: map[string]string{"VALUE": "DATE"}, Value: it.Start.AddDate(0, 0, 1).Format("20060102")})
+		// Конец — следующий день после последнего (DTEND у дат не включается).
+		end := it.End
+		if !end.After(it.Start) {
+			end = it.Start.AddDate(0, 0, 1)
+		}
+		ev.Set(Prop{Name: "DTEND", Params: map[string]string{"VALUE": "DATE"}, Value: end.Format("20060102")})
 	} else {
 		ev.Set(Prop{Name: "DTSTART", Value: it.Start.UTC().Format(icalUTC)})
 		ev.Set(Prop{Name: "DTEND", Value: it.End.UTC().Format(icalUTC)})
+	}
+	// Заметки и ссылку только добавляем: у события чужого календаря своё описание, его не стираем.
+	if it.Notes != "" {
+		ev.Set(Prop{Name: "DESCRIPTION", Value: EscapeText(it.Notes)})
+	}
+	if it.URL != "" {
+		ev.Set(Prop{Name: "URL", Value: it.URL})
 	}
 	ev.Set(Prop{Name: "DTSTAMP", Value: now.UTC().Format(icalUTC)})
 	ev.Set(Prop{Name: "LAST-MODIFIED", Value: now.UTC().Format(icalUTC)})

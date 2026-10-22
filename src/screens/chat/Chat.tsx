@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
+import { useApi } from '../../api/provider'
+import { IMAGE_MARK, useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
@@ -27,12 +28,26 @@ const TOOL_LABELS: Record<string, string> = {
   create_task: 'Добавляю задачу',
   update_task: 'Обновляю задачу',
   delete_task: 'Удаляю задачу',
+  create_reminder: 'Ставлю напоминание',
+  list_reminders: 'Смотрю напоминания',
+  update_profile: 'Обновляю профиль',
+  remember: 'Запоминаю',
+  forget: 'Забываю',
+  list_memories: 'Вспоминаю',
+  list_people: 'Смотрю людей',
+  save_person: 'Запоминаю человека',
+  forget_person: 'Забываю человека',
+  respond_invitation: 'Отвечаю на приглашение',
+  plan_tasks: 'Раскладываю задачи',
+  shift_events: 'Двигаю события',
+  clear_day: 'Освобождаю день',
 }
 
 export function Chat() {
   const { prompt, setPrompt, draft, setDraft } = useAssistant()
   const messages = useMessages()
   const { stream, busy, send, failed, dismissFailed } = useSendChat()
+  const api = useApi()
   const list = useRef<HTMLDivElement>(null)
 
   // Черновик (например, запрос, который нужно поправить) забираем в поле один раз.
@@ -53,9 +68,9 @@ export function Chat() {
   }, [messages.length, stream?.text, stream?.tools.length, failed.length])
 
   /** Своё сообщение всегда показываем: прокрутка возвращается вниз. */
-  const sendAndFollow = (text: string) => {
+  const sendAndFollow = (text: string, image?: string) => {
     stick.current = true
-    void send(text)
+    void send(text, image)
   }
 
   // Запрос от голосового ввода или «поручить ассистенту» — отправляем сразу.
@@ -74,9 +89,9 @@ export function Chat() {
       <TasksPill />
       <DayPreview />
 
-      <motion.h1 variants={itemVariants} className={styles.title}>
+      <m.h1 variants={itemVariants} className={styles.title}>
         Сегодня
-      </motion.h1>
+      </m.h1>
 
       <div
         ref={list}
@@ -85,31 +100,37 @@ export function Chat() {
         aria-label="Диалог с ассистентом"
         onScroll={onScroll}
       >
-        {messages.map((m, i) => (
-          <motion.p
-            key={m.id}
-            className={`${styles.bubble} ${m.role === 'user' ? styles.bubbleUser : ''}`}
+        {messages.map((msg, i) => (
+          <m.p
+            key={msg.id}
+            className={`${styles.bubble} ${msg.role === 'user' ? styles.bubbleUser : ''}`}
             initial={{ opacity: 0, y: 12, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...spring, delay: i === messages.length - 1 ? 0.25 : 0 }}
-            style={{ originX: m.role === 'user' ? 1 : 0, originY: 1 }}
+            style={{ originX: msg.role === 'user' ? 1 : 0, originY: 1 }}
           >
-            {m.text}
-          </motion.p>
+            {msg.text}
+          </m.p>
         ))}
         {stream && <StreamReply stream={stream} />}
-        {failed.map((m) => (
+        {failed.map((msg) => (
           <FailedBubble
-            key={m.id}
-            message={m}
+            key={msg.id}
+            message={msg}
             busy={busy}
-            onRetry={() => sendAndFollow(m.text)}
-            onDismiss={() => dismissFailed(m.id)}
+            onRetry={() => sendAndFollow(msg.text, msg.image)}
+            onDismiss={() => dismissFailed(msg.id)}
           />
         ))}
       </div>
 
-      <ChatComposer initialText={initialText} focusOnMount={Boolean(initialText)} busy={busy} onSend={sendAndFollow} />
+      <ChatComposer
+        initialText={initialText}
+        focusOnMount={Boolean(initialText)}
+        busy={busy}
+        canAttach={api.mode === 'server'}
+        onSend={sendAndFollow}
+      />
     </div>
   )
 }
@@ -123,7 +144,7 @@ function StreamReply({ stream }: { stream: ChatStream }) {
     go('day')
   }
   return (
-    <motion.div
+    <m.div
       className={styles.stream}
       initial={{ opacity: 0, y: 12, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -163,7 +184,7 @@ function StreamReply({ stream }: { stream: ChatStream }) {
           <Dots />
         )}
       </p>
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -185,7 +206,7 @@ function FailedBubble({
   onDismiss: () => void
 }) {
   return (
-    <motion.div
+    <m.div
       className={`${styles.failed} ${message.delivered ? styles.failedReply : ''}`}
       initial={{ opacity: 0, y: 12, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -194,7 +215,9 @@ function FailedBubble({
       role="status"
     >
       {!message.delivered && (
-        <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>{message.text}</p>
+        <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>
+          {message.image ? `${message.text}\n${IMAGE_MARK}`.trim() : message.text}
+        </p>
       )}
       <p className={styles.failedMeta}>
         {message.delivered ? message.error : `Не отправлено — ${message.error}`}
@@ -205,6 +228,6 @@ function FailedBubble({
           Убрать
         </button>
       </p>
-    </motion.div>
+    </m.div>
   )
 }

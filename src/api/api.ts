@@ -10,14 +10,27 @@ import type {
   Integration,
   IntegrationPatch,
   IntegrationsInfo,
+  Invite,
+  Memory,
+  MemoryKind,
+  MemoryPatch,
   MonthDots,
   NewEvent,
   NewIntegration,
   NewTask,
   NotifySettings,
+  Person,
+  PersonInput,
+  AuthSession,
+  WeekInsights,
+  Suggestion,
+  Profile,
+  ProfilePatch,
   PushDevice,
   PushInfo,
   PushSubscriptionData,
+  Rsvp,
+  SearchResult,
   Task,
   TaskPatch,
   User,
@@ -50,8 +63,12 @@ export interface CalendarApi {
   createEvent(input: NewEvent): Promise<DatedEvent>
   updateEvent(id: string, patch: EventPatch): Promise<DatedEvent>
   deleteEvent(id: string): Promise<void>
+  /** Ответ на приглашение на чужую встречу. */
+  rsvpEvent(id: string, status: Rsvp): Promise<Invite>
   /** Месяц с 0, как в Date. */
   getMonthDots(year: number, month: number): Promise<MonthDots>
+  /** Поиск по своим событиям (название, место, заметки) и задачам; запрос от 2 символов. */
+  search(query: string): Promise<SearchResult>
   /** Задачи и цели в порядке создания. */
   getTasks(): Promise<Task[]>
   createTask(input: NewTask): Promise<Task>
@@ -62,7 +79,8 @@ export interface CalendarApi {
    * Сообщение ассистенту: ответ приходит потоком событий в onEvent. `signal` прерывает чтение
    * (ушли из чата) — сервер всё равно допишет ответ и сохранит его в истории.
    */
-  sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>
+  /** image — картинка к реплике (data URL JPEG, до 1,5 МБ); в истории от неё остаётся пометка «📎 фото». */
+  sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal, image?: string): Promise<void>
 
   /** Профиль текущего пользователя. */
   me(): Promise<User>
@@ -120,6 +138,43 @@ export interface CalendarApi {
   getAlarms(): Promise<Alarm[]>
   createAlarm(input: { text: string; at: Date }): Promise<Alarm>
   deleteAlarm(id: number): Promise<void>
+
+  /** Профиль: ритм дня, рабочее время, «святые» блоки, манера общения ассистента. */
+  getProfile(): Promise<Profile>
+  updateProfile(patch: ProfilePatch): Promise<Profile>
+  /** Память ассистента: факты из разговоров и догадки (новые первыми, без отклонённых). */
+  getMemories(): Promise<Memory[]>
+  createMemory(input: { kind: MemoryKind; text: string; date?: string }): Promise<Memory>
+  updateMemory(id: number, patch: MemoryPatch): Promise<Memory>
+  deleteMemory(id: number): Promise<void>
+  /** Забыть всё. */
+  deleteAllMemories(): Promise<void>
+  /** Карточки людей по имени. */
+  getPeople(): Promise<Person[]>
+  createPerson(input: PersonInput): Promise<Person>
+  /** Заменить карточку целиком. */
+  updatePerson(id: number, input: PersonInput): Promise<Person>
+  deletePerson(id: number): Promise<void>
+  /**
+   * Предложения ассистента, ждущие ответа. «Да» выполняет действие на сервере (создаёт событие
+   * или задачу; у chat — ничего, запрос отправляет клиент), «Нет» с mute выключает такой вид.
+   * В локальном режиме предложений нет — их считает сервер.
+   */
+  /** Аккаунт (только сервер): устройства, пароль, выгрузка и удаление. */
+  getSessions(): Promise<AuthSession[]>
+  deleteSession(id: string): Promise<void>
+  logoutOthers(): Promise<void>
+  /** Остальные устройства выходят. */
+  changePassword(current: string, next: string): Promise<void>
+  /** Все свои данные одним JSON (текст файла). */
+  exportData(): Promise<string>
+  /** Удалить аккаунт со всеми данными; сессия этого устройства сбрасывается. */
+  deleteAccount(password: string): Promise<void>
+  /** Обзор недели, в которую входит start. */
+  getWeekInsights(start: Date): Promise<WeekInsights>
+  getSuggestions(): Promise<Suggestion[]>
+  acceptSuggestion(id: number): Promise<Suggestion>
+  dismissSuggestion(id: number, mute?: boolean): Promise<void>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */

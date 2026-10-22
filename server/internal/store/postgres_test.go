@@ -137,7 +137,7 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// Сессии: создание, продление, истечение.
-	if err := s.CreateSession(ctx, u.ID, "tok", time.Now().Add(SessionTTL)); err != nil {
+	if err := s.CreateSession(ctx, u.ID, "tok", "", time.Now().Add(SessionTTL)); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.UserBySession(ctx, "tok"); err != nil || got.Username != "alice" {
@@ -200,7 +200,7 @@ func mustWipe(ctx context.Context, t *testing.T, s Store) {
 	pg := s.(*pgStore)
 	for _, stmt := range []string{
 		`TRUNCATE events, messages, tasks, task_members, users, sessions, notifications, integrations,
-			push_subscriptions, notify_settings, sent_reminders, snoozes, server_keys RESTART IDENTITY`,
+			push_subscriptions, notify_settings, sent_reminders, snoozes, server_keys, profiles, memories, people, event_attendees, suggestions RESTART IDENTITY`,
 		`SELECT setval('event_id_seq', 1, FALSE)`,
 		`SELECT setval('task_id_seq', 1, FALSE)`,
 		`SELECT setval('integration_id_seq', 1, FALSE)`,

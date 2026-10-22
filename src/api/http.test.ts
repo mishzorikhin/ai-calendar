@@ -286,4 +286,21 @@ describe('сессия', () => {
       expect.objectContaining({ body: '{"date":"2026-11-11","occurrence":"2026-11-10","skip":"2026-11-03"}' }),
     )
   })
+
+  it('профиль, память и люди — свои маршруты и методы', async () => {
+    const fetch = mockFetch(200, {})
+    const api = createHttpApi()
+    await api.updateProfile({ workStart: 600 })
+    await api.deleteMemory(5)
+    await api.updatePerson(3, { name: 'Глеб' })
+    await api.deleteAllMemories()
+    const calls = fetch.mock.calls as unknown as [string, RequestInit][]
+    expect(calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+      'PATCH /api/profile',
+      'DELETE /api/memories/5',
+      'PATCH /api/people/3',
+      'DELETE /api/memories',
+    ])
+    expect(calls[0]?.[1].body).toBe('{"workStart":600}')
+  })
 })

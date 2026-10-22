@@ -67,7 +67,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // readJSON разбирает тело запроса: ограничение размера, неизвестные поля — ошибка.
 func readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return readJSONLimit(w, r, dst, maxBodyBytes)
+}
+
+// readJSONLimit — как readJSON, но с другим пределом тела (чат с картинкой).
+func readJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {

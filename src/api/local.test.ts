@@ -219,4 +219,102 @@ describe('local api', () => {
     expect(timed.allDay).toBeUndefined()
     expect(await api.updateEvent(e.id, { allDay: true })).toMatchObject({ allDay: true, start: 0, end: 1440 })
   })
+
+  it('профиль: по умолчанию, патч с проверкой как на сервере, переживает перезапуск', async () => {
+    const storage = new MemoryStorage()
+    const api = createLocalApi(storage)
+    expect((await api.getProfile()).onboarded).toBe(false)
+    const p = await api.updateProfile({ workStart: 600, workDays: [5, 1, 1], onboarded: true })
+    expect(p.workDays).toEqual([1, 5])
+    await expect(api.updateProfile({ workEnd: 500 })).rejects.toBeInstanceOf(ApiError)
+    const again = await createLocalApi(storage).getProfile()
+    expect(again.workStart).toBe(600)
+    expect(again.onboarded).toBe(true)
+  })
+
+  it('память и люди: добавление, правка, догадка «нет» пропадает, удаление', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const m = await api.createMemory({ kind: 'date', text: ' ДР мамы ', date: '--03-14' })
+    expect(m.text).toBe('ДР мамы')
+    await expect(api.createMemory({ kind: 'other', text: '' })).rejects.toBeInstanceOf(ApiError)
+    await expect(api.createMemory({ kind: 'other', text: 'x', date: '14.03' })).rejects.toBeInstanceOf(ApiError)
+    expect((await api.updateMemory(m.id, { text: 'День рождения мамы' })).text).toBe('День рождения мамы')
+    await api.updateMemory(m.id, { rejected: true })
+    expect(await api.getMemories()).toEqual([])
+
+    const gleb = await api.createPerson({ name: ' Глеб ', aliases: ['Глебушка'], username: '@Gleb' })
+    await api.createPerson({ name: 'анна' })
+    expect((await api.getPeople()).map((p) => p.name)).toEqual(['анна', 'Глеб'])
+    expect(gleb.username).toBe('gleb')
+    await expect(api.createPerson({ name: 'x', meetingMinutes: 5 })).rejects.toBeInstanceOf(ApiError)
+    expect((await api.updatePerson(gleb.id, { name: 'Глеб', place: 'Кофейня' })).aliases).toBeUndefined()
+    await api.deletePerson(gleb.id)
+    await expect(api.deletePerson(gleb.id)).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('многодневное событие видно в каждом дне, заметки и ссылка сохраняются', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    await api.createEvent({
+      title: 'Конференция',
+      date: new Date(2026, 9, 21),
+      endDate: '2026-10-23',
+      start: 600,
+      end: 1080,
+      url: 'https://conf.example',
+      notes: ' Бейдж ',
+    })
+    const mid = (await api.getEvents(new Date(2026, 9, 22))).find((e) => e.title === 'Конференция')
+    expect(mid).toMatchObject({ allDay: true, url: 'https://conf.example', notes: 'Бейдж' })
+    expect(mid?.span?.start).toBe(600)
+    expect((await api.getEvents(new Date(2026, 9, 24))).some((e) => e.title === 'Конференция')).toBe(false)
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 600, end: 660, url: 'ftp://x' }),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('поиск: по названию, месту и заметкам, без регистра и «ё», серия — ближайшим днём', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const today = new Date()
+    const past = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 20)
+    await api.createEvent({ title: 'Йога с ГЛЕБОМ', date: past, start: 540, end: 600, repeat: 'weekly' })
+    await api.createEvent({ title: 'Обед', subtitle: 'Кафе у Глёба', date: past, start: 780, end: 840 })
+    await api.createTask({ title: 'Подарок Глебу' })
+    const res = await api.search('глеб')
+    expect(res.events.map((e) => e.title)).toEqual(['Йога с ГЛЕБОМ', 'Обед'])
+    expect(res.events[0]!.date >= new Date(today.getFullYear(), today.getMonth(), today.getDate())).toBe(true)
+    expect(res.tasks).toHaveLength(1)
+    await expect(api.search('г')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('оценка задачи и событие под задачу — как на сервере', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const task = await api.createTask({ title: 'Отчёт', estimate: 90 })
+    expect(task.estimate).toBe(90)
+    await expect(api.createTask({ title: 'x', estimate: 5 })).rejects.toBeInstanceOf(ApiError)
+    expect((await api.updateTask(task.id, { estimate: 0 })).estimate).toBeUndefined()
+    const ev = await api.createEvent({ title: 'Отчёт', date: day, start: 540, end: 630, taskId: task.id })
+    expect(ev.taskId).toBe(task.id)
+    await expect(
+      api.createEvent({ title: 'x', date: day, start: 540, end: 600, taskId: 'нет' }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(await api.getSuggestions()).toEqual([])
+  })
+
+  it('привычки, время закрытия и обзор недели — как на сервере', async () => {
+    const api = createLocalApi(new MemoryStorage())
+    const habit = await api.createTask({ title: 'Зарядка', kind: 'habit' })
+    expect(habit.cadence).toBe('daily')
+    await expect(api.createTask({ title: 'x', cadence: 'daily' })).rejects.toBeInstanceOf(ApiError)
+    await api.updateTask(habit.id, { check: '2026-10-21' })
+    const checked = await api.updateTask(habit.id, { check: '2026-10-20' })
+    expect(checked.checks).toEqual(['2026-10-20', '2026-10-21'])
+    expect((await api.updateTask(habit.id, { uncheck: '2026-10-20' })).checks).toEqual(['2026-10-21'])
+    const task = await api.createTask({ title: 'Отчёт' })
+    expect((await api.updateTask(task.id, { done: true })).doneAt).toBeTruthy()
+    expect((await api.updateTask(task.id, { done: false })).doneAt).toBeUndefined()
+    await api.createEvent({ title: 'Созвон', date: day, start: 600, end: 690, badge: 'work' })
+    const week = await api.getWeekInsights(day)
+    expect(week.start).toBe('2026-10-19')
+    expect(week.byBadge.work).toBeGreaterThanOrEqual(90)
+  })
 })

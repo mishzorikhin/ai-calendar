@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { useState } from 'react'
 import { CloseIcon } from '../components/Icons'
 import { CircleButton, Pill } from '../components/ui'
@@ -23,7 +23,7 @@ export function InstallBanner() {
   return (
     <AnimatePresence initial={false}>
       {visible && (
-        <motion.aside
+        <m.aside
           className={styles.install}
           aria-label="Установка приложения"
           initial={{ opacity: 0, height: 0 }}
@@ -52,7 +52,7 @@ export function InstallBanner() {
               <CloseIcon size={16} />
             </CircleButton>
           </div>
-        </motion.aside>
+        </m.aside>
       )}
     </AnimatePresence>
   )
