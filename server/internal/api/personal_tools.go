@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/mishzorikhin/ai-calendar/server/internal/llm"
 	"github.com/mishzorikhin/ai-calendar/server/internal/model"
+	"github.com/mishzorikhin/ai-calendar/server/internal/store"
 )
 
 // Инструменты персонализации: профиль, память и карточки людей.
@@ -25,8 +28,9 @@ var evidenceParam = map[string]any{"type": "string",
 var personalTools = []llm.Tool{
 	{Type: "function", Function: llm.FunctionSpec{
 		Name:        "update_profile",
-		Description: "Изменить профиль пользователя по его прямой просьбе: ритм дня, рабочие часы и дни, когда лучше думается, длительность встречи, перерыв, «святые» блоки, манеру общения, «о себе». Переданные поля заменяют старые.",
+		Description: "Изменить профиль пользователя по его прямой просьбе: как его зовут, ритм дня, рабочие часы и дни, когда лучше думается, длительность встречи, перерыв, «святые» блоки, манеру общения, «о себе». Переданные поля заменяют старые.",
 		Parameters: object(map[string]any{
+			"name":            map[string]any{"type": "string", "description": "Как обращаться к пользователю: имя, которым он назвался («меня зовут Миша», «зови меня Мишей» → «Миша»)"},
 			"wake_up":         map[string]any{"type": "string", "description": "Подъём, ЧЧ:ММ"},
 			"bed_time":        map[string]any{"type": "string", "description": "Отбой, ЧЧ:ММ"},
 			"work_start":      map[string]any{"type": "string", "description": "Начало работы, ЧЧ:ММ"},
@@ -217,9 +221,21 @@ func (s *server) toolUpdateProfile(ctx context.Context, args map[string]any) (st
 			*dst = &v
 		}
 	}
+	// Имя — это имя аккаунта: его видно в настройках и в приглашениях, оттуда же оно идёт в промпт.
+	u, _ := store.UserFrom(ctx)
+	name := u.Name
+	if _, ok := args["name"]; ok {
+		name = strArg(args, "name")
+		if name == "" || utf8.RuneCountInString(name) > userNameMax {
+			return fmt.Sprintf(`{"error":"name — от 1 до %d символов"}`, userNameMax), toolMeta{}
+		}
+		if _, err := s.store.UpdateUser(ctx, name); err != nil {
+			return `{"error":"не удалось сохранить имя"}`, toolMeta{}
+		}
+	}
 	p, err := s.patchProfile(ctx, in)
 	if err != nil {
 		return toolErr(err, "не удалось изменить профиль"), toolMeta{}
 	}
-	return toolJSON(map[string]any{"ok": true, "profile": profileSummary("", p)}), toolMeta{detail: "профиль"}
+	return toolJSON(map[string]any{"ok": true, "profile": profileSummary(name, p)}), toolMeta{detail: "профиль"}
 }

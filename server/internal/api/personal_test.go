@@ -302,7 +302,7 @@ func TestChatRememberNeedsUserWords(t *testing.T) {
 	// Следующий ход: факт — в системном промпте; профиль и имя — тоже.
 	doAs(t, h, tok, "POST", "/api/chat", `{"text":"что у меня в пятницу"}`)
 	last := (*bodies)[len(*bodies)-1]
-	for _, want := range []string{"По пятницам после 16:00 не работает", "Пользователя зовут alice", "пн–пт, 09:00–18:00"} {
+	for _, want := range []string{"По пятницам после 16:00 не работает", "Как зовут пользователя, пока неизвестно", "пн–пт, 09:00–18:00"} {
 		if !strings.Contains(last, want) {
 			t.Errorf("в промпте нет %q", want)
 		}
@@ -357,5 +357,33 @@ func TestChatPeopleAndProfileTools(t *testing.T) {
 	doAs(t, h, tok, "POST", "/api/chat", `{"text":"поставь встречу с Глебом на завтра"}`)
 	if last := (*bodies)[len(*bodies)-1]; !strings.Contains(last, "Кофейня на Ленина") || !strings.Contains(last, "Обед 14:00–15:00") {
 		t.Fatal("в промпте нет карточки Глеба или обеда из профиля")
+	}
+}
+
+func TestChatRemembersName(t *testing.T) {
+	st, _ := store.Open("")
+	llmc, bodies := fakeChatLLMBodies(t, [][]string{
+		{toolCall("update_profile", `{"name":"Миша"}`)},
+		{textFrame("Приятно познакомиться, Миша!")},
+		{textFrame("Помню.")},
+	})
+	h := New(Options{Store: st, LLM: llmc})
+	tok := register(t, h, "misha")
+	doAs(t, h, tok, "POST", "/api/chat", `{"text":"меня зовут Миша"}`)
+	// Пока имени нет, логин в промпте не выдаётся за имя.
+	if first := (*bodies)[0]; !strings.Contains(first, "Как зовут пользователя, пока неизвестно") || strings.Contains(first, "Пользователя зовут misha") {
+		t.Fatal("логин в промпте выдан за имя")
+	}
+	if me := decode[model.User](t, doAs(t, h, tok, "GET", "/api/me", "")); me.Name != "Миша" {
+		t.Fatalf("имя не сохранено: %+v", me)
+	}
+	doAs(t, h, tok, "POST", "/api/chat", `{"text":"как меня зовут?"}`)
+	if last := (*bodies)[len(*bodies)-1]; !strings.Contains(last, "Пользователя зовут Миша") {
+		t.Fatal("имени нет в промпте")
+	}
+	// Слишком длинное имя — ошибка модели, а не сохранение.
+	if out, _ := (&server{store: st}).toolUpdateProfile(store.WithUser(context.Background(), mustUser(t, st, "misha")),
+		map[string]any{"name": strings.Repeat("я", 41)}); !strings.Contains(out, "error") {
+		t.Fatalf("длинное имя: %s", out)
 	}
 }
