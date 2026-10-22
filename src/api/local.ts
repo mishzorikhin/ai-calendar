@@ -532,6 +532,13 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       save()
       return reply(undefined)
     },
+    getSessions: () => Promise.reject(NO_ACCOUNTS),
+    deleteSession: () => Promise.reject(NO_ACCOUNTS),
+    logoutOthers: () => Promise.reject(NO_ACCOUNTS),
+    changePassword: () => Promise.reject(NO_ACCOUNTS),
+    // Выгрузка работает и без сервера: всё, что лежит в этом браузере.
+    exportData: () => reply(JSON.stringify({ exportedAt: new Date().toISOString(), ...data }, null, 2)),
+    deleteAccount: () => Promise.reject(NO_ACCOUNTS),
     // Предложения считает сервер: в локальном режиме их нет.
     getSuggestions: () => reply([]),
     acceptSuggestion: () => Promise.reject(new ApiError(404, 'Предложение не найдено')),

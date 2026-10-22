@@ -387,3 +387,6 @@ export type PersonInput = Omit<Person, 'id'>
 
 /** Результат поиска: события (серия — ближайшим вхождением, предстоящие первыми) и задачи. */
 export type SearchResult = { events: DatedEvent[]; tasks: Task[] }
+
+/** Вход с устройства: id — начало хэша токена, label — «Chrome · Android». */
+export type AuthSession = { id: string; label: string; createdAt: string; lastSeen: string; current?: boolean }

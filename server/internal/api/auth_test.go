@@ -366,13 +366,13 @@ func TestSessionExpiry(t *testing.T) {
 	s, _ := store.Open("")
 	ctx := t.Context()
 	u, _ := s.CreateUser(ctx, "alice", "Alice", "hash")
-	if err := s.CreateSession(ctx, u.ID, "expired", time.Now().Add(-time.Hour)); err != nil {
+	if err := s.CreateSession(ctx, u.ID, "expired", "", time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.UserBySession(ctx, "expired"); err != store.ErrUnauthorized {
 		t.Fatalf("просроченная сессия: %v", err)
 	}
-	if err := s.CreateSession(ctx, u.ID, "fresh", time.Now().Add(store.SessionTTL)); err != nil {
+	if err := s.CreateSession(ctx, u.ID, "fresh", "", time.Now().Add(store.SessionTTL)); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.UserBySession(ctx, "fresh")

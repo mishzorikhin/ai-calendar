@@ -24,6 +24,7 @@ import {
   BrainIcon,
   CalendarIcon,
   CloseIcon,
+  KeyIcon,
   PersonIcon,
   UsersIcon,
 } from '../../components/Icons'
@@ -53,12 +54,14 @@ export function AccountSheet({
   onReminders,
   onProfile,
   onMemory,
+  onSecurity,
 }: {
   onClose: () => void
   onCalendars: () => void
   onReminders: () => void
   onProfile: () => void
   onMemory: () => void
+  onSecurity: () => void
 }) {
   const api = useApi()
   const server = api.mode === 'server'
@@ -217,6 +220,17 @@ export function AccountSheet({
             <span className={styles.settingsText}>
               <span className={styles.settingsTitle}>Напоминания</span>
               <span className={styles.settingsSub}>{remindersSub}</span>
+            </span>
+            <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+          </Pressable>
+
+          <Pressable className={styles.settingsRow} scale={0.98} onClick={onSecurity}>
+            <span className={styles.settingsIcon}>
+              <KeyIcon size={19} />
+            </span>
+            <span className={styles.settingsText}>
+              <span className={styles.settingsTitle}>Безопасность и данные</span>
+              <span className={styles.settingsSub}>Пароль, устройства, выгрузка, удаление аккаунта</span>
             </span>
             <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
           </Pressable>

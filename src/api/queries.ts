@@ -19,6 +19,7 @@ import type {
   NotifySettings,
   Person,
   PersonInput,
+  AuthSession,
   Suggestion,
   Profile,
   ProfilePatch,
@@ -59,6 +60,7 @@ export const keys = {
   memories: ['memories'] as const,
   people: ['people'] as const,
   suggestions: ['suggestions'] as const,
+  sessions: ['auth-sessions'] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -228,6 +230,52 @@ export function useLogout() {
     },
     // Чистим кэш всегда: даже если запрос выхода не дошёл, данные показывать нельзя.
     onSettled: () => qc.clear(),
+  })
+}
+
+/** Устройства, где выполнен вход. */
+export function useSessions() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.sessions, queryFn: () => api.getSessions() })
+  return { ...query, sessions: query.data ?? NO_SESSIONS }
+}
+const NO_SESSIONS: AuthSession[] = []
+
+/** Завершить сеанс одного устройства (id) или всех остальных (null). */
+export function useEndSessions() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string | null) => (id === null ? api.logoutOthers() : api.deleteSession(id)),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+  })
+}
+
+export function useChangePassword() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ current, next }: { current: string; next: string }) => api.changePassword(current, next),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+  })
+}
+
+/** Выгрузка всех своих данных (текст JSON-файла). */
+export function useExportData() {
+  const api = useApi()
+  return useMutation({ mutationFn: () => api.exportData() })
+}
+
+/** Удалить аккаунт: подписка устройства снимается, кэш стирается — как при выходе. */
+export function useDeleteAccount() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (password: string) => {
+      await api.deleteAccount(password)
+      await Promise.race([disablePush(api).catch(() => {}), new Promise((r) => setTimeout(r, 2500))])
+    },
+    onSuccess: () => qc.clear(),
   })
 }
 

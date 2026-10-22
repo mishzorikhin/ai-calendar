@@ -544,6 +544,16 @@ type PushMessage struct {
 	SuggestionAction string `json:"suggestionAction,omitempty"`
 }
 
+// Session — вход с устройства. ID — начало хэша токена (сам токен и хэш наружу не отдаются).
+type Session struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+	LastSeen  time.Time `json:"lastSeen"`
+	// Current — сессия этого запроса.
+	Current bool `json:"current,omitempty"`
+}
+
 // Snooze — отложенное уведомление («Напомнить через 10 минут»).
 type Snooze struct {
 	ID      int64       `json:"id"`

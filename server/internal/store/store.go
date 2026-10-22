@@ -98,10 +98,23 @@ type Store interface {
 	// UpdateUser меняет отображаемое имя текущего пользователя.
 	UpdateUser(ctx context.Context, name string) (model.User, error)
 	// CreateSession сохраняет токен (передаётся уже хэшированным).
-	CreateSession(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
+	// label — устройство («Chrome, Android»), видно в списке сессий.
+	CreateSession(ctx context.Context, userID int64, tokenHash, label string, expiresAt time.Time) error
 	// UserBySession — пользователь по хэшу токена; продлевает сессию, если та скоро истечёт.
 	UserBySession(ctx context.Context, tokenHash string) (model.User, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
+	// Sessions — действующие сессии текущего пользователя, последние активные первыми; ID — SessionIDLen
+	// первых знаков хэша.
+	Sessions(ctx context.Context) []model.Session
+	// DeleteSessionByID завершает сессию текущего пользователя по ID; ErrNotFound — нет такой.
+	DeleteSessionByID(ctx context.Context, id string) error
+	// DeleteOtherSessions завершает все сессии текущего пользователя, кроме keepHash.
+	DeleteOtherSessions(ctx context.Context, keepHash string) error
+	// SetPassword меняет хэш пароля текущего пользователя.
+	SetPassword(ctx context.Context, passHash string) error
+	// DeleteUser удаляет текущего пользователя и всё его: события, задачи, где он владелец (из чужих
+	// он просто выходит), чат, сессии, уведомления, подключения, push, память, людей, предложения.
+	DeleteUser(ctx context.Context) error
 
 	// Notifications — уведомления пользователя, новые первыми (до 100).
 	Notifications(ctx context.Context) []model.Notification
@@ -253,6 +266,9 @@ func (u storedUser) public() model.User {
 type storedSession struct {
 	UserID    int64     `json:"userId"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	Label     string    `json:"label,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitzero"`
+	LastSeen  time.Time `json:"lastSeen,omitzero"`
 }
 
 type data struct {
@@ -848,7 +864,7 @@ func (s *fileStore) UpdateUser(ctx context.Context, name string) (model.User, er
 	return model.User{}, ErrNotFound
 }
 
-func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash, label string, expiresAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Заодно убираем истёкшие сессии: сами они пропадают, только если токен снова предъявят.
@@ -858,7 +874,7 @@ func (s *fileStore) CreateSession(_ context.Context, userID int64, tokenHash str
 			delete(s.d.Sessions, h)
 		}
 	}
-	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt}
+	s.d.Sessions[tokenHash] = storedSession{UserID: userID, ExpiresAt: expiresAt, Label: label, CreatedAt: now, LastSeen: now}
 	return s.save()
 }
 
@@ -875,9 +891,14 @@ func (s *fileStore) UserBySession(_ context.Context, tokenHash string) (model.Us
 		_ = s.save()
 		return model.User{}, ErrUnauthorized
 	}
-	// Скользящее продление: до конца меньше половины TTL — продлеваем заново.
-	if sess.ExpiresAt.Sub(now) < sessionRefresh {
-		sess.ExpiresAt = now.Add(SessionTTL)
+	// Скользящее продление: до конца меньше половины TTL — продлеваем заново. «Последний раз»
+	// пишем не чаще seenEvery, чтобы не перезаписывать файл на каждый запрос.
+	refresh := sess.ExpiresAt.Sub(now) < sessionRefresh
+	if refresh || now.Sub(sess.LastSeen) > seenEvery {
+		if refresh {
+			sess.ExpiresAt = now.Add(SessionTTL)
+		}
+		sess.LastSeen = now
 		s.d.Sessions[tokenHash] = sess
 		_ = s.save()
 	}

@@ -12,6 +12,7 @@ import type {
   Memory,
   NotifySettings,
   Person,
+  AuthSession,
   Suggestion,
   Profile,
   PushDevice,
@@ -251,6 +252,15 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     createPerson: (input) => post<Person>('/api/people', input),
     updatePerson: (id, input) => request<Person>(`/api/people/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     deletePerson: (id) => request<void>(`/api/people/${id}`, { method: 'DELETE' }),
+    getSessions: () => request<AuthSession[]>('/api/auth/sessions'),
+    deleteSession: (id) => request<void>(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    logoutOthers: () => post<void>('/api/auth/logout-others', {}),
+    changePassword: (current, next) => post<void>('/api/auth/password', { current, next }),
+    exportData: async () => JSON.stringify(await request<unknown>('/api/export'), null, 2),
+    async deleteAccount(password) {
+      await request<void>('/api/me', { method: 'DELETE', body: JSON.stringify({ password }) })
+      setSession(null)
+    },
     getSuggestions: () => request<Suggestion[]>('/api/suggestions'),
     acceptSuggestion: async (id) =>
       (await post<{ suggestion: Suggestion }>(`/api/suggestions/${id}/accept`, {})).suggestion,

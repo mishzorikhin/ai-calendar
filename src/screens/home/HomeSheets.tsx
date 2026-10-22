@@ -10,12 +10,13 @@ const CalendarsSheet = lazy(() => import('./calendars/CalendarsSheet').then((mod
 const RemindersSheet = lazy(() => import('./reminders/RemindersSheet').then((mod) => ({ default: mod.RemindersSheet })))
 const ProfileSheet = lazy(() => import('./assistant/ProfileSheet').then((mod) => ({ default: mod.ProfileSheet })))
 const MemorySheet = lazy(() => import('./assistant/MemorySheet').then((mod) => ({ default: mod.MemorySheet })))
+const SecuritySheet = lazy(() => import('./account/SecuritySheet').then((mod) => ({ default: mod.SecuritySheet })))
 const SearchSheet = lazy(() => import('./search/SearchSheet').then((mod) => ({ default: mod.SearchSheet })))
 const OnboardingSheet = lazy(() =>
   import('./assistant/OnboardingSheet').then((mod) => ({ default: mod.OnboardingSheet })),
 )
 
-export type HomeSheet = 'account' | 'calendars' | 'reminders' | 'profile' | 'memory' | 'search'
+export type HomeSheet = 'account' | 'calendars' | 'reminders' | 'profile' | 'memory' | 'search' | 'security'
 
 /** Шторки аккаунта и настроек главной; анкета знакомства открывается сама, пока профиль не заполнен. */
 export function HomeSheets({
@@ -56,12 +57,14 @@ export function HomeSheets({
             onReminders={() => onSheet('reminders')}
             onProfile={() => onSheet('profile')}
             onMemory={() => onSheet('memory')}
+            onSecurity={() => onSheet('security')}
           />,
         )}
       {sheet === 'reminders' && lazySheet('reminders-sheet', <RemindersSheet onClose={close} />)}
       {sheet === 'calendars' && lazySheet('calendars-sheet', <CalendarsSheet notice={oauthReturn} onClose={close} />)}
       {sheet === 'profile' && lazySheet('profile-sheet', <ProfileSheet onClose={close} />)}
       {sheet === 'memory' && lazySheet('memory-sheet', <MemorySheet onClose={close} />)}
+      {sheet === 'security' && lazySheet('security-sheet', <SecuritySheet onClose={close} />)}
       {sheet === 'search' &&
         lazySheet(
           'search-sheet',

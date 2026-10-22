@@ -103,10 +103,10 @@ func TestExpiredSessionsPruned(t *testing.T) {
 	ctx := userCtx(t, st)
 	u, _ := UserFrom(ctx)
 	past := time.Now().Add(-time.Hour)
-	if err := st.CreateSession(ctx, u.ID, "old", past); err != nil {
+	if err := st.CreateSession(ctx, u.ID, "old", "", past); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateSession(ctx, u.ID, "new", time.Now().Add(time.Hour)); err != nil {
+	if err := st.CreateSession(ctx, u.ID, "new", "", time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := fs.d.Sessions["old"]; ok {

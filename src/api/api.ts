@@ -21,6 +21,7 @@ import type {
   NotifySettings,
   Person,
   PersonInput,
+  AuthSession,
   Suggestion,
   Profile,
   ProfilePatch,
@@ -158,6 +159,16 @@ export interface CalendarApi {
    * или задачу; у chat — ничего, запрос отправляет клиент), «Нет» с mute выключает такой вид.
    * В локальном режиме предложений нет — их считает сервер.
    */
+  /** Аккаунт (только сервер): устройства, пароль, выгрузка и удаление. */
+  getSessions(): Promise<AuthSession[]>
+  deleteSession(id: string): Promise<void>
+  logoutOthers(): Promise<void>
+  /** Остальные устройства выходят. */
+  changePassword(current: string, next: string): Promise<void>
+  /** Все свои данные одним JSON (текст файла). */
+  exportData(): Promise<string>
+  /** Удалить аккаунт со всеми данными; сессия этого устройства сбрасывается. */
+  deleteAccount(password: string): Promise<void>
   getSuggestions(): Promise<Suggestion[]>
   acceptSuggestion(id: number): Promise<Suggestion>
   dismissSuggestion(id: number, mute?: boolean): Promise<void>

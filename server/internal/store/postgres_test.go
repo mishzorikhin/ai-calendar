@@ -137,7 +137,7 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// Сессии: создание, продление, истечение.
-	if err := s.CreateSession(ctx, u.ID, "tok", time.Now().Add(SessionTTL)); err != nil {
+	if err := s.CreateSession(ctx, u.ID, "tok", "", time.Now().Add(SessionTTL)); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.UserBySession(ctx, "tok"); err != nil || got.Username != "alice" {
