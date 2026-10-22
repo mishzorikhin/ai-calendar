@@ -68,6 +68,21 @@ func testPlanningFields(t *testing.T, s Store) {
 	if task, err = s.UpdateTask(ctx, task.ID, model.TaskPatch{Estimate: &est}); err != nil || task.Estimate != 120 {
 		t.Fatalf("правка оценки: %+v %v", task, err)
 	}
+	// Привычка: частота, отметки, время закрытия.
+	habit, err := s.CreateTask(ctx, model.Task{Title: "Зарядка", Kind: model.TaskKindHabit, Cadence: model.CadenceWeekdays})
+	if err != nil || habit.Cadence != model.CadenceWeekdays || habit.Checks != nil {
+		t.Fatalf("привычка: %+v %v", habit, err)
+	}
+	checks := []string{"2030-01-07", "2030-01-08"}
+	doneAt := time.Date(2030, 1, 8, 9, 0, 0, 0, time.UTC)
+	if habit, err = s.UpdateTask(ctx, habit.ID, model.TaskPatch{Checks: &checks, DoneAt: &doneAt}); err != nil ||
+		len(habit.Checks) != 2 || habit.Checks[1] != "2030-01-08" || !habit.DoneAt.Equal(doneAt) {
+		t.Fatalf("отметки: %+v %v", habit, err)
+	}
+	zero := time.Time{}
+	if habit, _ = s.UpdateTask(ctx, habit.ID, model.TaskPatch{DoneAt: &zero}); !habit.DoneAt.IsZero() {
+		t.Fatalf("doneAt не снят: %+v", habit)
+	}
 	ev, err := s.CreateEvent(ctx, model.Event{Date: "2030-01-07", Title: "Отчёт", Start: 540, End: 660, Badge: model.BadgeWork, TaskID: task.ID})
 	if err != nil {
 		t.Fatal(err)

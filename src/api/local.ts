@@ -25,7 +25,9 @@ import {
 import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
 import { isRepeat, occursOn, shiftSeries } from '../domain/repeat'
 import { spanDay } from '../domain/span'
-import { fromISODate, toISODate } from '../lib/dates'
+import { withCheck } from '../domain/habit'
+import { weekInsights } from '../domain/insights'
+import { addDays, fromISODate, startOfWeek, toISODate } from '../lib/dates'
 import { eventsFor, monthDotsFor } from '../mocks/calendar'
 import { ApiError, type CalendarApi } from './api'
 
@@ -319,7 +321,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     createTask(input) {
       const title = input.title.trim()
       const subtitle = input.subtitle?.trim()
-      const bad = invalid(titleError(title), subtitleError(subtitle), estimateError(input.estimate))
+      const bad =
+        invalid(titleError(title), subtitleError(subtitle), estimateError(input.estimate)) ??
+        (input.cadence && input.kind !== 'habit' ? invalid('Частота — только у привычки') : null)
       if (bad) return bad
       const task: Task = {
         id: nextId('task'),
@@ -331,6 +335,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         due: input.due,
         createdAt: new Date().toISOString(),
         estimate: input.estimate || undefined,
+        cadence: input.kind === 'habit' ? (input.cadence ?? 'daily') : undefined,
       }
       data.tasks.push(task)
       save()
@@ -346,6 +351,9 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
         title === undefined ? null : titleError(title),
         subtitleError(subtitle),
         estimateError(patch.estimate),
+        [patch.check, patch.uncheck].some((d) => d !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(d))
+          ? 'check/uncheck — дата ГГГГ-ММ-ДД'
+          : null,
       )
       if (bad) return bad
       const task: Task = {
@@ -359,6 +367,13 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       // '' очищает категорию, 0 — оценку; undefined — не трогает.
       if (patch.category !== undefined) task.category = patch.category || undefined
       if (patch.estimate !== undefined) task.estimate = patch.estimate || undefined
+      if (patch.cadence) task.cadence = patch.cadence
+      if (task.kind === 'habit' && !task.cadence) task.cadence = 'daily'
+      if (patch.check) task.checks = withCheck(prev.checks ?? [], patch.check, true)
+      if (patch.uncheck) task.checks = withCheck(prev.checks ?? [], patch.uncheck, false)
+      // Как на сервере: закрытие ставит время, открытие снимает.
+      if (patch.done !== undefined && patch.done !== prev.done)
+        task.doneAt = patch.done ? new Date().toISOString() : undefined
       data.tasks[i] = task
       save()
       return reply(task)
@@ -539,6 +554,13 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     // Выгрузка работает и без сервера: всё, что лежит в этом браузере.
     exportData: () => reply(JSON.stringify({ exportedAt: new Date().toISOString(), ...data }, null, 2)),
     deleteAccount: () => Promise.reject(NO_ACCOUNTS),
+    getWeekInsights(start) {
+      const monday = startOfWeek(start)
+      const all = events()
+      const days = Array.from({ length: 35 }, (_, i) => toISODate(addDays(monday, i - 28)))
+      const list = days.flatMap((day) => eventsOn(day, all).map((e) => ({ ...e, date: day })))
+      return reply(weekInsights(monday, list, data.tasks, { ...DEFAULT_PROFILE, ...data.profile }))
+    },
     // Предложения считает сервер: в локальном режиме их нет.
     getSuggestions: () => reply([]),
     acceptSuggestion: () => Promise.reject(new ApiError(404, 'Предложение не найдено')),

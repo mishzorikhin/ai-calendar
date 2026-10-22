@@ -573,6 +573,7 @@ func (s *fileStore) Tasks(ctx context.Context) []model.Task {
 		}
 		t := t
 		t.Members = slices.Clone(t.Members)
+		t.Checks = slices.Clone(t.Checks)
 		s.decorateTask(&t, uid)
 		out = append(out, t)
 	}
@@ -592,6 +593,7 @@ func (s *fileStore) Task(ctx context.Context, id string) (model.Task, error) {
 	}
 	t := s.d.Tasks[i]
 	t.Members = slices.Clone(t.Members)
+	t.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&t, uid)
 	return t, nil
 }
@@ -609,6 +611,7 @@ func (s *fileStore) CreateTask(ctx context.Context, t model.Task) (model.Task, e
 	s.d.Tasks = append(s.d.Tasks, t)
 	out := t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }
@@ -627,6 +630,7 @@ func (s *fileStore) UpdateTask(ctx context.Context, id string, patch model.TaskP
 	s.d.Tasks[i].Apply(patch)
 	t := s.d.Tasks[i]
 	t.Members = slices.Clone(t.Members)
+	t.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&t, uid)
 	return t, s.save()
 }
@@ -674,6 +678,7 @@ func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID i
 	if slices.ContainsFunc(t.Members, func(m model.User) bool { return m.ID == memberID }) {
 		out := *t
 		out.Members = slices.Clone(t.Members)
+		out.Checks = slices.Clone(t.Checks)
 		s.decorateTask(&out, uid)
 		return out, nil // уже участник — не дублируем
 	}
@@ -684,6 +689,7 @@ func (s *fileStore) AddTaskMember(ctx context.Context, taskID string, memberID i
 	t.Members = append(t.Members, member)
 	out := *t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }
@@ -714,6 +720,7 @@ func (s *fileStore) RemoveTaskMember(ctx context.Context, taskID string, memberI
 	t.Members = slices.Delete(t.Members, j, j+1)
 	out := *t
 	out.Members = slices.Clone(t.Members)
+	out.Checks = slices.Clone(t.Checks)
 	s.decorateTask(&out, uid)
 	return out, s.save()
 }

@@ -8,7 +8,7 @@ import { useCalendar } from '../../app/calendar'
 import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { TapToSay } from '../../components/BottomBar'
-import { ArrowRightIcon, CalendarIcon, PlusIcon, SearchIcon, SlidersIcon } from '../../components/Icons'
+import { ArrowRightIcon, CalendarIcon, ChartIcon, PlusIcon, SearchIcon, SlidersIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
 import { Avatar, CircleButton, Pill, Pressable } from '../../components/ui'
 import type { DatedEvent, Task } from '../../domain/types'
@@ -21,6 +21,7 @@ import { userColor, userInitials } from '../../lib/avatar'
 import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
 import { HomeSheets, type HomeSheet } from './HomeSheets'
 import { NextEvent } from './NextEvent'
+import { HabitCards } from './HabitCards'
 import { PrepCard } from './PrepCard'
 import { SuggestionCards } from './SuggestionCards'
 import { TaskSheet } from './TaskSheet'
@@ -60,7 +61,7 @@ export function Home() {
       ? { ...tomorrows[0], date: tomorrow }
       : undefined
   const { tasks, isError: tasksFailed, refetch: refetchTasks } = useTasks()
-  const openTasks = tasks.filter((t) => !t.done).length
+  const openTasks = tasks.filter((t) => !t.done && t.kind !== 'habit').length
 
   return (
     <Sheet>
@@ -112,6 +113,9 @@ export function Home() {
             <h1 className={`display ${styles.goalsTitle}`}>Сегодня</h1>
             <p className="caption">{pluralize(todays.length, ['событие', 'события', 'событий'])} в календаре</p>
           </div>
+          <Pill small tone="ghost" className={styles.weekPill} onClick={() => setSheet('week')}>
+            <ChartIcon size={15} /> Неделя
+          </Pill>
         </div>
         {next ? (
           <NextEvent event={next} onOpen={() => openDay(next.date)} />
@@ -152,6 +156,7 @@ export function Home() {
       ) : (
         <>
           <TasksGrid onEdit={setTaskSheet} />
+          <HabitCards onEdit={setTaskSheet} />
           <m.div variants={itemVariants}>
             <PrepCard onEdit={setTaskSheet} />
           </m.div>

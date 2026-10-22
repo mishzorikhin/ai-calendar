@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -322,6 +323,7 @@ func chatRules(now time.Time) string {
 - «Каждый вторник», «по будням», «каждый месяц» — repeat в create_event. Правка повторяющегося события меняет всю серию; удалить один день можно только в приложении.
 - Даты в инструментах — ГГГГ-ММ-ДД, время — ЧЧ:ММ.
 - Просят добавить задачу или цель — create_task; «задача» — одно дело, «цель» — то, к чему идут (с дедлайном due, если назвали срок). Отметить выполненной или поменять — update_task, id бери из list_tasks.
+- Привычка («бегать по утрам», «читать каждый день») — create_task с kind: habit и cadence. «Сегодня сделал зарядку» — update_task с check: сегодняшняя дата; серию (streak) видно в list_tasks — похвали, если она длинная.
 - Совместная задача: чтобы поделиться, передай логины в members (create_task/update_task) или впиши @логин в название — участник увидит задачу у себя и получит уведомление. Логины всех пользователей — list_users; «задача для Анны» — найди её логин через list_users.
 - Удаление — в два шага. Вызови delete_event или delete_task: сервер ничего не удалит, а вернёт needs_confirmation и что именно удаляется. Назови это пользователю и спроси, удалять ли. Только когда он согласится в следующей реплике, вызови тот же инструмент ещё раз — тогда удаление пройдёт.
 - Не планируй на время, которое уже прошло сегодня, если пользователь прямо не попросил.
@@ -486,7 +488,8 @@ var chatTools = []llm.Tool{
 			"type": "object",
 			"properties": map[string]any{
 				"title":            map[string]any{"type": "string", "description": "Короткое название, например «Подготовить презентацию»"},
-				"kind":             map[string]any{"type": "string", "enum": []string{"task", "goal"}, "description": "task — дело, goal — цель с дедлайном"},
+				"kind":             map[string]any{"type": "string", "enum": []string{"task", "goal", "habit"}, "description": "task — дело, goal — цель с дедлайном, habit — привычка (повторяется, отмечается по дням)"},
+				"cadence":          map[string]any{"type": "string", "enum": []string{"daily", "weekdays", "weekly"}, "description": "Для привычки: каждый день, по будням или раз в неделю"},
 				"category":         map[string]any{"type": "string", "description": "Тег задачи: «учёба», «спорт», «работа» или любой свой"},
 				"subtitle":         map[string]any{"type": "string", "description": "Детали, необязательно"},
 				"due":              map[string]any{"type": "string", "description": "Дедлайн цели, ГГГГ-ММ-ДД (для kind=goal)"},
@@ -510,6 +513,7 @@ var chatTools = []llm.Tool{
 				"due":              map[string]any{"type": "string", "description": "Дедлайн, ГГГГ-ММ-ДД"},
 				"members":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Добавить участников по логинам (без @)"},
 				"estimate_minutes": map[string]any{"type": "integer", "minimum": 15, "maximum": 480, "description": "Сколько займёт"},
+				"check":            map[string]any{"type": "string", "description": "Привычка выполнена в этот день, ГГГГ-ММ-ДД («сегодня сделал зарядку»)"},
 			},
 			"required":             []string{"task_id"},
 			"additionalProperties": false,
@@ -558,7 +562,7 @@ func (s *server) runTool(ctx context.Context, turn chatTurn, call llm.ToolCall) 
 	case "delete_event":
 		return s.toolDeleteEvent(ctx, turn, args)
 	case "list_tasks":
-		return s.toolListTasks(ctx)
+		return s.toolListTasks(ctx, turn)
 	case "list_users":
 		return s.toolListUsers(ctx)
 	case "create_reminder":
@@ -1007,6 +1011,11 @@ type toolTask struct {
 	Owner    string   `json:"owner,omitempty"`
 	Members  []string `json:"members,omitempty"`
 	Estimate int      `json:"estimate_minutes,omitempty"`
+	Cadence  string   `json:"cadence,omitempty"`
+	// Streak — у привычки: сколько дней (недель) подряд выполнена.
+	Streak int `json:"streak,omitempty"`
+	// CheckedToday — привычка уже отмечена сегодня.
+	CheckedToday bool `json:"checked_today,omitempty"`
 }
 
 func toToolTask(t model.Task) toolTask {
@@ -1023,11 +1032,17 @@ func toToolTask(t model.Task) toolTask {
 	return out
 }
 
-func (s *server) toolListTasks(ctx context.Context) (string, toolMeta) {
+func (s *server) toolListTasks(ctx context.Context, turn chatTurn) (string, toolMeta) {
 	tasks := s.store.Tasks(ctx)
+	today := turn.now.Format(time.DateOnly)
 	out := make([]toolTask, 0, len(tasks))
 	for _, t := range tasks {
-		out = append(out, toToolTask(t))
+		tt := toToolTask(t)
+		if t.Kind == model.TaskKindHabit {
+			tt.Cadence, tt.Streak = string(t.Cadence), habitStreak(t.Cadence, t.Checks, today)
+			tt.CheckedToday = slices.Contains(t.Checks, today)
+		}
+		out = append(out, tt)
 	}
 	return toolJSON(map[string]any{"tasks": out}), toolMeta{}
 }
@@ -1075,7 +1090,7 @@ func taskArgs(args map[string]any) (model.Task, string) {
 		t.Kind = model.TaskKindTask
 	}
 	if !t.Kind.Valid() {
-		return t, `{"error":"kind должен быть task или goal"}`
+		return t, `{"error":"kind должен быть task, goal или habit"}`
 	}
 	t.Category = model.TaskCategory(strArg(args, "category"))
 	if t.Category != "" && !t.Category.Valid() {
@@ -1088,6 +1103,15 @@ func taskArgs(args map[string]any) (model.Task, string) {
 	t.Estimate = intArg(args, "estimate_minutes", 0)
 	if validateEstimate(t.Estimate) != nil {
 		return t, `{"error":"estimate_minutes — от 15 до 480"}`
+	}
+	if t.Kind == model.TaskKindHabit {
+		t.Cadence = model.Cadence(strArg(args, "cadence"))
+		if t.Cadence == "" {
+			t.Cadence = model.CadenceDaily
+		}
+		if !t.Cadence.Valid() {
+			return t, `{"error":"cadence — daily, weekdays или weekly"}`
+		}
 	}
 	return t, ""
 }
@@ -1148,6 +1172,12 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 		}
 		patch.Due = &due
 	}
+	var checkDay string
+	if checkDay = strArg(args, "check"); checkDay != "" {
+		if _, err := time.Parse(time.DateOnly, checkDay); err != nil {
+			return `{"error":"check — дата ГГГГ-ММ-ДД"}`, toolMeta{}
+		}
+	}
 	if _, ok := args["estimate_minutes"]; ok {
 		est := intArg(args, "estimate_minutes", 0)
 		if validateEstimate(est) != nil {
@@ -1168,6 +1198,11 @@ func (s *server) toolUpdateTask(ctx context.Context, args map[string]any) (strin
 	if err != nil {
 		return `{"error":"задача не найдена"}`, toolMeta{}
 	}
+	if checkDay != "" {
+		checks := withCheck(before.Checks, checkDay, true)
+		patch.Checks = &checks
+	}
+	stampDone(before, &patch, time.Now())
 	t, err := s.store.UpdateTask(ctx, id, patch)
 	if err != nil {
 		return `{"error":"задача не найдена"}`, toolMeta{}

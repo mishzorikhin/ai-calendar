@@ -22,6 +22,7 @@ import type {
   Person,
   PersonInput,
   AuthSession,
+  WeekInsights,
   Suggestion,
   Profile,
   ProfilePatch,
@@ -169,6 +170,8 @@ export interface CalendarApi {
   exportData(): Promise<string>
   /** Удалить аккаунт со всеми данными; сессия этого устройства сбрасывается. */
   deleteAccount(password: string): Promise<void>
+  /** Обзор недели, в которую входит start. */
+  getWeekInsights(start: Date): Promise<WeekInsights>
   getSuggestions(): Promise<Suggestion[]>
   acceptSuggestion(id: number): Promise<Suggestion>
   dismissSuggestion(id: number, mute?: boolean): Promise<void>

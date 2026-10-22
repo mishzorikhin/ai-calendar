@@ -250,17 +250,34 @@ func (p EventPatch) OnlyReminders() bool {
 		p.Notes == nil && p.URL == nil && p.Travel == nil && p.EndDate == nil
 }
 
-// TaskKind — вид карточки: задача (с категорией) или цель (с дедлайном).
+// TaskKind — вид карточки: задача (с категорией), цель (с дедлайном) или привычка (с отметками).
 type TaskKind string
 
 const (
-	TaskKindTask TaskKind = "task"
-	TaskKindGoal TaskKind = "goal"
+	TaskKindTask  TaskKind = "task"
+	TaskKindGoal  TaskKind = "goal"
+	TaskKindHabit TaskKind = "habit"
 )
 
 func (k TaskKind) Valid() bool {
-	return k == TaskKindTask || k == TaskKindGoal
+	return k == TaskKindTask || k == TaskKindGoal || k == TaskKindHabit
 }
+
+// Cadence — как часто делается привычка.
+type Cadence string
+
+const (
+	CadenceDaily    Cadence = "daily"
+	CadenceWeekdays Cadence = "weekdays"
+	CadenceWeekly   Cadence = "weekly"
+)
+
+func (c Cadence) Valid() bool {
+	return c == CadenceDaily || c == CadenceWeekdays || c == CadenceWeekly
+}
+
+// MaxHabitChecks — сколько отметок привычки храним (старые отбрасываются).
+const MaxHabitChecks = 400
 
 // TaskCategory — свободный тег задачи (учёба, спорт, работа или любой свой).
 // Константы — готовые значения с иконками в интерфейсе, а не ограничение.
@@ -296,6 +313,11 @@ type Task struct {
 	Due      string       `json:"due,omitempty"`
 	// Estimate — сколько минут займёт (0 — не указано, планируется как DefaultEstimate).
 	Estimate int `json:"estimate,omitempty"`
+	// DoneAt — когда закрыли (ставит сервер); для обзора недели.
+	DoneAt time.Time `json:"doneAt,omitzero"`
+	// Cadence и Checks — у привычки: как часто и в какие дни отмечена (ГГГГ-ММ-ДД, по порядку).
+	Cadence Cadence  `json:"cadence,omitempty"`
+	Checks  []string `json:"checks,omitempty"`
 	// CreatedAt — когда задачу завели: по нему ассистент замечает давно открытые.
 	CreatedAt time.Time `json:"createdAt,omitzero"`
 }
@@ -331,6 +353,9 @@ type TaskPatch struct {
 	Done     *bool
 	Due      *string
 	Estimate *int
+	DoneAt   *time.Time
+	Cadence  *Cadence
+	Checks   *[]string
 }
 
 // Apply применяет патч к задаче на месте.
@@ -355,6 +380,15 @@ func (t *Task) Apply(p TaskPatch) {
 	}
 	if p.Estimate != nil {
 		t.Estimate = *p.Estimate
+	}
+	if p.DoneAt != nil {
+		t.DoneAt = *p.DoneAt
+	}
+	if p.Cadence != nil {
+		t.Cadence = *p.Cadence
+	}
+	if p.Checks != nil {
+		t.Checks = slices.Clone(*p.Checks)
 	}
 }
 

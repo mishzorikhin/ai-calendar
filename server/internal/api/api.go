@@ -142,6 +142,7 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("POST /api/people", s.authed(s.createPerson))
 	mux.Handle("PATCH /api/people/{id}", s.authed(s.updatePerson))
 	mux.Handle("DELETE /api/people/{id}", s.authed(s.deletePerson))
+	mux.Handle("GET /api/insights/week", s.authed(s.weekInsightsHandler))
 	mux.Handle("GET /api/suggestions", s.authed(s.listSuggestions))
 	mux.Handle("POST /api/suggestions/{id}/accept", s.authed(s.acceptSuggestion))
 	mux.Handle("POST /api/suggestions/{id}/dismiss", s.authed(s.dismissSuggestion))
@@ -590,6 +591,8 @@ type taskInput struct {
 	Due      string             `json:"due"`
 	// Estimate — сколько минут займёт: 0 (не указано) или 15–480.
 	Estimate int `json:"estimate"`
+	// Cadence — у привычки (по умолчанию daily).
+	Cadence model.Cadence `json:"cadence"`
 	// Members — логины, с кем поделиться (@имя в title/subtitle работает так же).
 	Members []string `json:"members"`
 }
@@ -628,7 +631,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 		in.Kind = model.TaskKindTask
 	}
 	if !in.Kind.Valid() {
-		return badRequest("kind должен быть task или goal")
+		return badRequest("kind должен быть task, goal или habit")
 	}
 	if in.Category != "" && !in.Category.Valid() {
 		return badRequest("category не длиннее 24 символов")
@@ -639,6 +642,12 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 	if err := validateEstimate(in.Estimate); err != nil {
 		return err
 	}
+	if in.Kind == model.TaskKindHabit && in.Cadence == "" {
+		in.Cadence = model.CadenceDaily
+	}
+	if in.Cadence != "" && (!in.Cadence.Valid() || in.Kind != model.TaskKindHabit) {
+		return badRequest("cadence — только у привычки: daily, weekdays или weekly")
+	}
 	// Явный members — строго: незнакомые логины отклоняем до создания.
 	users, unknown := s.resolveUsernames(r.Context(), in.Members)
 	if len(unknown) > 0 {
@@ -646,6 +655,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) error {
 	}
 	t, err := s.store.CreateTask(r.Context(), model.Task{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind, Category: in.Category, Due: in.Due, Estimate: in.Estimate,
+		Cadence: in.Cadence,
 	})
 	if err != nil {
 		return err
@@ -687,6 +697,10 @@ type taskPatchInput struct {
 	Due      *string             `json:"due"`
 	Estimate *int                `json:"estimate"`
 	Members  []string            `json:"members"`
+	Cadence  *model.Cadence      `json:"cadence"`
+	// Check и Uncheck — отметить привычку выполненной в этот день (ГГГГ-ММ-ДД) или снять отметку.
+	Check   string `json:"check"`
+	Uncheck string `json:"uncheck"`
 }
 
 func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
@@ -707,7 +721,7 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if in.Kind != nil && !in.Kind.Valid() {
-		return badRequest("kind должен быть task или goal")
+		return badRequest("kind должен быть task, goal или habit")
 	}
 	if in.Category != nil && *in.Category != "" && !in.Category.Valid() {
 		return badRequest("category не длиннее 24 символов")
@@ -733,10 +747,31 @@ func (s *server) updateTask(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), model.TaskPatch{
+	if in.Cadence != nil && !in.Cadence.Valid() {
+		return badRequest("cadence: daily, weekdays или weekly")
+	}
+	patch := model.TaskPatch{
 		Title: in.Title, Subtitle: in.Subtitle, Kind: in.Kind,
-		Category: in.Category, Done: in.Done, Due: in.Due, Estimate: in.Estimate,
-	})
+		Category: in.Category, Done: in.Done, Due: in.Due, Estimate: in.Estimate, Cadence: in.Cadence,
+	}
+	if in.Check != "" || in.Uncheck != "" {
+		date, on := in.Check, true
+		if date == "" {
+			date, on = in.Uncheck, false
+		}
+		if _, err := time.Parse(time.DateOnly, date); err != nil {
+			return badRequest("check/uncheck — дата ГГГГ-ММ-ДД")
+		}
+		checks := withCheck(before.Checks, date, on)
+		patch.Checks = &checks
+	}
+	// Задачу сделали привычкой без частоты — каждый день.
+	if in.Kind != nil && *in.Kind == model.TaskKindHabit && before.Cadence == "" && in.Cadence == nil {
+		daily := model.CadenceDaily
+		patch.Cadence = &daily
+	}
+	stampDone(before, &patch, time.Now())
+	t, err := s.store.UpdateTask(r.Context(), r.PathValue("id"), patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return notFound("Задача")

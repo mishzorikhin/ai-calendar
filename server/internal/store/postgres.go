@@ -210,6 +210,9 @@ var schema = []string{
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS travel INT NOT NULL DEFAULT 0`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS task_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS estimate INT NOT NULL DEFAULT 0`,
+	`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ`,
+	`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cadence TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS checks JSONB`,
 	`ALTER TABLE events ADD COLUMN IF NOT EXISTS end_date TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS events_multiday ON events (user_id, end_date) WHERE end_date <> ''`,
 	// Приглашённые на события и их ответы.
@@ -563,14 +566,44 @@ func (s *pgStore) DeleteEvent(ctx context.Context, id string) error {
 }
 
 const taskColumns = `t.id, t.owner_id, t.title, t.subtitle, t.kind, t.category, t.done, t.due, t.estimate, t.created_at,
+	t.done_at, t.cadence, t.checks::text,
 	COALESCE(o.username, ''), COALESCE(o.name, ''), o.created_at`
+
+// checksJSON — отметки привычки для JSONB (nil — NULL).
+func checksJSON(checks []string) (*string, error) {
+	if checks == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(checks)
+	if err != nil {
+		return nil, err
+	}
+	s := string(raw)
+	return &s, nil
+}
+
+// nullTime — нулевое время как NULL.
+func nullTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
 
 func scanTask(row pgx.Row) (model.Task, error) {
 	var t model.Task
 	var ownerID *int64
 	var ownerUsername, ownerName string
-	var ownerCreated *time.Time
-	err := row.Scan(&t.ID, &ownerID, &t.Title, &t.Subtitle, &t.Kind, &t.Category, &t.Done, &t.Due, &t.Estimate, &t.CreatedAt, &ownerUsername, &ownerName, &ownerCreated)
+	var ownerCreated, doneAt *time.Time
+	var checks *string
+	err := row.Scan(&t.ID, &ownerID, &t.Title, &t.Subtitle, &t.Kind, &t.Category, &t.Done, &t.Due, &t.Estimate, &t.CreatedAt,
+		&doneAt, &t.Cadence, &checks, &ownerUsername, &ownerName, &ownerCreated)
+	if doneAt != nil {
+		t.DoneAt = *doneAt
+	}
+	if err == nil && checks != nil {
+		err = json.Unmarshal([]byte(*checks), &t.Checks)
+	}
 	if ownerID != nil {
 		t.OwnerID = *ownerID
 		t.Owner = &model.User{ID: *ownerID, Username: ownerUsername, Name: ownerName}
@@ -675,10 +708,14 @@ func (s *pgStore) CreateTask(ctx context.Context, t model.Task) (model.Task, err
 	if err != nil {
 		return model.Task{}, err
 	}
-	err = s.pool.QueryRow(ctx, `INSERT INTO tasks (id, owner_id, title, subtitle, kind, category, done, due, estimate)
-		VALUES ('task-' || nextval('task_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8)
+	checks, err := checksJSON(t.Checks)
+	if err != nil {
+		return model.Task{}, err
+	}
+	err = s.pool.QueryRow(ctx, `INSERT INTO tasks (id, owner_id, title, subtitle, kind, category, done, due, estimate, done_at, cadence, checks)
+		VALUES ('task-' || nextval('task_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
 		RETURNING id`,
-		u, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate).Scan(&t.ID)
+		u, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate, nullTime(t.DoneAt), t.Cadence, checks).Scan(&t.ID)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("создание задачи: %w", err)
 	}
@@ -691,8 +728,13 @@ func (s *pgStore) UpdateTask(ctx context.Context, id string, patch model.TaskPat
 		return model.Task{}, err
 	}
 	t.Apply(patch)
-	_, err = s.pool.Exec(ctx, `UPDATE tasks SET title=$2, subtitle=$3, kind=$4, category=$5, done=$6, due=$7, estimate=$8 WHERE id=$1`,
-		t.ID, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate)
+	checks, err := checksJSON(t.Checks)
+	if err != nil {
+		return model.Task{}, err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE tasks SET title=$2, subtitle=$3, kind=$4, category=$5, done=$6, due=$7, estimate=$8,
+			done_at=$9, cadence=$10, checks=$11::jsonb WHERE id=$1`,
+		t.ID, t.Title, t.Subtitle, t.Kind, t.Category, t.Done, t.Due, t.Estimate, nullTime(t.DoneAt), t.Cadence, checks)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("обновление задачи: %w", err)
 	}

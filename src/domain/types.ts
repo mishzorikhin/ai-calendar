@@ -135,7 +135,10 @@ export type ChatMessage = { id: number; role: 'user' | 'ai'; text: string }
 
 /** Тег задачи — свободный текст; PRESET_TAGS в PrepCard дают подсказки с иконками. */
 export type TaskCategory = string
-export type TaskKind = 'task' | 'goal'
+export type TaskKind = 'task' | 'goal' | 'habit'
+
+/** Как часто делается привычка: каждый день, по будням, раз в неделю. */
+export type Cadence = 'daily' | 'weekdays' | 'weekly'
 
 /** Пользователь аккаунта: логин для @упоминаний, name — отображаемое имя. */
 export type User = {
@@ -178,6 +181,11 @@ export type Task = {
   createdAt?: string
   /** Сколько минут займёт (нет — час при планировании). */
   estimate?: number
+  /** Когда закрыли (ISO), ставит сервер. */
+  doneAt?: string
+  /** У привычки: частота и дни, когда она выполнена (ГГГГ-ММ-ДД, по порядку). */
+  cadence?: Cadence
+  checks?: string[]
 }
 
 /** Новая задача (до сохранения). members — логины участников, с которыми поделиться. */
@@ -189,6 +197,7 @@ export type NewTask = {
   due?: string
   members?: string[]
   estimate?: number
+  cadence?: Cadence
 }
 
 /** Частичное обновление задачи. category: '' очищает категорию; members — добавить участников. */
@@ -202,6 +211,10 @@ export type TaskPatch = {
   members?: string[]
   /** 0 — без оценки. */
   estimate?: number
+  cadence?: Cadence
+  /** Отметить привычку выполненной в этот день (ГГГГ-ММ-ДД) или снять отметку. */
+  check?: string
+  uncheck?: string
 }
 
 /** Вид подключённого календаря. */
@@ -390,3 +403,18 @@ export type SearchResult = { events: DatedEvent[]; tasks: Task[] }
 
 /** Вход с устройства: id — начало хэша токена, label — «Chrome · Android». */
 export type AuthSession = { id: string; label: string; createdAt: string; lastSeen: string; current?: boolean }
+
+/** Обзор недели с понедельника `start` (минуты). */
+export type WeekInsights = {
+  start: string
+  days: { date: string; minutes: number; events: number }[]
+  byBadge: Partial<Record<Badge, number>>
+  minutes: number
+  /** В среднем за четыре прошлые недели. */
+  average: number
+  /** Свободные отрезки от 90 минут в рабочие часы. */
+  focus: number
+  /** Задачи, закрытые на этой неделе. */
+  done: number
+  busiest?: string
+}

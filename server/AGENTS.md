@@ -40,7 +40,8 @@ internal/api/     http.go (ошибки, JSON, middleware), api.go (маршру
                   отбор фактов selectMemories, evidence), people.go (карточки людей, упоминания в тексте),
                   personal_tools.go (инструменты профиля, памяти и людей), suggestions.go (предложения ассистента:
                   чистая planSuggestions, accept/dismiss), planning.go (раскладка задач и массовый перенос:
-                  чистые placeItems/planTasks/shiftPlan)
+                  чистые placeItems/planTasks/shiftPlan), account.go (сессии, пароль, выгрузка, удаление аккаунта),
+                  habits.go (habitStreak, отметки, doneAt), insights.go (чистая weekInsights)
 web/              embed.go + dist/ (собранный UI, в git только README)
 ```
 

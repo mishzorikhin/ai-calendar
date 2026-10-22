@@ -13,6 +13,7 @@ import type {
   NotifySettings,
   Person,
   AuthSession,
+  WeekInsights,
   Suggestion,
   Profile,
   PushDevice,
@@ -261,6 +262,7 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
       await request<void>('/api/me', { method: 'DELETE', body: JSON.stringify({ password }) })
       setSession(null)
     },
+    getWeekInsights: (start) => request<WeekInsights>(`/api/insights/week?start=${toISODate(start)}`),
     getSuggestions: () => request<Suggestion[]>('/api/suggestions'),
     acceptSuggestion: async (id) =>
       (await post<{ suggestion: Suggestion }>(`/api/suggestions/${id}/accept`, {})).suggestion,

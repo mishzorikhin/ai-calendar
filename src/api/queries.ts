@@ -20,6 +20,7 @@ import type {
   Person,
   PersonInput,
   AuthSession,
+  WeekInsights,
   Suggestion,
   Profile,
   ProfilePatch,
@@ -29,6 +30,7 @@ import type {
   Task,
   TaskPatch,
 } from '../domain/types'
+import { withCheck } from '../domain/habit'
 import { isSameDay, toISODate } from '../lib/dates'
 import { apiErrorText } from './api'
 import { useApi } from './provider'
@@ -61,6 +63,7 @@ export const keys = {
   people: ['people'] as const,
   suggestions: ['suggestions'] as const,
   sessions: ['auth-sessions'] as const,
+  week: (start: string) => ['week', start] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -231,6 +234,12 @@ export function useLogout() {
     // Чистим кэш всегда: даже если запрос выхода не дошёл, данные показывать нельзя.
     onSettled: () => qc.clear(),
   })
+}
+
+/** Обзор недели, в которую входит start. */
+export function useWeekInsights(start: Date) {
+  const api = useApi()
+  return useQuery<WeekInsights>({ queryKey: keys.week(toISODate(start)), queryFn: () => api.getWeekInsights(start) })
 }
 
 /** Устройства, где выполнен вход. */
@@ -433,6 +442,12 @@ export function useUpdateTask() {
                 due: patch.due ?? t.due,
                 category: patch.category === undefined ? t.category : patch.category || undefined,
                 estimate: patch.estimate === undefined ? t.estimate : patch.estimate || undefined,
+                cadence: patch.cadence ?? t.cadence,
+                checks: patch.check
+                  ? withCheck(t.checks ?? [], patch.check, true)
+                  : patch.uncheck
+                    ? withCheck(t.checks ?? [], patch.uncheck, false)
+                    : t.checks,
               }
             : t,
         ),

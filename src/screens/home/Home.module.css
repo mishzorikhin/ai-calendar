@@ -79,6 +79,12 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.weekPill {
+  flex: none;
+  gap: 6px;
 }
 
 .goalsTitle {
