@@ -6,18 +6,32 @@ import {
   useLogout,
   useMarkNotificationsRead,
   useMe,
+  useMemories,
   useNotifications,
+  usePeople,
+  useProfile,
   usePush,
   useUpdateMe,
 } from '../../api/queries'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
 import { Segmented } from '../../components/Segmented'
-import { ArrowRightIcon, BellIcon, CalendarIcon, CloseIcon, UsersIcon } from '../../components/Icons'
+import {
+  ArrowRightIcon,
+  BellIcon,
+  BrainIcon,
+  CalendarIcon,
+  CloseIcon,
+  PersonIcon,
+  UsersIcon,
+} from '../../components/Icons'
 import { Avatar, CircleButton, Pressable } from '../../components/ui'
 import { userColor, userInitials } from './avatar'
+import { daysLabel } from '../../domain/profile'
 import { reminderLabel } from '../../domain/reminders'
 import type { AppNotification } from '../../domain/types'
+import { formatMinutes } from '../../lib/dates'
+import { pluralize } from '../../lib/plural'
 import { useTheme, type ThemeChoice } from '../../lib/theme'
 import styles from './Home.module.css'
 
@@ -35,10 +49,14 @@ export function AccountSheet({
   onClose,
   onCalendars,
   onReminders,
+  onProfile,
+  onMemory,
 }: {
   onClose: () => void
   onCalendars: () => void
   onReminders: () => void
+  onProfile: () => void
+  onMemory: () => void
 }) {
   const api = useApi()
   const server = api.mode === 'server'
@@ -53,6 +71,25 @@ export function AccountSheet({
   const { info } = useIntegrations()
   const calendarsSub =
     info.items.length > 0 ? info.items.map((i) => i.name).join(', ') : 'Google, Яндекс, iCloud, ссылка .ics'
+  const { data: profile } = useProfile()
+  const profileSub = !profile
+    ? 'Ритм дня, работа, как с вами говорить'
+    : profile.workDays.length
+      ? `Работа ${daysLabel(profile.workDays)}, ${formatMinutes(profile.workStart)}–${formatMinutes(profile.workEnd)}`
+      : 'Без постоянного графика'
+  const { memories } = useMemories()
+  const { people } = usePeople()
+  const memorySub =
+    profile && !profile.memory
+      ? 'Память выключена'
+      : memories.length + people.length === 0
+        ? 'Пока ничего — расскажите о себе в чате'
+        : [
+            memories.length && pluralize(memories.length, ['факт', 'факта', 'фактов']),
+            people.length && pluralize(people.length, ['человек', 'человека', 'человек']),
+          ]
+            .filter(Boolean)
+            .join(' · ')
   const { data: push } = usePush()
   const remindersSub = !push
     ? 'Встречи, сроки задач, план на день'
@@ -132,6 +169,28 @@ export function AccountSheet({
       )}
 
       {!server && <p className={styles.localNote}>Локальный режим: данные хранятся только в этом браузере</p>}
+
+      <Pressable className={styles.settingsRow} scale={0.98} onClick={onProfile}>
+        <span className={styles.settingsIcon}>
+          <PersonIcon size={19} />
+        </span>
+        <span className={styles.settingsText}>
+          <span className={styles.settingsTitle}>Ассистент обо мне</span>
+          <span className={styles.settingsSub}>{profileSub}</span>
+        </span>
+        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+      </Pressable>
+
+      <Pressable className={styles.settingsRow} scale={0.98} onClick={onMemory}>
+        <span className={styles.settingsIcon}>
+          <BrainIcon size={19} />
+        </span>
+        <span className={styles.settingsText}>
+          <span className={styles.settingsTitle}>Что ассистент знает</span>
+          <span className={styles.settingsSub}>{memorySub}</span>
+        </span>
+        <ArrowRightIcon size={16} strokeWidth={2.2} className={styles.settingsArrow} />
+      </Pressable>
 
       <p className={styles.sheetLabel}>Оформление</p>
       <Segmented label="Оформление" options={THEMES} value={theme} onChange={setTheme} />

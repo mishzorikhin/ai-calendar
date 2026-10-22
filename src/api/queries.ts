@@ -10,10 +10,17 @@ import type {
   EventPatch,
   IntegrationPatch,
   IntegrationsInfo,
+  Memory,
+  MemoryKind,
+  MemoryPatch,
   NewEvent,
   NewIntegration,
   NewTask,
   NotifySettings,
+  Person,
+  PersonInput,
+  Profile,
+  ProfilePatch,
   PushInfo,
   Task,
   TaskPatch,
@@ -44,6 +51,9 @@ export const keys = {
   /** id подписки этого браузера — чтобы отметить его в списке устройств. */
   pushDeviceId: ['push-device-id'] as const,
   alarms: ['alarms'] as const,
+  profile: ['profile'] as const,
+  memories: ['memories'] as const,
+  people: ['people'] as const,
 }
 
 const NO_EVENTS: CalendarEvent[] = []
@@ -477,6 +487,10 @@ export function useSendChat() {
           qc.invalidateQueries({ queryKey: keys.allEvents }),
           qc.invalidateQueries({ queryKey: keys.allMonths }),
           qc.invalidateQueries({ queryKey: keys.tasks }),
+          // Ассистент мог запомнить факт, добавить человека или поменять профиль.
+          qc.invalidateQueries({ queryKey: keys.memories }),
+          qc.invalidateQueries({ queryKey: keys.people }),
+          qc.invalidateQueries({ queryKey: keys.profile }),
         ])
       } finally {
         active.current = null
@@ -684,5 +698,135 @@ export function useDeleteDevice() {
       void qc.invalidateQueries({ queryKey: keys.devices })
       void qc.invalidateQueries({ queryKey: keys.push })
     },
+  })
+}
+
+// --- Персонализация: профиль, память, люди ------------------------------------
+
+/** Профиль пользователя: ритм дня, рабочее время, манера общения ассистента. */
+export function useProfile() {
+  const api = useApi()
+  const session = useSession()
+  return useQuery({
+    queryKey: keys.profile,
+    queryFn: () => api.getProfile(),
+    enabled: api.mode === 'local' || !!session,
+    staleTime: 5 * 60_000,
+  })
+}
+
+/** Изменение профиля — сразу в кэше, откат при ошибке. */
+export function useUpdateProfile() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: ProfilePatch) => api.updateProfile(patch),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: keys.profile })
+      const previous = qc.getQueryData<Profile>(keys.profile)
+      if (previous) qc.setQueryData<Profile>(keys.profile, { ...previous, ...patch })
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.profile, ctx?.previous),
+    onSuccess: (profile) => qc.setQueryData(keys.profile, profile),
+  })
+}
+
+const NO_MEMORIES: Memory[] = []
+
+/** Факты в памяти ассистента, новые первыми. */
+export function useMemories() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.memories, queryFn: () => api.getMemories() })
+  return { ...query, memories: query.data ?? NO_MEMORIES }
+}
+
+export function useCreateMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { kind: MemoryKind; text: string; date?: string }) => api.createMemory(input),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+/** Правка факта; «Нет» у догадки (rejected) убирает её из списка сразу. */
+export function useUpdateMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: MemoryPatch }) => api.updateMemory(id, patch),
+    onMutate: async ({ id, patch }) => {
+      await qc.cancelQueries({ queryKey: keys.memories })
+      const previous = qc.getQueryData<Memory[]>(keys.memories)
+      const { rejected, ...fields } = patch
+      qc.setQueryData<Memory[]>(keys.memories, (list = []) =>
+        rejected ? list.filter((m) => m.id !== id) : list.map((m) => (m.id === id ? { ...m, ...fields } : m)),
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => qc.setQueryData(keys.memories, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+export function useDeleteMemory() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteMemory(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.memories })
+      const previous = qc.getQueryData<Memory[]>(keys.memories)
+      qc.setQueryData<Memory[]>(keys.memories, (list = []) => list.filter((m) => m.id !== id))
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => qc.setQueryData(keys.memories, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+export function useDeleteAllMemories() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.deleteAllMemories(),
+    onSuccess: () => qc.setQueryData<Memory[]>(keys.memories, []),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.memories }),
+  })
+}
+
+const NO_PEOPLE: Person[] = []
+
+export function usePeople() {
+  const api = useApi()
+  const query = useQuery({ queryKey: keys.people, queryFn: () => api.getPeople() })
+  return { ...query, people: query.data ?? NO_PEOPLE }
+}
+
+/** Создать (id нет) или заменить карточку человека. */
+export function useSavePerson() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: number; input: PersonInput }) =>
+      id === undefined ? api.createPerson(input) : api.updatePerson(id, input),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
+  })
+}
+
+export function useDeletePerson() {
+  const api = useApi()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deletePerson(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.people })
+      const previous = qc.getQueryData<Person[]>(keys.people)
+      qc.setQueryData<Person[]>(keys.people, (list = []) => list.filter((p) => p.id !== id))
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => qc.setQueryData(keys.people, ctx?.previous),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.people }),
   })
 }

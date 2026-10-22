@@ -120,6 +120,7 @@ func (s *server) handler(opts Options) http.Handler {
 	mux.Handle("GET /api/profile", s.authed(s.getProfile))
 	mux.Handle("PATCH /api/profile", s.authed(s.updateProfile))
 	mux.Handle("GET /api/memories", s.authed(s.listMemories))
+	mux.Handle("POST /api/memories", s.authed(s.createMemory))
 	mux.Handle("DELETE /api/memories", s.authed(s.deleteAllMemories))
 	mux.Handle("PATCH /api/memories/{id}", s.authed(s.updateMemory))
 	mux.Handle("DELETE /api/memories/{id}", s.authed(s.deleteMemory))

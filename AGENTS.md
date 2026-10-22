@@ -78,7 +78,7 @@ src/
   app/        состояние интерфейса — узкие контексты: navigation, calendar (выбранный день),
               assistant (запрос, голос), composer (шторка события), bar (нижняя панель), session-gate (вход)
   domain/     чистая логика без React: types.ts, calendar.ts (слоты), limits.ts (лимиты и валидация),
-              reminders.ts (варианты и подписи напоминаний)
+              reminders.ts (варианты и подписи напоминаний), profile.ts (профиль, память и люди: проверки как на сервере)
   mocks/      демо-данные локального режима (calendar.ts) и подсказки чата (assistant.ts)
   lib/        dates, plural (Intl.PluralRules), hooks (useTimeout/useInterval/useNow), motion-пресеты,
               speech (Web Speech API), storage, badges, sheetDrag
@@ -86,7 +86,8 @@ src/
               EventComposer, ReadOnlyEvent, VoiceOverlay, Icons
   pwa/        UpdatePrompt, OfflineBadge, InstallBanner, useLaunchAction (shortcuts), useOutboxSync,
               pushMessage.ts (содержимое push и кнопки), usePushDevice, usePushEvents (сверка подписки, переходы)
-  screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари», reminders/ — «Напоминания»), month, day, chat —
+  screens/    auth, home (задачи и цели, аккаунт, calendars/ — шторка «Календари», reminders/ — «Напоминания»,
+              assistant/ — «Ассистент обо мне», «Что ассистент знает», анкета знакомства; HomeSheets — шторки настроек), month, day, chat —
               у каждого экрана своя папка
   styles/     global.css — дизайн-токены
   sw.ts       service worker (precache, runtime-кэш API, Background Sync очереди)
@@ -146,7 +147,10 @@ React-компоненты; `mocks/` используются только в `a
     Запросы из service worker (кнопки уведомления) берут токен из метаданных очереди (`outbox.authToken()`).
     Если окно приложения в фокусе, worker в Chromium (вне iOS) не показывает системное уведомление, а шлёт `push:show`
     (`pwa/PushToast`); Chromium это допускает. В Safari, PWA на iPhone и Firefox системное показывается всегда.
-13. **Повторяющиеся события** (`repeat`, `repeatUntil`, `exdates`): вхождения приходят с id серии и своей датой.
+13. **Персонализация** — профиль (`Profile`), память (`Memory`) и люди (`Person`): Go `model/personal.go` ↔ TS `domain/types.ts`,
+    проверки — `domain/profile.ts` ↔ `api/profile.go`/`memory.go`/`people.go`. Факты в память пишет ассистент только со слов
+    пользователя (`evidence`, см. `server/AGENTS.md`). Анкета знакомства открывается сама, пока `profile.onboarded` — false.
+14. **Повторяющиеся события** (`repeat`, `repeatUntil`, `exdates`): вхождения приходят с id серии и своей датой.
     Правка по id меняет серию; при правке вхождения передавайте `occurrence` (его день), «только этот день» — `skip`.
     Локальный режим повторяет правила сервера в `domain/repeat.ts`. Повтор есть только у своих событий (без `source`).
 

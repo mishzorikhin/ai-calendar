@@ -27,6 +27,15 @@ const TOOL_LABELS: Record<string, string> = {
   create_task: 'Добавляю задачу',
   update_task: 'Обновляю задачу',
   delete_task: 'Удаляю задачу',
+  create_reminder: 'Ставлю напоминание',
+  list_reminders: 'Смотрю напоминания',
+  update_profile: 'Обновляю профиль',
+  remember: 'Запоминаю',
+  forget: 'Забываю',
+  list_memories: 'Вспоминаю',
+  list_people: 'Смотрю людей',
+  save_person: 'Запоминаю человека',
+  forget_person: 'Забываю человека',
 }
 
 export function Chat() {

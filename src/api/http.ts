@@ -8,7 +8,10 @@ import type {
   DatedEvent,
   Integration,
   IntegrationsInfo,
+  Memory,
   NotifySettings,
+  Person,
+  Profile,
   PushDevice,
   PushInfo,
   Task,
@@ -224,6 +227,19 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     getAlarms: () => request<Alarm[]>('/api/reminders'),
     createAlarm: ({ text, at }) => post<Alarm>('/api/reminders', { text, at: at.toISOString() }),
     deleteAlarm: (id) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
+
+    getProfile: () => request<Profile>('/api/profile'),
+    updateProfile: (patch) => request<Profile>('/api/profile', { method: 'PATCH', body: JSON.stringify(patch) }),
+    getMemories: () => request<Memory[]>('/api/memories'),
+    createMemory: (input) => post<Memory>('/api/memories', input),
+    updateMemory: (id, patch) =>
+      request<Memory>(`/api/memories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteMemory: (id) => request<void>(`/api/memories/${id}`, { method: 'DELETE' }),
+    deleteAllMemories: () => request<void>('/api/memories', { method: 'DELETE' }),
+    getPeople: () => request<Person[]>('/api/people'),
+    createPerson: (input) => post<Person>('/api/people', input),
+    updatePerson: (id, input) => request<Person>(`/api/people/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    deletePerson: (id) => request<void>(`/api/people/${id}`, { method: 'DELETE' }),
   }
 }
 

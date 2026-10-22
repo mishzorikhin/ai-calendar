@@ -1,4 +1,4 @@
-import type { ChatMessage, DatedEvent, NotifySettings, Task, User } from '../domain/types'
+import type { ChatMessage, DatedEvent, Memory, NotifySettings, Person, Profile, Task, User } from '../domain/types'
 import {
   LIMITS,
   isValidRange,
@@ -8,6 +8,17 @@ import {
   subtitleError,
   titleError,
 } from '../domain/limits'
+import {
+  DEFAULT_PROFILE,
+  MEMORY_KINDS,
+  PROFILE_LIMITS,
+  applyProfilePatch,
+  isMemoryDate,
+  memoryTextError,
+  normalizePerson,
+  personError,
+  profileError,
+} from '../domain/profile'
 import { DEFAULT_NOTIFY_SETTINGS } from '../domain/reminders'
 import { isRepeat, occursOn, shiftSeries } from '../domain/repeat'
 import { fromISODate, toISODate } from '../lib/dates'
@@ -25,6 +36,10 @@ type Snapshot = {
   nextId: number
   /** Настройки напоминаний: без сервера уведомлений нет, но выбор «по умолчанию» в редакторе тот же. */
   notify?: NotifySettings
+  /** Профиль, память и люди — ассистента без сервера нет, но их можно заполнить заранее. */
+  profile?: Profile
+  memories?: Memory[]
+  people?: Person[]
 }
 
 /** Первая ошибка проверки или null; отвечает так же, как сервер (400). */
@@ -340,5 +355,109 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     getAlarms: () => reply([]),
     createAlarm: () => Promise.reject(NO_PUSH),
     deleteAlarm: () => Promise.reject(NO_PUSH),
+
+    getProfile: () => reply({ ...DEFAULT_PROFILE, ...data.profile }),
+    updateProfile(patch) {
+      const next = applyProfilePatch({ ...DEFAULT_PROFILE, ...data.profile }, patch)
+      const bad = invalid(profileError(next))
+      if (bad) return bad
+      data.profile = next
+      save()
+      return reply(next)
+    },
+    getMemories: () => reply([...(data.memories ?? [])].sort((a, b) => b.id - a.id)),
+    createMemory(input) {
+      const text = input.text.trim()
+      const date = input.date?.trim() || undefined
+      const bad =
+        invalid(
+          MEMORY_KINDS.some((k) => k.id === input.kind) ? null : 'Неизвестный вид факта',
+          memoryTextError(text),
+          isMemoryDate(date) ? null : 'Дата — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)',
+        ) ??
+        ((data.memories?.length ?? 0) >= PROFILE_LIMITS.memories
+          ? invalid(`Память заполнена: не больше ${PROFILE_LIMITS.memories} фактов`)
+          : null)
+      if (bad) return bad
+      const now = new Date().toISOString()
+      const memory: Memory = {
+        id: data.nextId++,
+        kind: input.kind,
+        text,
+        date,
+        source: 'user',
+        confirmed: true,
+        createdAt: now,
+        updatedAt: now,
+      }
+      data.memories = [...(data.memories ?? []), memory]
+      save()
+      return reply(memory)
+    },
+    updateMemory(id, patch) {
+      const list = data.memories ?? []
+      const i = list.findIndex((m) => m.id === id)
+      const prev = list[i]
+      if (!prev) return Promise.reject(new ApiError(404, 'Факт не найден'))
+      const text = patch.text?.trim()
+      const bad = invalid(
+        text === undefined ? null : memoryTextError(text),
+        isMemoryDate(patch.date) ? null : 'Дата — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)',
+      )
+      if (bad) return bad
+      const next: Memory = {
+        ...prev,
+        kind: patch.kind ?? prev.kind,
+        date: patch.date === undefined ? prev.date : patch.date || undefined,
+        confirmed: patch.confirmed ?? prev.confirmed,
+        text: text ?? prev.text,
+        updatedAt: new Date().toISOString(),
+      }
+      data.memories = patch.rejected ? list.filter((m) => m.id !== id) : list.map((m) => (m.id === id ? next : m))
+      save()
+      return reply(next)
+    },
+    deleteMemory(id) {
+      const before = data.memories?.length ?? 0
+      data.memories = (data.memories ?? []).filter((m) => m.id !== id)
+      if (data.memories.length === before) return Promise.reject(new ApiError(404, 'Факт не найден'))
+      save()
+      return reply(undefined)
+    },
+    deleteAllMemories() {
+      data.memories = []
+      save()
+      return reply(undefined)
+    },
+    getPeople: () =>
+      reply([...(data.people ?? [])].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'ru'))),
+    createPerson(input) {
+      const bad =
+        invalid(personError(input)) ??
+        ((data.people?.length ?? 0) >= PROFILE_LIMITS.people
+          ? invalid(`Не больше ${PROFILE_LIMITS.people} человек`)
+          : null)
+      if (bad) return bad
+      const person: Person = { id: data.nextId++, ...normalizePerson(input) }
+      data.people = [...(data.people ?? []), person]
+      save()
+      return reply(person)
+    },
+    updatePerson(id, input) {
+      if (!data.people?.some((p) => p.id === id)) return Promise.reject(new ApiError(404, 'Человек не найден'))
+      const bad = invalid(personError(input))
+      if (bad) return bad
+      const person: Person = { id, ...normalizePerson(input) }
+      data.people = data.people.map((p) => (p.id === id ? person : p))
+      save()
+      return reply(person)
+    },
+    deletePerson(id) {
+      const before = data.people?.length ?? 0
+      data.people = (data.people ?? []).filter((p) => p.id !== id)
+      if (data.people.length === before) return Promise.reject(new ApiError(404, 'Человек не найден'))
+      save()
+      return reply(undefined)
+    },
   }
 }

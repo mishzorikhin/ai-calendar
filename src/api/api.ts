@@ -10,11 +10,18 @@ import type {
   Integration,
   IntegrationPatch,
   IntegrationsInfo,
+  Memory,
+  MemoryKind,
+  MemoryPatch,
   MonthDots,
   NewEvent,
   NewIntegration,
   NewTask,
   NotifySettings,
+  Person,
+  PersonInput,
+  Profile,
+  ProfilePatch,
   PushDevice,
   PushInfo,
   PushSubscriptionData,
@@ -120,6 +127,23 @@ export interface CalendarApi {
   getAlarms(): Promise<Alarm[]>
   createAlarm(input: { text: string; at: Date }): Promise<Alarm>
   deleteAlarm(id: number): Promise<void>
+
+  /** Профиль: ритм дня, рабочее время, «святые» блоки, манера общения ассистента. */
+  getProfile(): Promise<Profile>
+  updateProfile(patch: ProfilePatch): Promise<Profile>
+  /** Память ассистента: факты из разговоров и догадки (новые первыми, без отклонённых). */
+  getMemories(): Promise<Memory[]>
+  createMemory(input: { kind: MemoryKind; text: string; date?: string }): Promise<Memory>
+  updateMemory(id: number, patch: MemoryPatch): Promise<Memory>
+  deleteMemory(id: number): Promise<void>
+  /** Забыть всё. */
+  deleteAllMemories(): Promise<void>
+  /** Карточки людей по имени. */
+  getPeople(): Promise<Person[]>
+  createPerson(input: PersonInput): Promise<Person>
+  /** Заменить карточку целиком. */
+  updatePerson(id: number, input: PersonInput): Promise<Person>
+  deletePerson(id: number): Promise<void>
 }
 
 /** Ошибка API с текстом, который можно показать пользователю. */

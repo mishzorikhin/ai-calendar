@@ -242,3 +242,76 @@ export type PushDevice = {
   label: string
   createdAt: string
 }
+
+// --- Персонализация ассистента (server/internal/model/personal.go) ----------------------
+
+export type Focus = 'none' | 'morning' | 'afternoon' | 'evening'
+
+/** «Святой» отрезок дня: ассистент его не занимает. days — дни недели (0 — воскресенье), пусто — каждый день. */
+export type ProtectedBlock = { title: string; start: number; end: number; days?: number[] }
+
+export type SuggestionKind = 'lunch' | 'stale_task' | 'date' | 'overload' | 'plan_tasks'
+
+/** Что пользователь рассказал о себе. Время — минуты от полуночи. */
+export type Profile = {
+  wakeUp: number
+  /** ≤ wakeUp — ложится после полуночи. */
+  bedTime: number
+  workStart: number
+  workEnd: number
+  workDays: number[]
+  focus: Focus
+  meetingMinutes: number
+  bufferMinutes: number
+  protected: ProtectedBlock[]
+  tone: 'brief' | 'detailed'
+  address: 'ty' | 'vy'
+  about?: string
+  /** Ассистент запоминает факты из разговоров. */
+  memory: boolean
+  /** Предложений ассистента в день (0 — не присылать) и выключенные виды. */
+  proactive: number
+  muted?: SuggestionKind[]
+  /** Анкета при первом входе пройдена или пропущена. */
+  onboarded: boolean
+}
+
+export type ProfilePatch = Partial<Profile>
+
+export type MemoryKind = 'person' | 'place' | 'habit' | 'preference' | 'rule' | 'date' | 'other'
+
+/** Факт в памяти ассистента. source: inferred — догадка по поведению (ждёт «Верно» / «Нет»). */
+export type Memory = {
+  id: number
+  kind: MemoryKind
+  text: string
+  /** ГГГГ-ММ-ДД или --ММ-ДД (каждый год). */
+  date?: string
+  source: 'user' | 'inferred'
+  confirmed: boolean
+  key?: string
+  createdAt: string
+  updatedAt: string
+  /** Когда факт последний раз пригодился ассистенту. */
+  usedAt?: string
+}
+
+export type MemoryPatch = { kind?: MemoryKind; text?: string; date?: string; confirmed?: boolean; rejected?: boolean }
+
+/** Карточка человека из окружения пользователя. */
+export type Person = {
+  id: number
+  name: string
+  aliases?: string[]
+  relation?: string
+  place?: string
+  /** Обычная длительность встречи; 0/нет — как в профиле. */
+  meetingMinutes?: number
+  /** ГГГГ-ММ-ДД или --ММ-ДД. */
+  birthday?: string
+  notes?: string
+  /** Логин на сервере. */
+  username?: string
+}
+
+export type PersonInput = Omit<Person, 'id'>

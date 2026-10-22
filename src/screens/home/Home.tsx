@@ -1,5 +1,5 @@
 import { AnimatePresence, m } from 'framer-motion'
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApi } from '../../api/provider'
 import { useDayEvents, useMe, useNotifications, useTasks } from '../../api/queries'
 import { useSession } from '../../api/session'
@@ -19,16 +19,12 @@ import { pluralize } from '../../lib/plural'
 import { InstallBanner } from '../../pwa/InstallBanner'
 import { userColor, userInitials } from './avatar'
 import { clearOAuthReturn, readOAuthReturn } from './calendars/oauthReturn'
+import { HomeSheets, type HomeSheet } from './HomeSheets'
 import { NextEvent } from './NextEvent'
 import { PrepCard } from './PrepCard'
 import { TaskSheet } from './TaskSheet'
 import { TasksGrid } from './TasksGrid'
 import styles from './Home.module.css'
-
-// Шторки аккаунта открываются редко — их код грузится по первому открытию.
-const AccountSheet = lazy(() => import('./AccountSheet').then((mod) => ({ default: mod.AccountSheet })))
-const CalendarsSheet = lazy(() => import('./calendars/CalendarsSheet').then((mod) => ({ default: mod.CalendarsSheet })))
-const RemindersSheet = lazy(() => import('./reminders/RemindersSheet').then((mod) => ({ default: mod.RemindersSheet })))
 
 export function Home() {
   const { go } = useNavigation()
@@ -41,7 +37,7 @@ export function Home() {
   const [taskSheet, setTaskSheet] = useState<Task | 'new' | null>(null)
   // Вернулись со страницы входа Google/Microsoft — сразу открываем «Календари» с результатом.
   const [oauthReturn] = useState(readOAuthReturn)
-  const [sheet, setSheet] = useState<'account' | 'calendars' | 'reminders' | null>(oauthReturn ? 'calendars' : null)
+  const [sheet, setSheet] = useState<HomeSheet | null>(oauthReturn ? 'calendars' : null)
   useEffect(clearOAuthReturn, [])
   const user = me.data ?? session?.user
   // Обновляем раз в минуту: «Далее» и дата не застывают, даже если экран долго открыт.
@@ -164,26 +160,8 @@ export function Home() {
             onClose={() => setTaskSheet(null)}
           />
         )}
-        {sheet === 'account' && (
-          <Suspense key="account-sheet" fallback={null}>
-            <AccountSheet
-              onClose={() => setSheet(null)}
-              onCalendars={() => setSheet('calendars')}
-              onReminders={() => setSheet('reminders')}
-            />
-          </Suspense>
-        )}
-        {sheet === 'reminders' && (
-          <Suspense key="reminders-sheet" fallback={null}>
-            <RemindersSheet onClose={() => setSheet(null)} />
-          </Suspense>
-        )}
-        {sheet === 'calendars' && (
-          <Suspense key="calendars-sheet" fallback={null}>
-            <CalendarsSheet notice={oauthReturn} onClose={() => setSheet(null)} />
-          </Suspense>
-        )}
       </AnimatePresence>
+      <HomeSheets sheet={sheet} onSheet={setSheet} oauthReturn={oauthReturn} />
     </Sheet>
   )
 }

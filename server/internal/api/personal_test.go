@@ -258,6 +258,13 @@ func TestMemoriesAPI(t *testing.T) {
 	if !upd.Confirmed || upd.Text != "Спорт — вт и чт" {
 		t.Fatalf("подтверждение: %+v", upd)
 	}
+	added := decode[model.Memory](t, doAs(t, h, tok, "POST", "/api/memories", `{"kind":"date","text":" ДР мамы ","date":"--03-14"}`))
+	if added.Text != "ДР мамы" || added.Source != model.SourceUser || !added.Confirmed {
+		t.Fatalf("ручной факт: %+v", added)
+	}
+	if rec := doAs(t, h, tok, "POST", "/api/memories", `{"text":"x","date":"14.03"}`); rec.Code != 400 {
+		t.Fatalf("неверная дата: %d", rec.Code)
+	}
 	for _, bad := range []string{`{"text":""}`, `{"kind":"secret"}`, `{"date":"завтра"}`} {
 		if rec := doAs(t, h, tok, "PATCH", fmt.Sprintf("/api/memories/%d", m.ID), bad); rec.Code != 400 {
 			t.Errorf("%s: %d", bad, rec.Code)

@@ -62,6 +62,42 @@ func (s *server) listMemories(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type memoryInput struct {
+	Kind model.MemoryKind `json:"kind"`
+	Text string           `json:"text"`
+	Date string           `json:"date"`
+}
+
+// createMemory — факт, который пользователь добавил сам в шторке памяти.
+func (s *server) createMemory(w http.ResponseWriter, r *http.Request) error {
+	var in memoryInput
+	if err := readJSON(w, r, &in); err != nil {
+		return err
+	}
+	if in.Kind == "" {
+		in.Kind = model.MemoryOther
+	}
+	if !in.Kind.Valid() {
+		return badRequest("Неизвестный вид факта: %q", in.Kind)
+	}
+	in.Text, in.Date = strings.TrimSpace(in.Text), strings.TrimSpace(in.Date)
+	if err := validateMemoryText(in.Text); err != nil {
+		return err
+	}
+	if !validMemoryDate(in.Date) {
+		return badRequest("Дата — ГГГГ-ММ-ДД или --ММ-ДД (каждый год)")
+	}
+	m, err := s.store.AddMemory(r.Context(), model.Memory{Kind: in.Kind, Text: in.Text, Date: in.Date, Source: model.SourceUser, Confirmed: true})
+	if errors.Is(err, store.ErrLimit) {
+		return badRequest("Память заполнена: не больше %d фактов — удалите старые", model.MaxMemories)
+	}
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, m)
+	return nil
+}
+
 type memoryPatchInput struct {
 	Kind      *model.MemoryKind `json:"kind"`
 	Text      *string           `json:"text"`
