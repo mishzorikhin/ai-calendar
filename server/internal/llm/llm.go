@@ -46,6 +46,37 @@ type Message struct {
 	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // у assistant
 	ToolCallID string     `json:"tool_call_id,omitempty"` // у tool — id вызова
+	// Images — картинки к реплике пользователя (data URL): уходят частями content, как в OpenAI.
+	Images []string `json:"-"`
+}
+
+// MarshalJSON — с картинками content становится списком частей: текст и image_url.
+func (m Message) MarshalJSON() ([]byte, error) {
+	type plain Message
+	if len(m.Images) == 0 {
+		return json.Marshal(plain(m))
+	}
+	parts := []map[string]any{{"type": "text", "text": m.Content}}
+	for _, img := range m.Images {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img}})
+	}
+	return json.Marshal(struct {
+		Role    string           `json:"role"`
+		Content []map[string]any `json:"content"`
+	}{m.Role, parts})
+}
+
+// RejectedRequest — модель отказала в самом запросе (400, 413, 415, 422): например, не принимает картинки.
+func RejectedRequest(err error) bool {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return false
+	}
+	switch he.status {
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
+		return true
+	}
+	return false
 }
 
 // FunctionCall — имя инструмента и его аргументы (JSON-строка).

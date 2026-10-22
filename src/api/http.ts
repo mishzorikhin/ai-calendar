@@ -119,10 +119,14 @@ export function createHttpApi(baseUrl = ''): CalendarApi {
     updateTask: (id, patch) => request<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
     getMessages: () => request<ChatMessage[]>('/api/messages'),
-    async sendChat(text, onEvent, signal) {
+    async sendChat(text, onEvent, signal, image) {
       let res: Response
       try {
-        res = await send('/api/chat', { method: 'POST', body: JSON.stringify({ text }), signal })
+        res = await send('/api/chat', {
+          method: 'POST',
+          body: JSON.stringify(image ? { text, image } : { text }),
+          signal,
+        })
       } catch (e) {
         if (signal?.aborted) return
         throw e

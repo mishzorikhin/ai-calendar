@@ -436,7 +436,10 @@ export type ChatStream = {
  * Сообщение, на которое не пришёл ответ: живёт локально, пока его не повторят или не сотрут.
  * delivered — сервер реплику получил (она уже в истории), оборвался только ответ.
  */
-export type FailedMessage = { id: number; text: string; error: string; delivered: boolean }
+export type FailedMessage = { id: number; text: string; image?: string; error: string; delivered: boolean }
+
+/** Пометка картинки в истории — та же, что пишет сервер. */
+export const IMAGE_MARK = '📎 фото'
 
 /**
  * Отправка сообщения ассистенту. Пузырь пользователя добавляем оптимистично —
@@ -457,15 +460,16 @@ export function useSendChat() {
   useEffect(() => () => active.current?.abort(), [])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, image?: string) => {
       const value = text.trim()
-      if (!value || active.current) return
+      if ((!value && !image) || active.current) return
+      const shown = image ? `${value}\n${IMAGE_MARK}`.trim() : value
       const ctl = new AbortController()
       active.current = ctl
       setFailed((list) => list.filter((m) => m.text !== value))
       qc.setQueryData<ChatMessage[]>(keys.messages, (list = []) => [
         ...list,
-        { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: value },
+        { id: (list.at(-1)?.id ?? 0) + 1, role: 'user', text: shown },
       ])
       setStream({ text: '', tools: [], done: false, error: null })
       let error: string | null = null
@@ -499,6 +503,7 @@ export function useSendChat() {
             }
           },
           ctl.signal,
+          image,
         )
       } catch (err) {
         error = apiErrorText(err)
@@ -523,7 +528,7 @@ export function useSendChat() {
       setStream(null)
       if (error) {
         const message = error
-        setFailed((list) => [...list, { id: Date.now(), text: value, error: message, delivered }])
+        setFailed((list) => [...list, { id: Date.now(), text: value, image, error: message, delivered }])
       }
     },
     [api, qc],

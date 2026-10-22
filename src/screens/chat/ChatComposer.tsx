@@ -1,9 +1,10 @@
 import { AnimatePresence, m } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigation } from '../../app/navigation'
-import { ArrowRightIcon, BackIcon, CloseIcon, MicIcon, StopIcon } from '../../components/Icons'
+import { ArrowRightIcon, BackIcon, CloseIcon, ImageIcon, MicIcon, StopIcon } from '../../components/Icons'
 import { CircleButton, Pill, Waveform } from '../../components/ui'
 import { useKeyboardInset } from '../../lib/hooks'
+import { compressImage } from '../../lib/image'
 import { softSpring, spring } from '../../lib/motion'
 import { useDictation } from '../../lib/speech'
 import { CHAT_CATEGORIES, QUICK_PROMPTS, type ChatCategoryId } from '../../mocks/assistant'
@@ -16,19 +17,35 @@ export function ChatComposer({
   initialText,
   focusOnMount,
   busy,
+  canAttach,
   onSend,
 }: {
   initialText: string
   focusOnMount: boolean
   /** Ассистент отвечает — повторная отправка заблокирована. */
   busy?: boolean
-  onSend: (text: string) => void
+  /** Можно приложить картинку (только с сервером). */
+  canAttach?: boolean
+  onSend: (text: string, image?: string) => void
 }) {
   const { back } = useNavigation()
   const [text, setText] = useState(initialText)
   const [category, setCategory] = useState<ChatCategoryId | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  const file = useRef<HTMLInputElement>(null)
+  const [image, setImage] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const kb = useKeyboardInset()
+
+  const attach = async (picked: File | undefined) => {
+    if (!picked) return
+    setImageError(null)
+    try {
+      setImage(await compressImage(picked))
+    } catch {
+      setImageError('Не получилось открыть картинку')
+    }
+  }
 
   // Диктовка: распознанный текст дописывается к тому, что уже было в поле.
   const base = useRef('')
@@ -74,13 +91,15 @@ export function ChatComposer({
 
   const send = () => {
     const value = text.trim()
-    if (value && !busy) {
+    if ((value || image) && !busy) {
       stop()
       setText('')
+      setImage(null)
       base.current = ''
-      onSend(value)
+      onSend(value, image ?? undefined)
     }
   }
+  const ready = Boolean(text || image)
 
   const active = CHAT_CATEGORIES.find((c) => c.id === category)
   const chipsKey = text ? 'quick' : active ? `cat-${active.id}` : 'cats'
@@ -138,6 +157,26 @@ export function ChatComposer({
         </AnimatePresence>
       </div>
 
+      {(image || imageError) && (
+        <div className={styles.attachment}>
+          {image && <img src={image} alt="Прикреплённая картинка" className={styles.attachmentThumb} />}
+          <span className={styles.attachmentText} role={imageError ? 'alert' : undefined}>
+            {imageError ?? 'Картинка уйдёт с сообщением'}
+          </span>
+          <CircleButton
+            tone="glass"
+            size={40}
+            onClick={() => {
+              setImage(null)
+              setImageError(null)
+            }}
+            aria-label="Убрать картинку"
+          >
+            <CloseIcon size={14} />
+          </CircleButton>
+        </div>
+      )}
+
       <div className={styles.row}>
         <CircleButton tone="glass" size={48} onClick={back} aria-label="Закрыть чат">
           <BackIcon size={20} />
@@ -160,7 +199,7 @@ export function ChatComposer({
                 send()
               }
             }}
-            placeholder={listening ? 'Слушаю…' : 'Спросите что угодно…'}
+            placeholder={listening ? 'Слушаю…' : image ? 'Что с ней сделать?' : 'Спросите что угодно…'}
             enterKeyHint="send"
             aria-label="Сообщение"
           />
@@ -169,9 +208,29 @@ export function ChatComposer({
               <Waveform bars={14} height={18} color="var(--ink-3)" />
             </span>
           )}
+          {canAttach && !listening && (
+            <button
+              type="button"
+              className={styles.attachBtn}
+              onClick={() => file.current?.click()}
+              aria-label="Приложить фото или скриншот"
+            >
+              <ImageIcon size={20} />
+            </button>
+          )}
+          <input
+            ref={file}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              void attach(e.target.files?.[0])
+              e.target.value = ''
+            }}
+          />
         </label>
         <AnimatePresence mode="popLayout" initial={false}>
-          {text && !listening ? (
+          {ready && !listening ? (
             <m.span
               key="send"
               initial={{ scale: 0.4, opacity: 0 }}

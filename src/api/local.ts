@@ -372,7 +372,8 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
     },
     getMessages: () => reply([...data.messages]),
     // Без сервера модели нет — честно об этом говорим и сохраняем обе реплики.
-    async sendChat(text, onEvent) {
+    async sendChat(text, onEvent, _signal, image) {
+      if (image) return Promise.reject(new ApiError(400, 'Картинки ассистент смотрит только с сервером'))
       const bad = invalid(messageError(text.trim()))
       if (bad) return bad
       const answer = 'Ассистент отвечает только с сервером — запустите `make api` с переменной LLM_API_KEY.'

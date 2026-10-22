@@ -77,7 +77,8 @@ export interface CalendarApi {
    * Сообщение ассистенту: ответ приходит потоком событий в onEvent. `signal` прерывает чтение
    * (ушли из чата) — сервер всё равно допишет ответ и сохранит его в истории.
    */
-  sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void>
+  /** image — картинка к реплике (data URL JPEG, до 1,5 МБ); в истории от неё остаётся пометка «📎 фото». */
+  sendChat(text: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal, image?: string): Promise<void>
 
   /** Профиль текущего пользователя. */
   me(): Promise<User>

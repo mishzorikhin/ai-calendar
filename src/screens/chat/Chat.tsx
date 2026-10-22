@@ -1,6 +1,7 @@
 import { m } from 'framer-motion'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
+import { useApi } from '../../api/provider'
+import { IMAGE_MARK, useMessages, useSendChat, type ChatStream, type FailedMessage } from '../../api/queries'
 import { useAssistant } from '../../app/assistant'
 import { BarSlot } from '../../app/bar'
 import { useCalendar } from '../../app/calendar'
@@ -46,6 +47,7 @@ export function Chat() {
   const { prompt, setPrompt, draft, setDraft } = useAssistant()
   const messages = useMessages()
   const { stream, busy, send, failed, dismissFailed } = useSendChat()
+  const api = useApi()
   const list = useRef<HTMLDivElement>(null)
 
   // Черновик (например, запрос, который нужно поправить) забираем в поле один раз.
@@ -66,9 +68,9 @@ export function Chat() {
   }, [messages.length, stream?.text, stream?.tools.length, failed.length])
 
   /** Своё сообщение всегда показываем: прокрутка возвращается вниз. */
-  const sendAndFollow = (text: string) => {
+  const sendAndFollow = (text: string, image?: string) => {
     stick.current = true
-    void send(text)
+    void send(text, image)
   }
 
   // Запрос от голосового ввода или «поручить ассистенту» — отправляем сразу.
@@ -116,13 +118,19 @@ export function Chat() {
             key={msg.id}
             message={msg}
             busy={busy}
-            onRetry={() => sendAndFollow(msg.text)}
+            onRetry={() => sendAndFollow(msg.text, msg.image)}
             onDismiss={() => dismissFailed(msg.id)}
           />
         ))}
       </div>
 
-      <ChatComposer initialText={initialText} focusOnMount={Boolean(initialText)} busy={busy} onSend={sendAndFollow} />
+      <ChatComposer
+        initialText={initialText}
+        focusOnMount={Boolean(initialText)}
+        busy={busy}
+        canAttach={api.mode === 'server'}
+        onSend={sendAndFollow}
+      />
     </div>
   )
 }
@@ -207,7 +215,9 @@ function FailedBubble({
       role="status"
     >
       {!message.delivered && (
-        <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>{message.text}</p>
+        <p className={`${styles.bubble} ${styles.bubbleUser} ${styles.bubbleFailed}`}>
+          {message.image ? `${message.text}\n${IMAGE_MARK}`.trim() : message.text}
+        </p>
       )}
       <p className={styles.failedMeta}>
         {message.delivered ? message.error : `Не отправлено — ${message.error}`}
