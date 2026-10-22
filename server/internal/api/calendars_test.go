@@ -395,7 +395,7 @@ func TestFreeSlotsIgnoreAllDay(t *testing.T) {
 	ctx := store.WithUser(context.Background(), u)
 	_, _ = st.SyncEvents(ctx, "cal-1", []model.Event{{Date: "2026-10-22", Title: "Праздник", Start: 0, End: 1440, AllDay: true, ReadOnly: true, ExternalID: "h", Badge: model.BadgeRoutine}})
 	out, _ := s.toolFreeSlots(ctx, chatTurn{now: time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)}, map[string]any{"date": "2026-10-22"})
-	if out != `{"free":[{"end":"21:00","start":"08:00"}]}` {
+	if out != `{"bounds":"07:00–23:00","free":[{"end":"23:00","start":"07:00"}]}` {
 		t.Fatalf("день с праздником свободен: %s", out)
 	}
 	sched, _ := s.toolDaySchedule(ctx, map[string]any{"date": "2026-10-22"})

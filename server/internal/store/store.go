@@ -171,6 +171,25 @@ type Store interface {
 	// ServerKey — значение name из хранилища; если его ещё нет — сохраняет gen() и
 	// возвращает его (при гонке двух процессов оба получат одно значение).
 	ServerKey(ctx context.Context, name string, gen func() (string, error)) (string, error)
+
+	// Profile — профиль текущего пользователя (по умолчанию — DefaultProfile).
+	Profile(ctx context.Context) (model.Profile, error)
+	SetProfile(ctx context.Context, p model.Profile) error
+	// Memories — факты памяти текущего пользователя, новые первыми (с отклонёнными догадками).
+	Memories(ctx context.Context) []model.Memory
+	// AddMemory сохраняет факт текущего пользователя; ErrLimit — фактов уже MaxMemories.
+	AddMemory(ctx context.Context, m model.Memory) (model.Memory, error)
+	UpdateMemory(ctx context.Context, id int64, patch model.MemoryPatch) (model.Memory, error)
+	DeleteMemory(ctx context.Context, id int64) error
+	// DeleteMemories забывает все факты текущего пользователя.
+	DeleteMemories(ctx context.Context) error
+	// TouchMemories отмечает, что факты попали в запрос к модели (UsedAt).
+	TouchMemories(ctx context.Context, ids []int64, at time.Time) error
+	// People — карточки людей текущего пользователя по имени.
+	People(ctx context.Context) []model.Person
+	// SavePerson создаёт (ID 0) или заменяет карточку; ErrLimit — людей уже MaxPeople.
+	SavePerson(ctx context.Context, p model.Person) (model.Person, error)
+	DeletePerson(ctx context.Context, id int64) error
 }
 
 // ErrLimit — превышен предел записей.
@@ -226,10 +245,17 @@ type data struct {
 	Snoozes           []model.Snooze                 `json:"snoozes,omitempty"`
 	NextSnoozeID      int64                          `json:"nextSnoozeId,omitempty"`
 	// ServerKeys — ключи сервера, созданные им самим (закрытый ключ VAPID).
-	ServerKeys    map[string]string `json:"serverKeys,omitempty"`
-	NextID        int               `json:"nextId"`
-	NextUserID    int64             `json:"nextUserId"`
-	NextMessageID int               `json:"nextMessageId"`
+	ServerKeys map[string]string `json:"serverKeys,omitempty"`
+	// Персонализация: профили (по id пользователя), память ассистента и карточки людей.
+	Profiles     map[int64]model.Profile `json:"profiles,omitempty"`
+	Memories     []model.Memory          `json:"memories,omitempty"`
+	NextMemoryID int64                   `json:"nextMemoryId,omitempty"`
+	People       []model.Person          `json:"people,omitempty"`
+	NextPersonID int64                   `json:"nextPersonId,omitempty"`
+
+	NextID        int   `json:"nextId"`
+	NextUserID    int64 `json:"nextUserId"`
+	NextMessageID int   `json:"nextMessageId"`
 }
 
 // fileStore — JSON-файл с атомарной записью (временный файл и rename).

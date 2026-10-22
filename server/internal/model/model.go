@@ -63,6 +63,9 @@ type Event struct {
 	ETag       string `json:"etag,omitempty"`
 	ReadOnly   bool   `json:"readOnly,omitempty"`
 	AllDay     bool   `json:"allDay,omitempty"`
+	// Travel — сколько минут добираться до места: время до начала тоже занято, напоминание —
+	// «пора выезжать».
+	Travel int `json:"travel,omitempty"`
 	// Reminders — за сколько минут до начала напомнить. nil — как в настройках
 	// пользователя (события внешних календарей и созданные до напоминаний), [] — не напоминать.
 	Reminders []int `json:"reminders"`

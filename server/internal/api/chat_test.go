@@ -117,14 +117,14 @@ func TestFreeSlotsSkipPastToday(t *testing.T) {
 	ctx := store.WithUser(context.Background(), u)
 	now := time.Date(2026, 10, 21, 13, 7, 0, 0, time.UTC)
 	out, _ := s.toolFreeSlots(ctx, chatTurn{now: now}, map[string]any{"date": "2026-10-21"})
-	if out != `{"free":[{"end":"21:00","start":"13:15"}]}` {
+	if out != `{"bounds":"07:00–23:00","free":[{"end":"23:00","start":"13:15"}]}` {
 		t.Fatalf("сегодня окна с текущего времени: %s", out)
 	}
 }
 
 func TestChatPromptUsesUserTimeZone(t *testing.T) {
 	now := time.Date(2026, 10, 21, 23, 30, 0, 0, time.UTC).In(time.FixedZone("MSK", 3*3600))
-	p := chatSystemPrompt(now)
+	p := chatRules(now)
 	if !strings.Contains(p, "22.10.2026") || !strings.Contains(p, "02:30") {
 		t.Fatalf("дата и время в поясе пользователя: %s", p[:120])
 	}
