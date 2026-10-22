@@ -1,6 +1,6 @@
 import { AnimatePresence, m, useReducedMotion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { useAssistant } from '../app/assistant'
+import { useAssistant, type VoiceMode } from '../app/assistant'
 import { useNavigation } from '../app/navigation'
 import { softSpring, spring } from '../lib/motion'
 import { speechSupported, useDictation } from '../lib/speech'
@@ -12,13 +12,17 @@ import styles from './VoiceOverlay.module.css'
  * затем пользователь проверяет текст и отправляет или правит его.
  * В браузерах без SpeechRecognition оверлей не показывается — кнопки запуска скрыты.
  */
+/** Запрос ассистенту из надиктованного: для задачи — с явной просьбой её добавить. */
+export const voiceRequest = (heard: string, mode: VoiceMode) => (mode === 'task' ? `${TASK_PREFIX}${heard}` : heard)
+export const TASK_PREFIX = 'Добавь задачу: '
+
 export function VoiceOverlay() {
   if (!speechSupported) return null
   return <VoiceOverlayInner />
 }
 
 function VoiceOverlayInner() {
-  const { voice, setVoice, setPrompt, setDraft } = useAssistant()
+  const { voice, setVoice, voiceMode, setPrompt, setDraft } = useAssistant()
   const { route, go } = useNavigation()
   const visible = voice !== 'idle' && route !== 'chat'
   const [text, setText] = useState('')
@@ -81,7 +85,13 @@ function VoiceOverlayInner() {
             <p className={styles.text}>
               {text && `${text} `}
               {interim && <span className={styles.placeholder}>{interim}</span>}
-              {!heard && <span className={styles.placeholder}>Скажите, что нужно запланировать</span>}
+              {!heard && (
+                <span className={styles.placeholder}>
+                  {voiceMode === 'task'
+                    ? 'Скажите задачу — например, «купить подарок маме до пятницы»'
+                    : 'Скажите, что нужно запланировать'}
+                </span>
+              )}
             </p>
             <AnimatePresence initial={false} mode="wait">
               {voice === 'review' ? (
@@ -97,7 +107,7 @@ function VoiceOverlayInner() {
                     className={styles.send}
                     disabled={!heard}
                     onClick={() => {
-                      setPrompt(heard)
+                      setPrompt(voiceRequest(heard, voiceMode))
                       setVoice('idle')
                       go('chat')
                     }}
@@ -107,7 +117,7 @@ function VoiceOverlayInner() {
                   <Pill
                     tone="ghost"
                     onClick={() => {
-                      setDraft(heard)
+                      setDraft(voiceRequest(heard, voiceMode))
                       setVoice('idle')
                       go('chat')
                     }}

@@ -40,6 +40,12 @@ const manifest = {
       icons: [{ src: 'icon-192.png', sizes: '192x192' }],
     },
     {
+      name: 'Задача голосом',
+      short_name: 'Задача',
+      url: './?action=voice-task',
+      icons: [{ src: 'icon-192.png', sizes: '192x192' }],
+    },
+    {
       name: 'Календарь на месяц',
       short_name: 'Месяц',
       url: './?action=month',
