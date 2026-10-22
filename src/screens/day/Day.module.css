@@ -173,6 +173,45 @@
   overflow: hidden;
 }
 
+/* Таскаемая карточка: долгое нажатие не вызывает меню и выделение текста. */
+.draggable {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.lifted {
+  z-index: 5;
+  cursor: grabbing;
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 14px 34px var(--shadow-c3);
+}
+
+.dragTime {
+  position: absolute;
+  right: 34px;
+  top: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--ink);
+}
+
+/* Ручка длительности внизу поднятой карточки. */
+.resizeGrip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  margin: auto;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-soft);
+}
+
 .eventTitle {
   font-size: 14.5px;
   font-weight: 600;

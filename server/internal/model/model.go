@@ -85,10 +85,12 @@ type Event struct {
 	// RepeatUntil — последний (пусто — бессрочно), ExDates — дни, убранные из серии.
 	// В хранилище лежит одна запись; вхождения по дням разворачивает API (repeat.go)
 	// с тем же id и датой вхождения в Date.
-	Repeat      Repeat    `json:"repeat,omitempty"`
-	RepeatUntil string    `json:"repeatUntil,omitempty"`
-	ExDates     []string  `json:"exdates,omitempty"`
-	CreatedAt   time.Time `json:"createdAt,omitempty"`
+	Repeat      Repeat   `json:"repeat,omitempty"`
+	RepeatUntil string   `json:"repeatUntil,omitempty"`
+	ExDates     []string `json:"exdates,omitempty"`
+	// SeriesDate — у вхождения серии: её первый день (Date — день вхождения).
+	SeriesDate string    `json:"seriesDate,omitempty"`
+	CreatedAt  time.Time `json:"createdAt,omitempty"`
 }
 
 // RSVP — ответ на приглашение.

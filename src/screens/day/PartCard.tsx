@@ -23,6 +23,7 @@ export function PartCard({
   nowMins,
   onCreate,
   onEvent,
+  onMove,
 }: {
   part: DayPart
   index: number
@@ -36,6 +37,8 @@ export function PartCard({
   onCreate: (start: number) => void
   /** Открыть событие для правки. */
   onEvent: (event: CalendarEvent) => void
+  /** Перенести событие перетаскиванием. */
+  onMove?: (event: CalendarEvent, next: { start: number; end: number }) => void
 }) {
   const Icon = PART_ICON[part.id]
   // Ночные события (до 6 утра) относятся к утру: шкала утра начинается с часа самого раннего из них.
@@ -117,7 +120,7 @@ export function PartCard({
                   </span>
                 ))}
                 {events.map((e, i) => (
-                  <EventCard key={e.id} event={e} from={from} to={part.to} index={i} onOpen={onEvent} />
+                  <EventCard key={e.id} event={e} from={from} to={part.to} index={i} onOpen={onEvent} onMove={onMove} />
                 ))}
                 {nowInside && nowMins !== null && (
                   <span className={styles.now} style={{ top: ((nowMins - from) / 60) * HOUR_H }}>

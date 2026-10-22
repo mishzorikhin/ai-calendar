@@ -7,6 +7,7 @@ import { useComposer } from '../../app/composer'
 import { useNavigation } from '../../app/navigation'
 import { CloseIcon } from '../../components/Icons'
 import { Sheet } from '../../components/Sheet'
+import { useUndoable } from '../../components/useUndoable'
 import { CircleButton, Pill } from '../../components/ui'
 import { DAY_PARTS, partOf } from '../../domain/calendar'
 import type { DayPartId } from '../../domain/types'
@@ -24,6 +25,7 @@ export function Day() {
   const { back } = useNavigation()
   const { selectedDate, setSelectedDate } = useCalendar()
   const composer = useComposer()
+  const { moveEvent } = useUndoable()
   const now = useNow()
   const [mode, setMode] = useState<DayMode>('timeline')
   // Раскрытая часть суток запоминается для конкретного дня; по умолчанию —
@@ -105,6 +107,7 @@ export function Day() {
                   nowMins={isToday ? minutesOf(now) : null}
                   onCreate={(start) => composer.open({ date: selectedDate, start })}
                   onEvent={(e) => composer.open({ event: { ...e, date: selectedDate } })}
+                  onMove={(e, next) => moveEvent({ ...e, date: selectedDate }, next)}
                 />
               ))}
             </m.div>

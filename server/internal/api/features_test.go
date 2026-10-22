@@ -64,6 +64,10 @@ func TestExpandRepeat(t *testing.T) {
 	if len(occ) != 2 || !occ[0].Highlight || occ[1].Highlight || occ[1].ID != "e" {
 		t.Fatalf("вхождения: %+v", occ)
 	}
+	// Каждое вхождение знает первый день серии — по нему клиент восстанавливает удалённую серию.
+	if occ[1].SeriesDate != "2026-10-20" || occ[1].Date != "2026-10-21" {
+		t.Errorf("seriesDate: %+v", occ[1])
+	}
 }
 
 func TestRepeatingEventsAPI(t *testing.T) {

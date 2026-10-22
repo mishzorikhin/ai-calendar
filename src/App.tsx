@@ -10,6 +10,7 @@ import { SessionGate } from './app/session-gate'
 import { BottomBar } from './components/BottomBar'
 import { Device } from './components/Device'
 import { EventComposer } from './components/EventComposer'
+import { UndoToast } from './components/UndoToast'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { fromISODate, toISODate } from './lib/dates'
 import { screenVariants } from './lib/motion'
@@ -103,6 +104,7 @@ export function App({ api }: { api: CalendarApi }) {
                 <BottomBar />
                 <VoiceOverlay />
                 <EventComposer />
+                <UndoToast />
               </SessionGate>
               <OfflineBadge />
               <UpdatePrompt />

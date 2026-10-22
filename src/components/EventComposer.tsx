@@ -2,14 +2,7 @@ import { AnimatePresence } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { apiErrorText } from '../api/api'
 import { useApi } from '../api/provider'
-import {
-  useCalendarName,
-  useCreateEvent,
-  useDayEvents,
-  useDeleteEvent,
-  usePrimaryCalendar,
-  useUpdateEvent,
-} from '../api/queries'
+import { useCalendarName, useCreateEvent, useDayEvents, usePrimaryCalendar, useUpdateEvent } from '../api/queries'
 import { useAssistant } from '../app/assistant'
 import { useCalendar } from '../app/calendar'
 import { useComposer, type ComposerRequest } from '../app/composer'
@@ -38,6 +31,7 @@ import { EventLinks } from './EventLinks'
 import { PeoplePicker, type Picked } from './PeoplePicker'
 import { ComposerStatus, NativePicker } from './EventComposerParts'
 import { ReadOnlyEvent } from './ReadOnlyEvent'
+import { useUndoable } from './useUndoable'
 import { ReminderPicker, reminderValue, useDefaultReminder } from './ReminderPicker'
 import { RepeatPicker } from './RepeatPicker'
 import { CircleButton, Pill, Pressable } from './ui'
@@ -102,7 +96,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
   const { setSelectedDate } = useCalendar()
   const createEvent = useCreateEvent()
   const updateEvent = useUpdateEvent()
-  const deleteEvent = useDeleteEvent()
+  const undoable = useUndoable()
   const { route, go } = useNavigation()
   const { setDraft } = useAssistant()
   // Куда уйдёт событие: календарь, откуда оно пришло, или основной для новых.
@@ -211,8 +205,8 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
     if (!editing) titleInput.current?.focus({ preventScroll: true })
   }, [editing])
 
-  const pending = createEvent.isPending || updateEvent.isPending || deleteEvent.isPending
-  const error = createEvent.error ?? updateEvent.error ?? deleteEvent.error
+  const pending = createEvent.isPending || updateEvent.isPending || undoable.pending
+  const error = createEvent.error ?? updateEvent.error ?? undoable.error
 
   const reminders = reminder === null ? {} : { reminders: reminder < 0 ? [] : [reminder] }
 
@@ -282,7 +276,7 @@ function Composer({ request, onClose }: { request: ComposerRequest; onClose: () 
       setConfirmDelete(true)
       return
     }
-    deleteEvent.mutate(editing, { onSuccess: onClose })
+    undoable.removeEvent(editing, { onSuccess: onClose })
   }
 
   /** Убрать из серии только этот день. */

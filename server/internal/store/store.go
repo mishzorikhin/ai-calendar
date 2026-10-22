@@ -481,8 +481,8 @@ func (s *fileStore) CreateEvent(ctx context.Context, e model.Event) (model.Event
 	e.ID = s.nextID("evt")
 	e.UserID = uid
 	e.CreatedAt = s.now()
-	// Участники, приглашение и отрезок дня — не поля записи: их собирают при чтении.
-	e.Attendees, e.Invite, e.Span = nil, nil, nil
+	// Участники, приглашение, отрезок дня и первый день серии — не поля записи: их собирают при чтении.
+	e.Attendees, e.Invite, e.Span, e.SeriesDate = nil, nil, nil, ""
 	s.d.Events = append(s.d.Events, e)
 	return e, s.save()
 }

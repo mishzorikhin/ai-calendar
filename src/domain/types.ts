@@ -29,6 +29,8 @@ export type CalendarEvent = {
   repeatUntil?: string
   /** Дни, убранные из серии (ГГГГ-ММ-ДД). */
   exdates?: string[]
+  /** У вхождения серии — её первый день (ГГГГ-ММ-ДД). */
+  seriesDate?: string
   /** Заметки и ссылка (созвон, билет). Место — subtitle. */
   notes?: string
   url?: string

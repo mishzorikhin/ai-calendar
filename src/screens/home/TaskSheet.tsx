@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { apiErrorText } from '../../api/api'
 import { useApi } from '../../api/provider'
-import { useCreateTask, useDeleteTask, useTaskMembers, useUpdateTask, useUserSearch } from '../../api/queries'
+import { useCreateTask, useTaskMembers, useUpdateTask, useUserSearch } from '../../api/queries'
+import { useUndoable } from '../../components/useUndoable'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
 import { CheckIcon, CloseIcon, TrashIcon } from '../../components/Icons'
@@ -19,7 +20,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
   const api = useApi()
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
+  const undoable = useUndoable()
 
   const [title, setTitle] = useState(task?.title ?? '')
   const [subtitle, setSubtitle] = useState(task?.subtitle ?? '')
@@ -33,8 +34,8 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
   // Логины, с которыми поделиться при создании (для существующей — live через API).
   const [pendingMembers, setPendingMembers] = useState<string[]>([])
 
-  const pending = createTask.isPending || updateTask.isPending || deleteTask.isPending
-  const error = createTask.error ?? updateTask.error ?? deleteTask.error
+  const pending = createTask.isPending || updateTask.isPending || undoable.pending
+  const error = createTask.error ?? updateTask.error ?? undoable.error
   const tag = customTag.trim() || category
 
   const save = () => {
@@ -75,7 +76,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
       setConfirmDelete(true)
       return
     }
-    deleteTask.mutate(task.id, { onSuccess: onClose })
+    undoable.removeTask(task, { onSuccess: onClose })
   }
 
   return (

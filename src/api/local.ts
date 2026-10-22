@@ -160,7 +160,7 @@ export function createLocalApi(storage: Storage | null = safeStorage()): Calenda
       if (!e.repeat) return iso === day ? [e] : []
       if (!occursOn({ ...e, date: iso, repeat: e.repeat }, day)) return []
       // «Новое» — только у первого вхождения.
-      return [{ ...e, date: fromISODate(day), highlight: e.highlight && iso === day }]
+      return [{ ...e, date: fromISODate(day), seriesDate: iso, highlight: e.highlight && iso === day }]
     })
   const monthEvents = (year: number, month: number): DatedEvent[] => {
     const all = events()

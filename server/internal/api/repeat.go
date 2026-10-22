@@ -103,6 +103,7 @@ func expandRepeat(e model.Event, from, to string) []model.Event {
 		}
 		occ := e
 		occ.Date = day
+		occ.SeriesDate = e.Date
 		// «Новое» — только у первого вхождения, а не у всей серии.
 		occ.Highlight = e.Highlight && day == e.Date
 		out = append(out, occ)
