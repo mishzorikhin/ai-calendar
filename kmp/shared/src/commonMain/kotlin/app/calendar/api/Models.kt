@@ -78,7 +78,6 @@ data class Task(
     val role: String = "",
     val estimate: Int = 0,
     val category: String = "",
-    val cadence: String = "",
 )
 
 /** Поля новой задачи, как в форме на сайте. */
