@@ -1,0 +1,166 @@
+package app.calendar
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import app.calendar.ui.ActionBar
+import app.calendar.ui.AppSheet
+import app.calendar.ui.AuthScreen
+import app.calendar.ui.CalendarTheme
+import app.calendar.ui.TaskForm
+import app.calendar.ui.barColors
+import app.calendar.ui.platformInDarkTheme
+import app.calendar.ui.ChatScreen
+import app.calendar.ui.DayModeSwitch
+import app.calendar.ui.DayScreen
+import app.calendar.ui.ErrorBanner
+import app.calendar.ui.EventEditor
+import app.calendar.ui.HomeScreen
+import app.calendar.ui.MonthScreen
+import app.calendar.ui.TasksScreen
+import app.calendar.ui.SheetChrome
+import app.calendar.ui.WeekSheet
+
+@Composable
+fun App() {
+    val scope = rememberCoroutineScope()
+    val controller = remember { CalendarController(scope) }
+    CalendarTheme {
+        val bar = Brush.horizontalGradient(barColors(platformInDarkTheme()))
+        Box(
+            modifier = Modifier.fillMaxSize().background(bar),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .imePadding(),
+            ) {
+                when {
+                    controller.booting -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Открываю…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    controller.user == null -> AuthScreen(controller)
+                    else -> Shell(controller)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Shell(controller: CalendarController) {
+    val screen = controller.screen
+    val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null
+    LaunchedEffect(screen, controller.monthCursor) {
+        controller.load(screen)
+    }
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .then(if (sheetOpen) Modifier.blur(3.dp) else Modifier),
+        ) {
+            // Лист как на сайте: фон до строки состояния, низ скруглён на 40px и открывает градиент панели.
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .statusBarsPadding(),
+            ) {
+                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+                ErrorBanner(controller.error, onDismiss = controller::dismissError)
+                AnimatedContent(
+                    targetState = screen,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                ) { current ->
+                    when (current) {
+                        Screen.Home, Screen.Tasks -> HomeScreen(controller)
+                        Screen.Month -> MonthScreen(controller)
+                        Screen.Chat -> ChatScreen(controller)
+                        is Screen.Day -> DayScreen(controller, current.date)
+                    }
+                }
+                }
+            }
+            if (!sheetOpen) {
+                ActionBar(
+                    assistantActive = screen is Screen.Chat,
+                    onAssistant = { controller.open(if (screen is Screen.Chat) Screen.Home else Screen.Chat) },
+                    onSay = { if (screen !is Screen.Day) controller.open(Screen.Chat) },
+                    onCreate = { controller.compose(if (screen is Screen.Day) screen.date else controller.today()) },
+                    modifier = Modifier.navigationBarsPadding(),
+                    center = if (screen is Screen.Day) {
+                        { DayModeSwitch(controller.dayTimeline) { controller.dayTimeline = it } }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+        val composing = controller.composerDate
+        AppSheet(visible = composing != null, onClose = { controller.composerDate = null }) {
+            Text(
+                "Новое событие",
+                fontSize = 24.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            EventEditor { title, start, end, badge, allDay ->
+                if (composing != null) {
+                    controller.createEvent(composing, title, start, end, badge, allDay)
+                    controller.composerDate = null
+                    controller.open(Screen.Day(composing))
+                }
+            }
+        }
+        AppSheet(visible = controller.taskSheet, onClose = { controller.taskSheet = false }) {
+            TaskForm(
+                onClose = { controller.taskSheet = false },
+                onSave = { title, note, kind -> controller.addTask(title, note, kind) },
+            )
+        }
+        AppSheet(
+            visible = controller.weekSheet,
+            onClose = { controller.weekSheet = false },
+            chrome = SheetChrome.Modal,
+        ) {
+            WeekSheet(controller, onClose = { controller.weekSheet = false })
+        }
+    }
+}
