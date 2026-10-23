@@ -3,7 +3,8 @@ description: Правила проекта AI-календаря (React/TypeScri
 alwaysApply: true
 ---
 
-Сначала прочитайте `AGENTS.md` в корне, для Go — также `server/AGENTS.md`; при ревью — `REVIEW.md`.
+Сначала прочитайте `AGENTS.md` в корне, для Go — также `server/AGENTS.md`, для `kmp/` (Kotlin Multiplatform) —
+`kmp/AGENTS.md`; при ревью — `REVIEW.md`.
 Общие правила и Definition of Done находятся в этих файлах.
 
 - Документация, комментарии, UI и коммиты — на русском; идентификаторы — на английском.
@@ -24,3 +25,6 @@ alwaysApply: true
   PostgreSQL-тесты очищают таблицы: только одноразовая БД; без `TEST_DATABASE_URL` они пропускаются.
 - Сохраняйте чужие изменения. Push — в согласованную ветку без force; деплой — по отдельной просьбе.
   Перечислите реальные проверки и ограничения среды в итоговом отчёте.
+- `kmp/`: данные — через `CalendarApi` и `CalendarController`, контракт `api/Models.kt` ↔ Go `model`; цвета — токены `Theme.kt`;
+  шторки — `AppSheet` с `SheetFooter`; удаление — с отменой; вибрация — `Haptics`. Проверки — `./gradlew :shared:jvmTest
+  :shared:compileKotlinWasmJs :androidApp:assembleDebug`; CI `kmp/` не собирает.

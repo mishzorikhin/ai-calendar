@@ -6,7 +6,7 @@
 
 ## Как пользоваться инструкциями
 
-- Перед изменениями прочитайте этот файл; для `server/` дополнительно — `server/AGENTS.md`.
+- Перед изменениями прочитайте этот файл; для `server/` дополнительно — `server/AGENTS.md`, для `kmp/` — `kmp/AGENTS.md`.
   `CLAUDE.md`, `.cursor/rules/project.mdc` и `.github/copilot-instructions.md` — короткие точки входа,
   общие правила меняйте здесь, а не копируйте целиком в каждый файл.
 - Команды и фактическое поведение сверяйте с `package.json`, `Makefile`, `vite.config.ts`,
@@ -32,6 +32,8 @@
 - **Уведомления** — Web Push со своего сервера без сторонних аккаунтов: VAPID и шифрование в `server/internal/webpush`,
   напоминания о встречах, сроках задач и план на день — `server/internal/api/reminders.go`, показ и кнопки — `src/sw.ts`,
   UI — `screens/home/reminders` и лента «Напомнить» в шторке события.
+- **Клиент на Kotlin Multiplatform** (`kmp/`) — те же экраны нативно: Android, iOS и веб (Wasm) на Compose Multiplatform,
+  тот же Go-сервер. Правила — `kmp/AGENTS.md`, запуск — `kmp/README.md`. Веб-PWA остаётся эталоном внешнего вида.
 - **Два режима данных:** серверный и локальный (моки + `localStorage`, без аккаунта — для GitHub Pages и работы над UI).
 - **Поставка** — один Docker-образ: Go-бинарник со встроенным UI (`go:embed`); `docker-compose` поднимает ещё и PostgreSQL 17.
 - **Главное в продукте — дизайн и анимации.** Визуальное качество важнее количества функций.
@@ -44,20 +46,21 @@
 
 ## Команды
 
-| Задача                                     | Команда                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Установить зависимости                     | `npm ci` (Node 22)                                                                         |
-| UI с горячей перезагрузкой                 | `npm run dev` → http://localhost:5173                                                      |
-| Go-сервер (API на :8080, UI из `dist/`)    | `make api`                                                                                 |
-| **Все проверки фронтенда**                 | `npm run check` (типы, ESLint, vitest, prettier --check)                                   |
-| Только тесты / линтер / типы               | `npm run test` · `npm run lint` · `npm run typecheck`                                      |
-| Форматирование                             | `npm run format`                                                                           |
-| Проверки бэкенда (из `server/`)            | `test -z "$(gofmt -l .)" && go vet ./... && go test -race ./...`                           |
-| Фронтенд + vet и тесты Go (без race/gofmt) | `make check`                                                                               |
-| Сборка PWA                                 | `npm run build` → `dist/`                                                                  |
-| Однофайловая сборка (превью без сервера)   | `npm run build:single` → `dist-single/index.html`                                          |
-| Docker (приложение + PostgreSQL)           | `docker compose up --build` → http://localhost:8080                                        |
-| Тест PostgreSQL-хранилища (из `server/`)   | `TEST_DATABASE_URL=postgres://… go test -race ./internal/store -run TestPostgres -count=1` |
+| Задача                                           | Команда                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Установить зависимости                           | `npm ci` (Node 22)                                                                         |
+| UI с горячей перезагрузкой                       | `npm run dev` → http://localhost:5173                                                      |
+| Go-сервер (API на :8080, UI из `dist/`)          | `make api`                                                                                 |
+| **Все проверки фронтенда**                       | `npm run check` (типы, ESLint, vitest, prettier --check)                                   |
+| Только тесты / линтер / типы                     | `npm run test` · `npm run lint` · `npm run typecheck`                                      |
+| Форматирование                                   | `npm run format`                                                                           |
+| Проверки бэкенда (из `server/`)                  | `test -z "$(gofmt -l .)" && go vet ./... && go test -race ./...`                           |
+| Фронтенд + vet и тесты Go (без race/gofmt)       | `make check`                                                                               |
+| Сборка PWA                                       | `npm run build` → `dist/`                                                                  |
+| Однофайловая сборка (превью без сервера)         | `npm run build:single` → `dist-single/index.html`                                          |
+| KMP: тесты, компиляция Wasm, Android (из `kmp/`) | `./gradlew :shared:jvmTest :shared:compileKotlinWasmJs :androidApp:assembleDebug`          |
+| Docker (приложение + PostgreSQL)                 | `docker compose up --build` → http://localhost:8080                                        |
+| Тест PostgreSQL-хранилища (из `server/`)         | `TEST_DATABASE_URL=postgres://… go test -race ./internal/store -run TestPostgres -count=1` |
 
 Без запущенного Go-сервера UI сам переходит в **локальный режим** (моки + `localStorage`, без входа),
 поэтому для работы над интерфейсом сервер не обязателен. Явно: `VITE_API_MODE=local|server`,
@@ -92,6 +95,7 @@ src/
   styles/     global.css — дизайн-токены
   sw.ts       service worker (precache, runtime-кэш API, Background Sync очереди)
 server/       Go-бэкенд, см. server/AGENTS.md
+kmp/          клиент на Kotlin Multiplatform (Android, iOS, веб Wasm), см. kmp/AGENTS.md
 public/       иконки PWA (PNG генерируются из icon.svg)
 .ux-audit/    скриншоты и FINDINGS.md прошлого UX-аудита (справочно, не обновляется автоматически)
 ```
@@ -276,6 +280,13 @@ React-компоненты; `mocks/` используются только в `a
   к сессии. Текущее устройство подписывается снова при сверке (`usePushDevice`).
 - **Картинки в чате** работают, только если `LLM_MODEL` понимает изображения; отказ модели распознаётся по HTTP-статусу
   (400/413/415/422), а не по тексту ошибки.
+- **Клиент KMP** не заменяет PWA: в нём нет push и напоминаний, голоса, картинок в чате, анкеты
+  знакомства и многодневных событий; сборка iOS проверена только в проекте, не запуском. Удаление события и задачи
+  там откладывается на 5 секунд («Вернуть»): при закрытии приложения за это время удаление не дойдёт до сервера.
+  Офлайн-очередь KMP (`api/Outbox.kt`) повторяет правила сайта, но только для событий и задач, лежит в хранилище устройства
+  и доигрывается при открытом приложении (раз в 30 с, при возврате в окно и когда сеть вернулась): Background Sync нет.
+  Чтение без сети — из кэша последних ответов (`ReadCache`, до 60 записей), он стирается при выходе.
+  Сессия хранится на устройстве, на Android HTTP разрешён только в debug-сборке. Зелёный CI ничего не говорит о `kmp/`.
 - **PostgreSQL в CI:** в текущем `ci.yml` нет сервиса БД и `TEST_DATABASE_URL`;
   зелёные Go-тесты не доказывают прохождение PostgreSQL-сценариев.
 
@@ -287,14 +298,16 @@ React-компоненты; `mocks/` используются только в `a
    Просто `gofmt -l .` выводит список, но не завершает проверку ошибкой при неформатированных файлах.
 3. Для изменений PostgreSQL — дополнительно `TEST_DATABASE_URL=… go test -race ./internal/store -run TestPostgres -count=1`
    из `server/` на одноразовой БД. Для Docker/поставки — сборка образа и проверка `/api/health`.
-4. **Визуальная проверка UI-изменений:** запустите `npm run dev` и откройте экран в браузере на
+4. Для изменений `kmp/` — из `kmp/`: `./gradlew :shared:jvmTest :shared:compileKotlinWasmJs :androidApp:assembleDebug`
+   (подробности и проверка в браузере/на телефоне — `kmp/AGENTS.md`). iOS собирается только на macOS.
+5. **Визуальная проверка UI-изменений:** запустите `npm run dev` и откройте экран в браузере на
    390×844 (и 375×667, если менялась вёрстка). Пройдите сценарий руками или через Playwright.
    Консоль браузера без ошибок. Для серверного режима — `make api` + `npm run dev` (нужна регистрация),
    для Docker — `docker compose up --build` и сценарий на :8080.
-5. Новая логика покрыта тестом (`domain/`, `lib/`, `api/` — `http`/`local`/`offline`/`outbox`, Go-хендлеры,
+6. Новая логика покрыта тестом (`domain/`, `lib/`, `api/` — `http`/`local`/`offline`/`outbox`, Go-хендлеры,
    хранилище, `llm`).
-6. README обновлён, если поменялись команды, API или поведение для пользователя.
-7. Для изменений только документации — форматирование Markdown, ссылки/пути и соответствие команд
+7. README обновлён, если поменялись команды, API или поведение для пользователя.
+8. Для изменений только документации — форматирование Markdown, ссылки/пути и соответствие команд
    исходникам; тесты приложения и сборка не обязательны. В финальном отчёте перечислите реальные проверки
    и ограничения среды; пропущенные проверки не называйте успешными.
 
@@ -305,7 +318,7 @@ React-компоненты; `mocks/` используются только в `a
 - Не коммитьте `dist/`, `dist-single/`, `server/data/`, `.env`, содержимое `server/web/dist/` (кроме README).
 - CI (`.github/workflows/ci.yml`) выполняет typecheck, lint, Vitest, Prettier, `npx vite build`,
   проверку gofmt, `go vet`, `go test -race` и сборку Docker без публикации образа.
-  Проверки браузера и PostgreSQL в workflow не настроены.
+  Проверки браузера и PostgreSQL в workflow не настроены; сборки `kmp/` в CI тоже нет.
 - `deploy.yml` публикует статическую версию на GitHub Pages при пуше в `main` или ручном запуске;
   это локальный режим, без Go/LLM и подключения внешних календарей.
 - Перед коммитом выполните проверки по области изменения из Definition of Done.

@@ -1,6 +1,7 @@
 # Инструкции для GitHub Copilot
 
-Сначала прочитайте [AGENTS.md](../AGENTS.md); для Go — также [server/AGENTS.md](../server/AGENTS.md).
+Сначала прочитайте [AGENTS.md](../AGENTS.md); для Go — также [server/AGENTS.md](../server/AGENTS.md),
+для `kmp/` (Kotlin Multiplatform) — [kmp/AGENTS.md](../kmp/AGENTS.md).
 Для ревью используйте [REVIEW.md](../REVIEW.md). Общие правила и матрица проверок находятся там.
 
 - Документация, комментарии, тексты UI и коммиты — на русском; идентификаторы — на английском.
@@ -23,3 +24,6 @@
   и очищают таблицы; без `TEST_DATABASE_URL` они пропускаются.
 - Сохраняйте чужие изменения, проверяйте ветку перед push, не переписывайте историю.
   Push в GitHub и деплой на сервер — разные действия. Не называйте пропущенные проверки успешными.
+- `kmp/`: данные — через `CalendarApi` и `CalendarController`, контракт `api/Models.kt` ↔ Go `model`; цвета — токены `Theme.kt`;
+  шторки — `AppSheet` с `SheetFooter`; удаление — с отменой; вибрация — `Haptics`. Проверки — `./gradlew :shared:jvmTest
+:shared:compileKotlinWasmJs :androidApp:assembleDebug`; CI `kmp/` не собирает.
