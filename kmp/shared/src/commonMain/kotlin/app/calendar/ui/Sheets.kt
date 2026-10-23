@@ -6,6 +6,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.draggable
@@ -204,12 +207,23 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
 }
 
 @Composable
-fun SheetField(value: String, onChange: (String) -> Unit, placeholder: String, onDone: (() -> Unit)? = null) {
+fun SheetField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    onDone: (() -> Unit)? = null,
+    password: Boolean = false,
+) {
     BasicTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = if (password) {
+            KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done)
+        } else {
+            KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done)
+        },
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
         textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),

@@ -60,7 +60,6 @@ fun HomeScreen(controller: CalendarController) {
     val today = controller.today()
     val user = controller.user
     val count = controller.todayEvents.size
-    var confirmLogout by remember { mutableStateOf(false) }
     val nowMinutes = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).let { it.hour * 60 + it.minute }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -81,6 +80,14 @@ fun HomeScreen(controller: CalendarController) {
                     ArrowRightIcon(size = 13.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(role = Role.Button, onClickLabel = "Поиск") { controller.searchSheet = true },
+                contentAlignment = Alignment.Center,
+            ) { SearchIcon(size = 19.dp, color = MaterialTheme.colorScheme.onSurface) }
             if (user != null) {
                 val initial = (user.name.ifBlank { user.username }).trim().take(1).uppercase()
                 Box(
@@ -89,27 +96,13 @@ fun HomeScreen(controller: CalendarController) {
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(Color(avatarColor(user.username)))
-                        .clickable(role = Role.Button, onClickLabel = "Аккаунт") { confirmLogout = true },
+                        .clickable(role = Role.Button, onClickLabel = "Аккаунт") { controller.openAccount() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(initial, color = Color(0xFF1E1E3C), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 }
             }
             DateChip(day = today.dayOfMonth, month = monthShort(today)) { controller.open(Screen.Month) }
-        }
-        if (confirmLogout) {
-            AlertDialog(
-                onDismissRequest = { confirmLogout = false },
-                title = { Text("Выйти из аккаунта?") },
-                text = { Text(user?.let { "Вы вошли как ${it.username}" } ?: "") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmLogout = false
-                        controller.logout()
-                    }) { Text("Выйти") }
-                },
-                dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Остаться") } },
-            )
         }
         Surface(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -186,6 +179,26 @@ fun HomeScreen(controller: CalendarController) {
             }
             }
         }
+        controller.suggestions.take(2).forEach { suggestion ->
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(suggestion.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                if (suggestion.body.isNotBlank()) {
+                    Text(suggestion.body, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActionPill("Да", filled = true) { controller.acceptSuggestion(suggestion) }
+                    ActionPill("Не надо") { controller.dismissSuggestion(suggestion) }
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 22.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -239,7 +252,7 @@ fun HomeScreen(controller: CalendarController) {
                     ) {
                         if (done) Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp)
                     }
-                    Column(Modifier.padding(start = 12.dp)) {
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(
                             task.title,
                             fontSize = 18.sp,
@@ -254,6 +267,10 @@ fun HomeScreen(controller: CalendarController) {
                         }
                         if (kind != null) Text(kind, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Подробнее") { controller.openedTask = task },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("⋯", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
         }

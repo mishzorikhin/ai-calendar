@@ -14,6 +14,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.CancellationException
@@ -58,7 +59,7 @@ class CalendarApi(
         return parsed.mapNotNull { (day, badges) -> day.toIntOrNull()?.let { it to badges } }.toMap()
     }
 
-    suspend fun createEvent(date: String, title: String, start: Int, end: Int, badge: String, allDay: Boolean): Event {
+    suspend fun createEvent(date: String, title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String = ""): Event {
         val body = buildJsonObject {
             put("date", date)
             put("title", title)
@@ -66,9 +67,21 @@ class CalendarApi(
             put("end", if (allDay) 24 * 60 else end)
             put("badge", badge)
             if (allDay) put("allDay", true)
+            if (notes.isNotBlank()) put("notes", notes.trim())
         }
         return decode(request(HttpMethod.Post, "/api/events", body))
     }
+
+    /** Правка события целиком: поля, которых нет в [fields], не трогаются. */
+    suspend fun updateEvent(id: String, fields: JsonObject): Event =
+        decode(request(HttpMethod.Patch, "/api/events/$id", fields))
+
+    suspend fun rsvp(id: String, status: String) {
+        request(HttpMethod.Post, "/api/events/$id/rsvp", buildJsonObject { put("status", status) })
+    }
+
+    suspend fun search(query: String): SearchResult =
+        decode(request(HttpMethod.Get, "/api/search?q=${query.encodeURLParameter()}", null))
 
     suspend fun deleteEvent(id: String) {
         request(HttpMethod.Delete, "/api/events/$id", null)
@@ -86,12 +99,61 @@ class CalendarApi(
             if (kind != "task") put("kind", kind)
         }))
 
+    suspend fun updateTask(id: String, fields: JsonObject): Task =
+        decode(request(HttpMethod.Patch, "/api/tasks/$id", fields))
+
+    suspend fun deleteTask(id: String) {
+        request(HttpMethod.Delete, "/api/tasks/$id", null)
+    }
+
     suspend fun setTaskDone(id: String, done: Boolean): Task =
         decode(request(HttpMethod.Patch, "/api/tasks/$id", buildJsonObject { put("done", done) }))
 
     suspend fun checkHabit(id: String, date: String, done: Boolean): Task {
         val body = buildJsonObject { put(if (done) "check" else "uncheck", date) }
         return decode(request(HttpMethod.Patch, "/api/tasks/$id", body))
+    }
+
+    suspend fun updateName(name: String): User =
+        decode<User>(request(HttpMethod.Patch, "/api/me", buildJsonObject { put("name", name.trim()) })).also { session.saveUser(it) }
+
+    suspend fun changePassword(current: String, next: String) {
+        request(HttpMethod.Post, "/api/auth/password", buildJsonObject { put("current", current); put("next", next) })
+    }
+
+    suspend fun sessions(): List<AuthSession> = decode(request(HttpMethod.Get, "/api/auth/sessions", null))
+
+    suspend fun deleteSession(id: String) {
+        request(HttpMethod.Delete, "/api/auth/sessions/${id.encodeURLParameter()}", null)
+    }
+
+    suspend fun logoutOthers() {
+        request(HttpMethod.Post, "/api/auth/logout-others", buildJsonObject { })
+    }
+
+    suspend fun notifications(): List<AppNotification> = decode(request(HttpMethod.Get, "/api/notifications", null))
+
+    suspend fun markNotificationsRead() {
+        request(HttpMethod.Post, "/api/notifications/read", buildJsonObject { })
+    }
+
+    suspend fun memories(): List<Memory> = decode(request(HttpMethod.Get, "/api/memories", null))
+
+    suspend fun createMemory(text: String, kind: String = "about"): Memory =
+        decode(request(HttpMethod.Post, "/api/memories", buildJsonObject { put("kind", kind); put("text", text.trim()) }))
+
+    suspend fun deleteMemory(id: Int) {
+        request(HttpMethod.Delete, "/api/memories/$id", null)
+    }
+
+    suspend fun suggestions(): List<Suggestion> = decode(request(HttpMethod.Get, "/api/suggestions", null))
+
+    suspend fun acceptSuggestion(id: Int) {
+        request(HttpMethod.Post, "/api/suggestions/$id/accept", buildJsonObject { })
+    }
+
+    suspend fun dismissSuggestion(id: Int) {
+        request(HttpMethod.Post, "/api/suggestions/$id/dismiss", buildJsonObject { })
     }
 
     suspend fun messages(): List<ChatMessage> = decode(request(HttpMethod.Get, "/api/messages", null))

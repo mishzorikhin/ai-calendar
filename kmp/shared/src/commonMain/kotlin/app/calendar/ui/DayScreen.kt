@@ -86,9 +86,7 @@ private fun ModeKnob(label: String, on: Boolean, click: () -> Unit) {
 @Composable
 fun DayScreen(controller: CalendarController, date: LocalDate) {
     var open by rememberSaveable { mutableStateOf(DayPart.Morning.name) }
-    var pendingDelete by rememberSaveable { mutableStateOf<String?>(null) }
     val events = controller.dayEvents.filter { !it.allDay }
-    val victim = events.firstOrNull { it.id == pendingDelete }
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
@@ -118,6 +116,12 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                 contentAlignment = Alignment.Center,
             ) { CloseIcon(size = 20.dp) }
         }
+        val allDayEvents = controller.dayEvents.filter { it.allDay }
+        if (allDayEvents.isNotEmpty()) {
+            Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                allDayEvents.forEach { event -> EventCard(event) { controller.openEvent(event, date) } }
+            }
+        }
         Column(Modifier.weight(1f).padding(top = 12.dp)) {
             DayPart.entries.forEach { part ->
                 val slice = events.filter { partOf(it.start) == part }
@@ -128,35 +132,19 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                     expanded = expanded,
                     list = !controller.dayTimeline,
                     onOpen = { open = part.name },
-                    onEvent = { pendingDelete = it.id },
+                    onEvent = { controller.openEvent(it, date) },
                     modifier = if (expanded) Modifier.weight(1f) else Modifier.height(if (controller.dayTimeline) 72.dp else 0.dp),
                 )
             }
             if (!controller.dayTimeline) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     events.sortedBy { it.start }.forEach { event ->
-                        EventCard(event) { pendingDelete = event.id }
+                        EventCard(event) { controller.openEvent(event, date) }
                     }
                 }
             }
         }
         WeekStrip(date) { controller.open(Screen.Day(it)) }
-    }
-    if (victim != null) {
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text(if (victim.readOnly) "Только просмотр" else "Удалить «${victim.title.ifBlank { "Без названия" }}»?") },
-            text = { Text("${formatRange(victim.start, victim.end, victim.allDay)} · ${badgeLabel(victim.badge)}") },
-            confirmButton = {
-                if (!victim.readOnly) {
-                    TextButton(onClick = {
-                        controller.deleteEvent(victim, date)
-                        pendingDelete = null
-                    }) { Text("Удалить") }
-                }
-            },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Оставить") } },
-        )
     }
 }
 
@@ -280,28 +268,40 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
     }
 }
 
+/** Редактор события: без [initial] — создание, с ним — правка. */
 @Composable
-fun EventEditor(onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean) -> Unit) {
-    var title by rememberSaveable { mutableStateOf("") }
-    var start by rememberSaveable { mutableStateOf(10 * 60) }
-    var length by rememberSaveable { mutableStateOf(60) }
-    var badge by rememberSaveable { mutableStateOf("routine") }
-    var allDay by rememberSaveable { mutableStateOf(false) }
+fun EventEditor(
+    initial: Event? = null,
+    submit: String = "Создать",
+    onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf(initial?.title.orEmpty()) }
+    var start by rememberSaveable { mutableStateOf(initial?.takeIf { !it.allDay }?.start ?: (10 * 60)) }
+    var length by rememberSaveable {
+        mutableStateOf(initial?.takeIf { !it.allDay && it.end > it.start }?.let { it.end - it.start } ?: 60)
+    }
+    var badge by rememberSaveable { mutableStateOf(initial?.badge ?: "routine") }
+    var allDay by rememberSaveable { mutableStateOf(initial?.allDay ?: false) }
+    var notes by rememberSaveable { mutableStateOf(initial?.notes.orEmpty()) }
+    // Нестандартные время и длительность из события не теряются: добавляем их в список выбора.
+    val startOptions = (starts + start).distinct().sorted()
+    val lengthOptions = (listOf(30, 60, 90, 120, 180) + length).distinct().sorted()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SheetField(title, { title = it }, "Название")
+        SheetField(notes, { notes = it }, "Заметка — необязательно")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Весь день", modifier = Modifier.weight(1f))
             Switch(checked = allDay, onCheckedChange = { allDay = it })
         }
         if (!allDay) {
             Text("Начало", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            ChoiceRow(focusIndex = starts.indexOf(start)) {
-                starts.forEach { value -> ChoicePill(formatMinutes(value), value == start) { start = value } }
+            ChoiceRow(focusIndex = startOptions.indexOf(start)) {
+                startOptions.forEach { value -> ChoicePill(formatMinutes(value), value == start) { start = value } }
             }
             Text("Длительность", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             ChoiceRow {
-                listOf(30 to "30 мин", 60 to "1 ч", 90 to "1,5 ч", 120 to "2 ч", 180 to "3 ч").forEach { (value, label) ->
-                    ChoicePill(label, value == length) { length = value }
+                lengthOptions.forEach { value ->
+                    ChoicePill(lengthLabel(value), value == length) { length = value }
                 }
             }
         }
@@ -316,11 +316,22 @@ fun EventEditor(onSave: (title: String, start: Int, end: Int, badge: String, all
                 .clip(CircleShape)
                 .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(enabled = title.isNotBlank(), role = Role.Button) {
-                    onSave(title, start, (start + length).coerceAtMost(24 * 60), badge, allDay)
+                    onSave(title, start, (start + length).coerceAtMost(24 * 60), badge, allDay, notes)
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Text("Создать", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
+            Text(
+                submit,
+                color = if (title.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
+}
+
+private fun lengthLabel(minutes: Int): String = when {
+    minutes < 60 -> "$minutes мин"
+    minutes % 60 == 0 -> "${minutes / 60} ч"
+    minutes == 90 -> "1,5 ч"
+    else -> "${minutes / 60} ч ${minutes % 60} мин"
 }

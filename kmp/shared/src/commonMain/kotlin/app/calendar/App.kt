@@ -45,7 +45,12 @@ import app.calendar.ui.ChatScreen
 import app.calendar.ui.DayModeSwitch
 import app.calendar.ui.DayScreen
 import app.calendar.ui.ErrorBanner
+import app.calendar.ui.AccountSheet
 import app.calendar.ui.EventEditor
+import app.calendar.ui.EventSheet
+import app.calendar.ui.MemoriesSheet
+import app.calendar.ui.SearchSheet
+import app.calendar.ui.TaskSheet
 import app.calendar.ui.HomeScreen
 import app.calendar.ui.MonthScreen
 import app.calendar.ui.SheetChrome
@@ -84,7 +89,9 @@ fun App() {
 @Composable
 private fun Shell(controller: CalendarController) {
     val screen = controller.screen
-    val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null
+    val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null ||
+        controller.openedEvent != null || controller.openedTask != null || controller.searchSheet ||
+        controller.accountSheet || controller.memorySheet
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
@@ -92,6 +99,11 @@ private fun Shell(controller: CalendarController) {
     BackHandler(enabled = sheetOpen || screen != Screen.Home) {
         when {
             controller.composerDate != null -> controller.composerDate = null
+            controller.openedEvent != null -> controller.openedEvent = null
+            controller.openedTask != null -> controller.openedTask = null
+            controller.searchSheet -> controller.closeSearch()
+            controller.memorySheet -> controller.memorySheet = false
+            controller.accountSheet -> controller.accountSheet = false
             controller.taskSheet -> controller.taskSheet = false
             controller.weekSheet -> controller.weekSheet = false
             screen is Screen.Day -> controller.back()
@@ -149,9 +161,9 @@ private fun Shell(controller: CalendarController) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
-            EventEditor { title, start, end, badge, allDay ->
+            EventEditor { title, start, end, badge, allDay, notes ->
                 if (composing != null && !controller.loading) {
-                    controller.createEvent(composing, title, start, end, badge, allDay) {
+                    controller.createEvent(composing, title, start, end, badge, allDay, notes) {
                         controller.composerDate = null
                         controller.open(Screen.Day(composing))
                     }
@@ -164,6 +176,27 @@ private fun Shell(controller: CalendarController) {
                 onClose = { controller.taskSheet = false },
                 onSave = { title, note, kind -> controller.addTask(title, note, kind) },
             )
+        }
+        val openedEvent = controller.openedEvent
+        AppSheet(visible = openedEvent != null, onClose = { controller.openedEvent = null }) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            if (openedEvent != null) EventSheet(controller, openedEvent)
+        }
+        val openedTask = controller.openedTask
+        AppSheet(visible = openedTask != null, onClose = { controller.openedTask = null }) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            if (openedTask != null) TaskSheet(controller, openedTask)
+        }
+        AppSheet(visible = controller.searchSheet, onClose = controller::closeSearch, chrome = SheetChrome.Modal) {
+            SearchSheet(controller)
+        }
+        AppSheet(visible = controller.accountSheet, onClose = { controller.accountSheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            AccountSheet(controller)
+        }
+        AppSheet(visible = controller.memorySheet, onClose = { controller.memorySheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            MemoriesSheet(controller)
         }
         AppSheet(
             visible = controller.weekSheet,

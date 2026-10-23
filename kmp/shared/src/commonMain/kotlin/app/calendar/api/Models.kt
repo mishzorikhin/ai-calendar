@@ -35,8 +35,19 @@ data class Event(
     val readOnly: Boolean = false,
     val allDay: Boolean = false,
     val notes: String = "",
+    val url: String = "",
     val repeat: String = "",
+    val repeatUntil: String = "",
+    val endDate: String = "",
+    val attendees: List<Attendee> = emptyList(),
+    val invite: Invite? = null,
 )
+
+@Serializable
+data class Attendee(val username: String = "", val name: String = "", val status: String = "pending")
+
+@Serializable
+data class Invite(val from: User, val status: String = "pending")
 
 @Serializable
 data class Task(
@@ -48,6 +59,64 @@ data class Task(
     val due: String = "",
     val cadence: String = "",
     val checks: List<String> = emptyList(),
+    val owner: User? = null,
+    val members: List<User> = emptyList(),
+    val role: String = "",
+    val estimate: Int = 0,
+)
+
+@Serializable
+data class SearchResult(val events: List<Event> = emptyList(), val tasks: List<Task> = emptyList())
+
+@Serializable
+data class AppNotification(
+    val id: Int,
+    val text: String = "",
+    val from: User? = null,
+    val date: String = "",
+    val read: Boolean = false,
+    val createdAt: String = "",
+)
+
+@Serializable
+data class AuthSession(
+    val id: String,
+    val label: String = "",
+    val createdAt: String = "",
+    val lastSeen: String = "",
+    val current: Boolean = false,
+)
+
+@Serializable
+data class Memory(
+    val id: Int,
+    val kind: String = "about",
+    val text: String = "",
+    val date: String = "",
+    val source: String = "user",
+    val confirmed: Boolean = false,
+)
+
+@Serializable
+data class SuggestionAction(
+    val type: String = "",
+    val title: String = "",
+    val date: String = "",
+    val start: Int = 0,
+    val end: Int = 0,
+    val badge: String = "",
+    val due: String = "",
+    val prompt: String = "",
+)
+
+@Serializable
+data class Suggestion(
+    val id: Int,
+    val kind: String = "",
+    val title: String = "",
+    val body: String = "",
+    val action: SuggestionAction = SuggestionAction(),
+    val status: String = "pending",
 )
 
 @Serializable

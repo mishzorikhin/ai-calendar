@@ -6,7 +6,12 @@ import androidx.compose.runtime.setValue
 import app.calendar.api.CalendarApi
 import app.calendar.api.ChatFrame
 import app.calendar.api.ChatMessage
+import app.calendar.api.AppNotification
+import app.calendar.api.AuthSession
 import app.calendar.api.ConfirmCard
+import app.calendar.api.Memory
+import app.calendar.api.SearchResult
+import app.calendar.api.Suggestion
 import app.calendar.api.Event
 import app.calendar.api.Task
 import app.calendar.api.User
@@ -16,6 +21,8 @@ import app.calendar.domain.parseIsoDate
 import app.calendar.domain.startOfWeek
 import app.calendar.domain.toolLabel
 import kotlinx.datetime.DatePeriod
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.datetime.plus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
@@ -24,6 +31,9 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
+
+/** Событие, открытое в шторке, и день, на котором на него нажали (у повторов это день вхождения). */
+data class OpenedEvent(val event: Event, val date: LocalDate)
 
 sealed interface Screen {
     data object Home : Screen
@@ -63,6 +73,16 @@ class CalendarController(private val scope: CoroutineScope) {
     var weekInsights by mutableStateOf<WeekInsights?>(null)
     var weekError by mutableStateOf(false)
     var dayTimeline by mutableStateOf(true)
+    var openedEvent by mutableStateOf<OpenedEvent?>(null)
+    var openedTask by mutableStateOf<Task?>(null)
+    var searchSheet by mutableStateOf(false)
+    var searchResult by mutableStateOf<SearchResult?>(null)
+    var accountSheet by mutableStateOf(false)
+    var memorySheet by mutableStateOf(false)
+    var notifications by mutableStateOf<List<AppNotification>>(emptyList())
+    var sessions by mutableStateOf<List<AuthSession>>(emptyList())
+    var memories by mutableStateOf<List<Memory>>(emptyList())
+    var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
 
     private var dayBack: Screen = Screen.Home
     private var inflight = 0
@@ -185,6 +205,7 @@ class CalendarController(private val scope: CoroutineScope) {
                     Screen.Home -> {
                         todayEvents = api.events(isoDate(today()))
                         tasks = api.tasks()
+                        suggestions = runCatching { api.suggestions() }.getOrDefault(suggestions)
                     }
                     Screen.Month -> {
                         val cursor = monthCursor
@@ -205,10 +226,10 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     /** [onDone] вызывается только после успеха: при ошибке шторка остаётся открытой и ввод не пропадает. */
-    fun createEvent(date: LocalDate, title: String, start: Int, end: Int, badge: String, allDay: Boolean, onDone: () -> Unit = {}) {
+    fun createEvent(date: LocalDate, title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String = "", onDone: () -> Unit = {}) {
         scope.launch {
             guard {
-                api.createEvent(isoDate(date), title.trim(), start, end, badge, allDay)
+                api.createEvent(isoDate(date), title.trim(), start, end, badge, allDay, notes)
                 refreshDay(date)
                 onDone()
             }
@@ -304,6 +325,210 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
+    fun openEvent(event: Event, date: LocalDate) {
+        openedEvent = OpenedEvent(event, date)
+    }
+
+    /** Правка события. У повторов передаётся день вхождения, иначе сервер сдвинул бы всю серию не там. */
+    fun updateEvent(
+        opened: OpenedEvent,
+        title: String,
+        start: Int,
+        end: Int,
+        badge: String,
+        allDay: Boolean,
+        notes: String,
+        onDone: () -> Unit = {},
+    ) {
+        val event = opened.event
+        scope.launch {
+            guard {
+                api.updateEvent(event.id, buildJsonObject {
+                    put("title", title.trim())
+                    put("start", if (allDay) 0 else start)
+                    put("end", if (allDay) 24 * 60 else end)
+                    put("badge", badge)
+                    put("allDay", allDay)
+                    put("notes", notes.trim())
+                    if (event.repeat.isNotBlank()) put("occurrence", isoDate(opened.date))
+                })
+                refreshDay(opened.date)
+                onDone()
+            }
+        }
+    }
+
+    /** «Только этот день» у повторяющегося события. */
+    fun skipOccurrence(opened: OpenedEvent) {
+        scope.launch {
+            guard {
+                api.updateEvent(opened.event.id, buildJsonObject { put("skip", isoDate(opened.date)) })
+                refreshDay(opened.date)
+                openedEvent = null
+            }
+        }
+    }
+
+    fun answerInvite(opened: OpenedEvent, status: String) {
+        scope.launch {
+            guard {
+                api.rsvp(opened.event.id, status)
+                refreshDay(opened.date)
+                openedEvent = null
+            }
+        }
+    }
+
+    fun updateTask(task: Task, title: String, note: String, due: String) {
+        scope.launch {
+            guard {
+                api.updateTask(task.id, buildJsonObject {
+                    put("title", title.trim())
+                    put("subtitle", note.trim())
+                    put("due", due.trim())
+                })
+                tasks = api.tasks()
+                openedTask = null
+            }
+        }
+    }
+
+    fun deleteTask(task: Task) {
+        scope.launch {
+            guard {
+                api.deleteTask(task.id)
+                tasks = api.tasks()
+                openedTask = null
+            }
+        }
+    }
+
+    private var searchSeq = 0
+
+    fun search(query: String) {
+        val text = query.trim()
+        val seq = ++searchSeq
+        if (text.isEmpty()) {
+            searchResult = null
+            return
+        }
+        scope.launch {
+            try {
+                val found = api.search(text)
+                if (seq == searchSeq) searchResult = found
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (seq == searchSeq) error = e.message
+            }
+        }
+    }
+
+    fun closeSearch() {
+        searchSheet = false
+        searchResult = null
+        searchSeq++
+    }
+
+    fun openAccount() {
+        accountSheet = true
+        scope.launch {
+            guard {
+                notifications = api.notifications()
+                sessions = api.sessions()
+            }
+        }
+    }
+
+    fun markNotificationsRead() {
+        scope.launch {
+            guard {
+                api.markNotificationsRead()
+                notifications = notifications.map { it.copy(read = true) }
+            }
+        }
+    }
+
+    fun renameMe(name: String) {
+        scope.launch { guard { user = api.updateName(name) } }
+    }
+
+    fun changePassword(current: String, next: String, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                api.changePassword(current, next)
+                onDone()
+            }
+        }
+    }
+
+    fun endSession(id: String) {
+        scope.launch {
+            guard {
+                api.deleteSession(id)
+                sessions = api.sessions()
+            }
+        }
+    }
+
+    fun logoutOthers() {
+        scope.launch {
+            guard {
+                api.logoutOthers()
+                sessions = api.sessions()
+            }
+        }
+    }
+
+    fun openMemories() {
+        memorySheet = true
+        scope.launch { guard { memories = api.memories() } }
+    }
+
+    fun addMemory(text: String, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                api.createMemory(text)
+                memories = api.memories()
+                onDone()
+            }
+        }
+    }
+
+    fun deleteMemory(memory: Memory) {
+        scope.launch {
+            guard {
+                api.deleteMemory(memory.id)
+                memories = api.memories()
+            }
+        }
+    }
+
+    fun acceptSuggestion(suggestion: Suggestion) {
+        scope.launch {
+            guard {
+                api.acceptSuggestion(suggestion.id)
+                suggestions = suggestions.filterNot { it.id == suggestion.id }
+                if (suggestion.action.type == "chat") {
+                    open(Screen.Chat)
+                    send(suggestion.action.prompt)
+                } else {
+                    todayEvents = api.events(isoDate(today()))
+                    tasks = api.tasks()
+                }
+            }
+        }
+    }
+
+    fun dismissSuggestion(suggestion: Suggestion) {
+        scope.launch {
+            guard {
+                api.dismissSuggestion(suggestion.id)
+                suggestions = suggestions.filterNot { it.id == suggestion.id }
+            }
+        }
+    }
+
     private suspend fun restore() {
         if (session.token == null) {
             booting = false
@@ -346,6 +571,16 @@ class CalendarController(private val scope: CoroutineScope) {
         weekSheet = false
         taskSheet = false
         composerDate = null
+        openedEvent = null
+        openedTask = null
+        searchSheet = false
+        searchResult = null
+        accountSheet = false
+        memorySheet = false
+        notifications = emptyList()
+        sessions = emptyList()
+        memories = emptyList()
+        suggestions = emptyList()
     }
 
     private fun dropSession() {
