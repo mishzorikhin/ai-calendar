@@ -1,6 +1,8 @@
 package app.calendar.ui
 
 import app.calendar.api.NewTask
+import app.calendar.api.Task
+import app.calendar.domain.titleSuggestions
 import app.calendar.domain.parseLogins
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
@@ -317,7 +319,12 @@ internal fun tagLabel(category: String): String = tags.firstOrNull { it.first ==
 private val cadences = listOf("daily" to "Каждый день", "weekdays" to "По будням", "weekly" to "Раз в неделю")
 
 @Composable
-fun TaskForm(onClose: () -> Unit, onDirtyChange: (Boolean) -> Unit = {}, onSave: (NewTask) -> Unit) {
+fun TaskForm(
+    onClose: () -> Unit,
+    onDirtyChange: (Boolean) -> Unit = {},
+    knownTasks: List<Task> = emptyList(),
+    onSave: (NewTask) -> Unit,
+) {
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("task") }
@@ -345,6 +352,11 @@ fun TaskForm(onClose: () -> Unit, onDirtyChange: (Boolean) -> Unit = {}, onSave:
         ) { CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface) }
     }
     SheetField(title, { title = it }, "Что нужно сделать?")
+    // Новую задачу можно назвать как старую: подсказываем прежние названия.
+    val suggestions = titleSuggestions(knownTasks, title)
+    if (suggestions.isNotEmpty()) {
+        ChoiceRow { suggestions.forEach { name -> ChoicePill(name, selected = false) { title = name } } }
+    }
     SheetField(note, { note = it }, "Заметка — необязательно")
     Text("Вид", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

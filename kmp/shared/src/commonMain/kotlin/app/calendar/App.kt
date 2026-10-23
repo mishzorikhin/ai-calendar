@@ -292,6 +292,7 @@ private fun Shell(controller: CalendarController) {
             TaskForm(
                 onClose = { controller.closeForm { controller.taskSheet = false } },
                 onDirtyChange = { controller.formDirty = it },
+                knownTasks = controller.tasks,
                 onSave = { controller.formDirty = false; controller.addTask(it) },
             )
         }
