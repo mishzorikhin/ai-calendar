@@ -49,11 +49,10 @@ import app.calendar.domain.pluralize
 fun ActionPill(label: String, modifier: Modifier = Modifier, filled: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Box(
-        modifier
+        modifier.pressable(role = Role.Button, onClick = onClick)
             .defaultMinSize(minHeight = 48.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (filled) colors.primary else colors.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -86,7 +85,7 @@ private fun SheetTitle(text: String, onClose: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Box(
-            Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Закрыть", onClick = onClose),
+            Modifier.pressable(role = Role.Button, onClickLabel = "Закрыть", onClick = onClose).size(44.dp).clip(CircleShape),
             contentAlignment = Alignment.Center,
         ) { CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface) }
     }
@@ -208,7 +207,7 @@ fun TaskSheet(controller: CalendarController, task: Task) {
             if (task.role != "member") {
                 Text(
                     "Убрать",
-                    modifier = Modifier.clickable(role = Role.Button) { controller.removeMember(task, member.username) }.padding(12.dp),
+                    modifier = Modifier.pressable(role = Role.Button) { controller.removeMember(task, member.username) }.padding(12.dp),
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 14.sp,
                 )
@@ -269,11 +268,10 @@ fun SearchSheet(controller: CalendarController) {
 @Composable
 private fun ResultRow(title: String, subtitle: String, onClick: () -> Unit) {
     Column(
-        Modifier
+        Modifier.pressable(role = Role.Button, onClick = onClick)
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(title, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
@@ -282,17 +280,20 @@ private fun ResultRow(title: String, subtitle: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MenuRow(title: String, sub: String, onClick: () -> Unit) {
+private fun MenuRow(title: String, sub: String, icon: @Composable (Color) -> Unit, onClick: () -> Unit) {
     Row(
-        Modifier
+        Modifier.pressable(role = Role.Button, onClick = onClick)
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) { icon(MaterialTheme.colorScheme.onSurface) }
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
             if (sub.isNotBlank()) Text(sub, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
@@ -340,7 +341,7 @@ fun AccountSheet(controller: CalendarController) {
             Text(user.name.ifBlank { user.username }, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             Text(
                 "изменить",
-                modifier = Modifier.clickable(role = Role.Button) { renaming = !renaming },
+                modifier = Modifier.pressable(role = Role.Button) { renaming = !renaming },
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -362,11 +363,16 @@ fun AccountSheet(controller: CalendarController) {
     MenuRow(
         "Ассистент обо мне",
         profile?.let { "Работа ${workDaysLabel(it.workDays)}, ${formatMinutes(it.workStart)}–${formatMinutes(it.workEnd)}" }.orEmpty(),
+        icon = { PersonIcon(size = 20.dp, color = it) },
     ) {
         controller.accountSheet = false
         controller.openProfile()
     }
-    MenuRow("Что ассистент знает", if (facts == 0) "Пока ничего" else pluralize(facts, "факт", "факта", "фактов")) {
+    MenuRow(
+        "Что ассистент знает",
+        if (facts == 0) "Пока ничего" else pluralize(facts, "факт", "факта", "фактов"),
+        icon = { BrainIcon(size = 20.dp, color = it) },
+    ) {
         controller.accountSheet = false
         controller.openMemories()
     }
@@ -382,12 +388,11 @@ fun AccountSheet(controller: CalendarController) {
         listOf("system" to "Как в системе", "light" to "Светлое", "dark" to "Тёмное").forEach { (mode, label) ->
             val on = controller.themeMode == mode
             Box(
-                Modifier
+                Modifier.pressable(role = Role.RadioButton) { controller.setTheme(mode) }
                     .weight(1f)
                     .defaultMinSize(minHeight = 44.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
-                    .clickable(role = Role.RadioButton) { controller.setTheme(mode) },
+                    .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -399,15 +404,15 @@ fun AccountSheet(controller: CalendarController) {
         }
     }
 
-    MenuRow("Календари", "Google, Яндекс, iCloud, ссылка .ics") {
+    MenuRow("Календари", "Google, Яндекс, iCloud, ссылка .ics", icon = { CalendarIcon(size = 20.dp, color = it) }) {
         controller.accountSheet = false
         controller.openCalendars()
     }
-    MenuRow("Люди", "Кого ассистент знает по имени") {
+    MenuRow("Люди", "Кого ассистент знает по имени", icon = { UsersIcon(size = 20.dp, color = it) }) {
         controller.accountSheet = false
         controller.openPeople()
     }
-    MenuRow("Безопасность и данные", "Пароль, устройства, удаление") {
+    MenuRow("Безопасность и данные", "Пароль, устройства, удаление", icon = { KeyIcon(size = 20.dp, color = it) }) {
         controller.accountSheet = false
         controller.securitySheet = true
     }
@@ -443,10 +448,9 @@ fun AccountSheet(controller: CalendarController) {
     } else {
         Text(
             "Выйти из аккаунта",
-            modifier = Modifier
+            modifier = Modifier.pressable(role = Role.Button) { confirmLogout = true }
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 48.dp)
-                .clickable(role = Role.Button) { confirmLogout = true }
                 .padding(12.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             color = MaterialTheme.colorScheme.error,
@@ -494,7 +498,7 @@ fun SecuritySheet(controller: CalendarController) {
             if (!session.current) {
                 Text(
                     "Выйти",
-                    modifier = Modifier.clickable(role = Role.Button) { controller.endSession(session.id) }.padding(12.dp),
+                    modifier = Modifier.pressable(role = Role.Button) { controller.endSession(session.id) }.padding(12.dp),
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 14.sp,
                 )
@@ -559,7 +563,7 @@ private fun MemoryRow(memory: Memory, onDelete: () -> Unit) {
             if (memory.source != "user") Text("ассистент заметил сам", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Box(
-            Modifier.size(48.dp).clickable(role = Role.Button, onClickLabel = "Забыть", onClick = onDelete),
+            Modifier.pressable(role = Role.Button, onClickLabel = "Забыть", onClick = onDelete).size(48.dp),
             contentAlignment = Alignment.Center,
         ) { CloseIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }

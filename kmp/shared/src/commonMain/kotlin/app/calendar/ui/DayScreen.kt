@@ -1,5 +1,8 @@
 package app.calendar.ui
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlin.time.Clock
@@ -85,11 +88,10 @@ fun DayModeSwitch(timeline: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun ModeKnob(label: String, on: Boolean, click: () -> Unit) {
     Box(
-        Modifier
+        Modifier.pressable(role = Role.Tab, onClick = click)
             .defaultMinSize(minHeight = 44.dp)
             .clip(CircleShape)
-            .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
-            .clickable(role = Role.Tab, onClick = click)
+            .background(animateColorAsState(if (on) MaterialTheme.colorScheme.surface else Color.Transparent, uiSpring(), label = "knob").value)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) { Text(label, fontSize = 13.sp, color = if (on) MaterialTheme.colorScheme.onSurface else barInk(platformInDarkTheme())) }
@@ -102,7 +104,7 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
     val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
     val nowMinutes = (now.hour * 60 + now.minute).takeIf { date == controller.today() }
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).appear(0), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(
                     weekdayName(date),
@@ -122,45 +124,60 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                 )
             }
             Box(
-                Modifier
+                Modifier.pressable(role = Role.Button, onClickLabel = "Закрыть день") { controller.back() }
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .clickable(role = Role.Button, onClickLabel = "Закрыть день") { controller.back() },
+                    .background(MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center,
             ) { CloseIcon(size = 20.dp) }
         }
         val allDayEvents = controller.dayEvents.filter { it.allDay }
         if (allDayEvents.isNotEmpty()) {
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                allDayEvents.forEach { event -> EventCard(event) { controller.openEvent(event, date) } }
+                allDayEvents.forEachIndexed { i, event -> EventCard(event, Modifier.appear(i, dy = 14.dp, scaleFrom = 0.97f)) { controller.openEvent(event, date) } }
             }
         }
-        Column(Modifier.weight(1f).padding(top = 12.dp)) {
-            DayPart.entries.forEach { part ->
-                val slice = events.filter { partOf(it.start) == part }
-                val expanded = controller.dayTimeline && open == part.name
-                PartLayer(
-                    part = part,
-                    events = slice,
-                    expanded = expanded,
-                    list = !controller.dayTimeline,
-                    nowMinutes = nowMinutes,
-                    onOpen = { open = part.name },
-                    onEvent = { controller.openEvent(it, date) },
-                    onCreate = { start -> controller.compose(date, start) },
-                    modifier = if (expanded) Modifier.weight(1f) else Modifier.height(if (controller.dayTimeline) 58.dp else 0.dp),
-                )
-            }
-            if (!controller.dayTimeline) {
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    events.sortedBy { it.start }.forEach { event ->
-                        EventCard(event) { controller.openEvent(event, date) }
+        BoxWithConstraints(Modifier.weight(1f).padding(top = 12.dp).appear(1)) {
+            val collapsed = 58.dp
+            val expandedHeight = maxHeight - collapsed * (DayPart.entries.size - 1)
+            Column(Modifier.fillMaxSize()) {
+                DayPart.entries.forEach { part ->
+                    val slice = events.filter { partOf(it.start) == part }
+                    val expanded = controller.dayTimeline && open == part.name
+                    // Слои раскрываются пружиной: высота — явная, а не weight, который не анимируется.
+                    val height by animateDpAsState(
+                        when {
+                            !controller.dayTimeline -> 0.dp
+                            expanded -> expandedHeight
+                            else -> collapsed
+                        },
+                        uiSpring(),
+                        label = "part",
+                    )
+                    PartLayer(
+                        part = part,
+                        events = slice,
+                        expanded = expanded,
+                        list = !controller.dayTimeline,
+                        nowMinutes = nowMinutes,
+                        onOpen = { open = part.name },
+                        onEvent = { controller.openEvent(it, date) },
+                        onCreate = { start -> controller.compose(date, start) },
+                        modifier = Modifier.height(height.coerceAtLeast(0.dp)),
+                    )
+                }
+                if (!controller.dayTimeline) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        events.sortedBy { it.start }.forEachIndexed { i, event ->
+                            EventCard(event, Modifier.appear(i, dy = 14.dp, startDelay = 60, step = 40, scaleFrom = 0.97f)) {
+                                controller.openEvent(event, date)
+                            }
+                        }
                     }
                 }
             }
         }
-        WeekStrip(date) { controller.open(Screen.Day(it)) }
+        WeekStrip(date, Modifier.appear(2)) { controller.open(Screen.Day(it)) }
     }
 }
 
@@ -218,10 +235,9 @@ private fun PartLayer(
     ) {
         Column(Modifier.fillMaxSize().background(brush)) {
             Row(
-                Modifier
+                Modifier.pressable(role = Role.Button, onClickLabel = if (expanded) null else "Раскрыть") { onOpen() }
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = 58.dp)
-                    .clickable(role = Role.Button, onClickLabel = if (expanded) null else "Раскрыть") { onOpen() }
                     .padding(start = 20.dp, end = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -278,14 +294,18 @@ private fun PartLayer(
                                 color = soft,
                             )
                         }
-                        events.sortedBy { it.start }.forEach { event ->
+                        events.sortedBy { it.start }.forEachIndexed { index, event ->
                             val start = maxOf(event.start, from)
                             val end = minOf(event.end, to)
                             val top = hourHeight * ((start - from) / 60f) + 3.dp
                             val height = maxOf(hourHeight * ((end - start) / 60f) - 6.dp, 44.dp)
                             EventCard(
                                 event,
-                                Modifier.padding(start = 68.dp).offset(y = top).height(height),
+                                Modifier
+                                    .padding(start = 68.dp)
+                                    .offset(y = top)
+                                    .height(height)
+                                    .appear(index, dy = 14.dp, startDelay = 150, step = 60, scaleFrom = 0.97f),
                             ) { onEvent(event) }
                         }
                         if (nowInside && nowMinutes != null) {
@@ -308,11 +328,10 @@ private fun PartLayer(
                         }
                     }
                     Row(
-                        Modifier
+                        Modifier.pressable(role = Role.Button) { onCreate(firstFreeTime(events, from, to)) }
                             .padding(start = 60.dp, top = 6.dp)
                             .defaultMinSize(minHeight = 44.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .clickable(role = Role.Button) { onCreate(firstFreeTime(events, from, to)) }
                             .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -338,16 +357,19 @@ private fun firstFreeTime(events: List<Event>, from: Int, to: Int): Int {
 @Composable
 private fun EventCard(event: Event, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier
+        modifier.pressable(onClick = onClick)
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(event.title.ifBlank { "Без названия" }, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (event.repeat.isNotBlank()) RepeatIcon(size = 12.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (event.url.isNotBlank()) VideoIcon(size = 12.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(event.title.ifBlank { "Без названия" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
             val sub = event.subtitle.ifBlank {
                 event.invite?.let { "от @${it.from.username}" }.orEmpty()
             }
@@ -355,15 +377,18 @@ private fun EventCard(event: Event, modifier: Modifier = Modifier, onClick: () -
                 Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
             }
         }
-        Box(Modifier.size(10.dp).clip(CircleShape).background(badgeColor(event.badge)))
+        Box(
+            Modifier.size(18.dp).clip(CircleShape).background(badgeColor(event.badge)),
+            contentAlignment = Alignment.Center,
+        ) { BadgeIcon(event.badge, size = 10.dp, color = Color.White) }
     }
 }
 
 @Composable
-private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
+private fun WeekStrip(selected: LocalDate, modifier: Modifier = Modifier, onSelect: (LocalDate) -> Unit) {
     val start = selected.plus(DatePeriod(days = -(selected.dayOfWeek.isoDayNumber - 1)))
     Row(
-        Modifier
+        modifier
             .padding(vertical = 8.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
@@ -376,7 +401,7 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
             val day = start.plus(DatePeriod(days = offset))
             val on = day == selected
             Column(
-                Modifier.clip(CircleShape).clickable { onSelect(day) }.padding(horizontal = 6.dp, vertical = 4.dp),
+                Modifier.pressable { onSelect(day) }.clip(CircleShape).padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
@@ -469,12 +494,7 @@ fun EventEditor(
         SheetField(guests, { guests = it }, "Позвать: @логины через пробел")
         SheetField(url, { url = it }, "Ссылка — необязательно")
         Box(
-            Modifier
-                .fillMaxWidth()
-                .height(54.dp)
-                .clip(CircleShape)
-                .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(enabled = title.isNotBlank(), role = Role.Button) {
+            Modifier.pressable(enabled = title.isNotBlank(), role = Role.Button) {
                     val logins = parseLogins(guests)
                     val before = initial?.attendees.orEmpty().map { it.username }
                     onSave(
@@ -492,7 +512,11 @@ fun EventEditor(
                             reminderTouched = reminderTouched,
                         ),
                     )
-                },
+                }
+                .fillMaxWidth()
+                .height(54.dp)
+                .clip(CircleShape)
+                .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             Text(

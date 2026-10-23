@@ -1,5 +1,13 @@
 package app.calendar
 
+import app.calendar.ui.softSpring
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.foundation.background
@@ -89,10 +97,23 @@ fun App() {
     }
 }
 
+/** Глубина экрана: Главная → Месяц и Чат → День. */
+private fun depth(screen: Screen): Int = when (screen) {
+    Screen.Home -> 0
+    Screen.Month, Screen.Chat -> 1
+    is Screen.Day -> 2
+}
+
+private fun isForward(from: Screen, to: Screen): Boolean = when {
+    from is Screen.Day && to is Screen.Day -> to.date >= from.date
+    else -> depth(to) >= depth(from)
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Shell(controller: CalendarController) {
     val screen = controller.screen
+    val density = LocalDensity.current
     val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null ||
         controller.openedEvent != null || controller.openedTask != null || controller.searchSheet ||
         controller.accountSheet || controller.memorySheet || controller.calendarsSheet ||
@@ -135,7 +156,21 @@ private fun Shell(controller: CalendarController) {
                 AnimatedContent(
                     targetState = screen,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    transitionSpec = {
+                        // Вперёд — «погружение», назад — «всплытие», как screenVariants на сайте.
+                        val forward = isForward(initialState, targetState)
+                        val rise = with(density) { (if (forward) 28.dp else (-10).dp).roundToPx() }
+                        val sink = with(density) { (if (forward) (-8).dp else 24.dp).roundToPx() }
+                        (
+                            fadeIn(softSpring()) +
+                                scaleIn(softSpring(), initialScale = if (forward) 0.94f else 1.04f) +
+                                slideInVertically(softSpring()) { rise }
+                            ).togetherWith(
+                            fadeOut(tween(280, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f))) +
+                                scaleOut(tween(280, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)), targetScale = if (forward) 1.03f else 0.95f) +
+                                slideOutVertically(tween(280, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f))) { sink },
+                        ).apply { targetContentZIndex = 2f }
+                    },
                 ) { current ->
                     when (current) {
                         Screen.Home -> HomeScreen(controller)

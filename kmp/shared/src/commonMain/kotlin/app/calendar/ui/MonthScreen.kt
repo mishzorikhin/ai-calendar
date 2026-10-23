@@ -111,7 +111,7 @@ fun MonthScreen(controller: CalendarController) {
         controller.showMonth(year, cursor.monthNumber)
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.appear(0), verticalAlignment = Alignment.CenterVertically) {
             AnimatedContent(
                 targetState = cursor.year,
                 modifier = Modifier.clipToBounds(),
@@ -125,11 +125,10 @@ fun MonthScreen(controller: CalendarController) {
                 Text(year.toString(), fontSize = 44.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
             }
             Box(
-                Modifier
+                Modifier.pressable(role = Role.Button, onClickLabel = if (pickerOpen) "Скрыть выбор года" else "Выбрать год и месяц") { pickerOpen = !pickerOpen }
                     .padding(start = 4.dp)
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClickLabel = if (pickerOpen) "Скрыть выбор года" else "Выбрать год и месяц") { pickerOpen = !pickerOpen },
+                    .clip(CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 ChevronDownIcon(
@@ -192,6 +191,7 @@ fun MonthScreen(controller: CalendarController) {
         }
         Column(
             Modifier
+                .appear(1)
                 .padding(top = 12.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
@@ -265,12 +265,11 @@ fun MonthScreen(controller: CalendarController) {
         }
         val headline = controller.dayEvents.minByOrNull { it.start }
         Column(
-            Modifier
+            Modifier.appear(2).pressable(role = Role.Button) { controller.open(Screen.Day(picked)) }
                 .padding(top = 12.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .clickable(role = Role.Button) { controller.open(Screen.Day(picked)) }
                 .padding(18.dp),
         ) {
             Text(picked.dayOfMonth.toString(), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
@@ -306,7 +305,7 @@ private fun MonthDays(
                     val selected = day != null && day == picked.dayOfMonth && picked.monthNumber == page.monthNumber && picked.year == page.year
                     val isToday = day != null && today.year == page.year && today.monthNumber == page.monthNumber && today.dayOfMonth == day
                     Box(
-                        Modifier.weight(1f).height(52.dp).clickable(enabled = day != null, role = Role.Button) { if (day != null) onPick(day) },
+                        Modifier.pressable(enabled = day != null, role = Role.Button) { if (day != null) onPick(day) }.weight(1f).height(52.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (day != null) {
@@ -347,12 +346,11 @@ private fun MonthDays(
 @Composable
 private fun Circle(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
-        Modifier
+        Modifier.pressable(role = Role.Button, onClickLabel = label, onClick = onClick)
             .padding(start = 8.dp)
             .size(44.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+            .background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center,
     ) { content() }
 }

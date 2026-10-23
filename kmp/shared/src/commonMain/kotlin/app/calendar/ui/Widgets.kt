@@ -38,7 +38,7 @@ import app.calendar.domain.formatRange
 fun ErrorBanner(message: String?, onDismiss: () -> Unit) {
     if (message == null) return
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onDismiss),
+        modifier = Modifier.pressable(onClick = onDismiss).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
     ) {
@@ -69,7 +69,7 @@ fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
 
 @Composable
 fun EventRow(event: Event, onClick: (() -> Unit)? = null) {
-    val click = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    val click = if (onClick == null) Modifier else Modifier.pressable(onClick = onClick)
     Surface(
         modifier = Modifier.fillMaxWidth().then(click),
         shape = RoundedCornerShape(20.dp),
@@ -115,7 +115,7 @@ fun ActionBar(
             InfinityIcon(size = 22.dp, color = ink)
         }
         Box(
-            Modifier.weight(1f).height(48.dp).then(if (center == null) Modifier.clickable(role = Role.Button, onClick = onSay) else Modifier),
+            Modifier.weight(1f).height(48.dp).then(if (center == null) Modifier.pressable(role = Role.Button, onClick = onSay) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             if (center != null) center() else Text("Спросить ассистента", color = ink.copy(alpha = 0.85f), fontSize = 15.sp)
@@ -130,11 +130,10 @@ fun ActionBar(
 private fun BarSide(label: String, ink: Color, active: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier
+            Modifier.pressable(role = Role.Button, onClickLabel = label, onClick = onClick)
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(ink.copy(alpha = if (active) 0.22f else 0.12f))
-                .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+                .background(ink.copy(alpha = if (active) 0.22f else 0.12f)),
             contentAlignment = Alignment.Center,
         ) { icon() }
         Text(label, color = ink.copy(alpha = 0.8f), fontSize = 10.sp)

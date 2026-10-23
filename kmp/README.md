@@ -45,3 +45,7 @@ iOS: открыть `iosApp/iosApp.xcodeproj` на Mac и запустить с�
 Приложение само сообщает серверу часовой пояс устройства. HTTP без TLS приложение принимает только для localhost и частных адресов (`10.*`, `172.16–31.*`, `192.168.*`, `*.local`), остальное — только `https://`.
 
 Сессия (токен и адрес) хранится на устройстве: SharedPreferences, UserDefaults или `localStorage`. В лог токен не пишется.
+
+## Анимации и значки
+
+Пружины (`uiSpring`, `softSpring`, `bouncySpring`) переведены из `src/lib/motion.ts` (`Motion.kt`). Нажатие со сжатием — `Modifier.pressable`, каскадное появление — `Modifier.appear`, переходы экранов и шторки повторяют `screenVariants` и `BottomSheet`. Значки взяты из `src/components/Icons.tsx`. Шрифт Inter не подключён: для него нужен плагин ресурсов Compose, который в этой среде не собрать, поэтому текст набирается системным шрифтом.

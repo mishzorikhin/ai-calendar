@@ -92,11 +92,10 @@ fun WeekSheet(controller: CalendarController, onClose: () -> Unit) {
 @Composable
 private fun GrayCircleButton(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
-        Modifier
+        Modifier.pressable(role = Role.Button, onClickLabel = label, onClick = onClick)
             .size(44.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+            .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         content()
@@ -227,10 +226,9 @@ private fun WeekDayColumn(
         label = "weekBar",
     )
     Column(
-        modifier
+        modifier.pressable(role = Role.Button) { onDay(day.date) }
             .fillMaxHeight()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(role = Role.Button) { onDay(day.date) },
+            .clip(RoundedCornerShape(12.dp)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

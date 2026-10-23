@@ -126,11 +126,10 @@ fun CalendarsSheet(controller: CalendarController) {
 @Composable
 private fun ConnectRow(title: String, sub: String, onClick: () -> Unit) {
     Column(
-        Modifier
+        Modifier.pressable(role = Role.Button, onClick = onClick)
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(title, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
@@ -239,13 +238,12 @@ private fun CalDavForm(controller: CalendarController, onDone: () -> Unit) {
     calendars.forEach { calendar ->
         val on = calendar.url in chosen
         Row(
-            Modifier
+            Modifier.pressable(role = Role.Checkbox) {
+                    picked = if (on) chosen - calendar.url else chosen + calendar.url
+                }
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(role = Role.Checkbox) {
-                    picked = if (on) chosen - calendar.url else chosen + calendar.url
-                }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -407,7 +405,7 @@ private fun ProtectedBlocks(p: Profile, set: (JsonObject) -> Unit) {
                 }
                 Text(
                     "Убрать",
-                    modifier = Modifier.clickable(role = Role.Button) { set(buildJsonObject { put("protected", blocks(p.protected.filterIndexed { i, _ -> i != index })) }) }.padding(12.dp),
+                    modifier = Modifier.pressable(role = Role.Button) { set(buildJsonObject { put("protected", blocks(p.protected.filterIndexed { i, _ -> i != index })) }) }.padding(12.dp),
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 14.sp,
                 )
@@ -452,11 +450,10 @@ fun PeopleSheet(controller: CalendarController) {
     if (controller.people.isEmpty()) Hint("Пока никого. Добавьте тех, с кем часто встречаетесь.")
     controller.people.forEach { person ->
         Column(
-            Modifier
+            Modifier.pressable(role = Role.Button) { editing = person.id }
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(role = Role.Button) { editing = person.id }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             Text(person.name, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)

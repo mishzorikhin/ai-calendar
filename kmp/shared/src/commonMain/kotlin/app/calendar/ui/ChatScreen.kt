@@ -88,11 +88,11 @@ fun ChatScreen(controller: CalendarController) {
                     Row {
                         Text(
                             card.button.ifBlank { "Да" },
-                            modifier = Modifier.defaultMinSize(minHeight = 44.dp).clickable(role = Role.Button) { controller.decide(card, true) }.padding(12.dp),
+                            modifier = Modifier.pressable(role = Role.Button) { controller.decide(card, true) }.defaultMinSize(minHeight = 44.dp).padding(12.dp),
                             color = MaterialTheme.colorScheme.secondary,
                             fontWeight = FontWeight.Medium,
                         )
-                        Text("Нет", modifier = Modifier.defaultMinSize(minHeight = 44.dp).clickable(role = Role.Button) { controller.decide(card, false) }.padding(12.dp))
+                        Text("Нет", modifier = Modifier.pressable(role = Role.Button) { controller.decide(card, false) }.defaultMinSize(minHeight = 44.dp).padding(12.dp))
                     }
                 }
             }
@@ -101,7 +101,7 @@ fun ChatScreen(controller: CalendarController) {
             prompts.forEach { label ->
                 Text(
                     label,
-                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(role = Role.Button) { draft = label }.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.pressable(role = Role.Button) { draft = label }.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 14.dp, vertical = 12.dp),
                     fontSize = 14.sp,
                 )
             }
@@ -132,12 +132,11 @@ fun ChatScreen(controller: CalendarController) {
                 )
             }
             Box(
-                Modifier
+                Modifier.pressable(enabled = draft.isNotBlank() && !controller.sending, role = Role.Button, onClickLabel = "Отправить") { send() }
                     .padding(start = 8.dp)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(if (draft.isNotBlank() && !controller.sending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable(enabled = draft.isNotBlank() && !controller.sending, role = Role.Button, onClickLabel = "Отправить") { send() },
+                    .background(if (draft.isNotBlank() && !controller.sending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) { Text("›", color = MaterialTheme.colorScheme.onPrimary, fontSize = 26.sp) }
         }

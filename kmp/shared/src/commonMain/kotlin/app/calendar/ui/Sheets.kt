@@ -100,7 +100,7 @@ fun AppSheet(
         }
         AnimatedVisibility(
             visible = visible,
-            enter = slideInVertically(tween(280)) { it },
+            enter = slideInVertically(uiSpring()) { it },
             exit = slideOutVertically(tween(200)) { it },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
@@ -195,7 +195,7 @@ fun TaskForm(onClose: () -> Unit, onSave: (NewTask) -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Box(
-            Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Закрыть", onClick = onClose),
+            Modifier.pressable(role = Role.Button, onClickLabel = "Закрыть", onClick = onClose).size(44.dp).clip(CircleShape),
             contentAlignment = Alignment.Center,
         ) { CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface) }
     }
@@ -237,12 +237,7 @@ fun TaskForm(onClose: () -> Unit, onSave: (NewTask) -> Unit) {
     SheetField(guests, { guests = it }, "@логин — поделиться задачей")
     Text("Подсказка: @логин прямо в названии тоже поделится задачей", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
     Box(
-        Modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = ready, role = Role.Button) {
+        Modifier.pressable(enabled = ready, role = Role.Button) {
                 onSave(
                     NewTask(
                         title = title,
@@ -255,7 +250,11 @@ fun TaskForm(onClose: () -> Unit, onSave: (NewTask) -> Unit) {
                         members = parseLogins(guests),
                     ),
                 )
-            },
+            }
+            .fillMaxWidth()
+            .height(54.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -301,10 +300,9 @@ fun SheetField(
 fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
-        modifier = Modifier
+        modifier = Modifier.pressable(role = Role.RadioButton, onClick = onClick)
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
         fontSize = 14.sp,

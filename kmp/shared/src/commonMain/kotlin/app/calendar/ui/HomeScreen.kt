@@ -1,5 +1,8 @@
 package app.calendar.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import app.calendar.domain.isoDate
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.TimeZone
@@ -64,9 +67,9 @@ fun HomeScreen(controller: CalendarController) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.appear(0), verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).clickable { controller.open(Screen.Day(today)) }.padding(vertical = 4.dp),
+                Modifier.pressable { controller.open(Screen.Day(today)) }.weight(1f).padding(vertical = 4.dp),
             ) {
                 Text(
                     dayTitle(today),
@@ -81,22 +84,20 @@ fun HomeScreen(controller: CalendarController) {
                 }
             }
             Box(
-                Modifier
+                Modifier.pressable(role = Role.Button, onClickLabel = "Поиск") { controller.searchSheet = true }
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .clickable(role = Role.Button, onClickLabel = "Поиск") { controller.searchSheet = true },
+                    .background(MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center,
             ) { SearchIcon(size = 19.dp, color = MaterialTheme.colorScheme.onSurface) }
             if (user != null) {
                 val initial = (user.name.ifBlank { user.username }).trim().take(1).uppercase()
                 Box(
-                    Modifier
+                    Modifier.pressable(role = Role.Button, onClickLabel = "Аккаунт") { controller.openAccount() }
                         .padding(start = 10.dp)
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(Color(avatarColor(user.username)))
-                        .clickable(role = Role.Button, onClickLabel = "Аккаунт") { controller.openAccount() },
+                        .background(Color(avatarColor(user.username))),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(initial, color = Color(0xFF1E1E3C), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
@@ -105,7 +106,7 @@ fun HomeScreen(controller: CalendarController) {
             DateChip(day = today.dayOfMonth, month = monthShort(today)) { controller.open(Screen.Month) }
         }
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).appear(1),
             shape = RoundedCornerShape(32.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 1.dp,
@@ -124,7 +125,7 @@ fun HomeScreen(controller: CalendarController) {
                     Surface(
                         shape = RoundedCornerShape(999.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.clickable(role = Role.Button) { controller.showWeek() },
+                        modifier = Modifier.pressable(role = Role.Button) { controller.showWeek() },
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             ChartIcon(size = 15.dp, color = MaterialTheme.colorScheme.onSurface)
@@ -135,9 +136,9 @@ fun HomeScreen(controller: CalendarController) {
                 // «Далее» — ближайшее не закончившееся событие, а не самое раннее за день.
                 val timed = controller.todayEvents.filter { !it.allDay }
                 val next = timed.filter { it.end > nowMinutes }.minByOrNull { it.start }
-                Column(Modifier.padding(top = 30.dp).clickable(role = Role.Button) {
+                Column(Modifier.pressable(role = Role.Button) {
                     if (timed.isEmpty()) controller.compose(today) else controller.open(Screen.Day(today))
-                }) {
+                }.padding(top = 30.dp)) {
                     if (next == null && timed.isNotEmpty()) {
                         Text("На сегодня всё", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
@@ -179,9 +180,10 @@ fun HomeScreen(controller: CalendarController) {
             }
             }
         }
-        controller.suggestions.take(2).forEach { suggestion ->
+        controller.suggestions.take(2).forEachIndexed { index, suggestion ->
             Column(
                 Modifier
+                    .appear(2 + index)
                     .fillMaxWidth()
                     .padding(top = 12.dp)
                     .clip(RoundedCornerShape(24.dp))
@@ -200,12 +202,12 @@ fun HomeScreen(controller: CalendarController) {
             }
         }
         Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 22.dp, bottom = 4.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 22.dp, bottom = 4.dp).appear(3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Задачи и цели", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Новая задача") { controller.taskSheet = true },
+                Modifier.pressable(role = Role.Button, onClickLabel = "Новая задача") { controller.taskSheet = true }.size(44.dp).clip(CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
@@ -214,7 +216,7 @@ fun HomeScreen(controller: CalendarController) {
             }
         }
         if (controller.tasks.isEmpty()) {
-            Column(Modifier.padding(top = 18.dp, start = 6.dp).clickable { controller.taskSheet = true }) {
+            Column(Modifier.pressable { controller.taskSheet = true }.padding(top = 18.dp, start = 6.dp)) {
                 Text(
                     "Задач пока нет",
                     color = MaterialTheme.colorScheme.onBackground,
@@ -232,25 +234,39 @@ fun HomeScreen(controller: CalendarController) {
         } else {
             Spacer(Modifier.height(8.dp))
             val todayIso = isoDate(today)
-            controller.tasks.forEach { task ->
+            controller.tasks.forEachIndexed { index, task ->
                 val done = if (task.kind == "habit") todayIso in task.checks else task.done
                 Row(
-                    Modifier
+                    Modifier.appear(4 + index).pressable(role = Role.Checkbox) { controller.toggleTask(task) }
                         .fillMaxWidth()
                         .defaultMinSize(minHeight = 48.dp)
-                        .clickable(role = Role.Checkbox) { controller.toggleTask(task) }
                         .semantics { stateDescription = if (done) "Выполнено" else "Не выполнено" }
                         .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Галочка «выпрыгивает» пружиной, цвет круга перетекает.
+                    val pop by animateFloatAsState(if (done) 1f else 0f, bouncySpring(), label = "check")
+                    val fill by animateColorAsState(
+                        if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                        uiSpring(),
+                        label = "fill",
+                    )
                     Box(
                         Modifier
                             .size(24.dp)
                             .clip(CircleShape)
-                            .background(if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface),
+                            .background(fill),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (done) Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp)
+                        CheckIcon(
+                            modifier = Modifier.graphicsLayer {
+                                alpha = pop.coerceIn(0f, 1f)
+                                scaleX = pop
+                                scaleY = pop
+                            },
+                            size = 15.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
                     }
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(
@@ -268,7 +284,7 @@ fun HomeScreen(controller: CalendarController) {
                         if (kind != null) Text(kind, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Box(
-                        Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Подробнее") { controller.openedTask = task },
+                        Modifier.pressable(role = Role.Button, onClickLabel = "Подробнее") { controller.openedTask = task }.size(44.dp).clip(CircleShape),
                         contentAlignment = Alignment.Center,
                     ) { Text("⋯", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
@@ -281,10 +297,9 @@ fun HomeScreen(controller: CalendarController) {
 private fun GhostPill(label: String, onClick: () -> Unit) {
     Text(
         label,
-        modifier = Modifier
+        modifier = Modifier.pressable(role = Role.Button, onClick = onClick)
             .clip(RoundedCornerShape(999.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         fontSize = 14.sp,
         color = MaterialTheme.colorScheme.onSurface,
@@ -293,7 +308,7 @@ private fun GhostPill(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun DateChip(day: Int, month: String, onClick: () -> Unit) {
-    Box(Modifier.padding(start = 10.dp).clickable(role = Role.Button, onClickLabel = "Месяц", onClick = onClick)) {
+    Box(Modifier.pressable(role = Role.Button, onClickLabel = "Месяц", onClick = onClick).padding(start = 10.dp)) {
         Column(
             Modifier
                 .size(width = 60.dp, height = 62.dp)

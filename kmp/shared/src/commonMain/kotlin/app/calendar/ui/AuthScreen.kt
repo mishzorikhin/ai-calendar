@@ -99,22 +99,20 @@ fun AuthScreen(controller: CalendarController) {
                 }
                 Text(
                     if (showServer) "Скрыть адрес сервера" else "Сервер: ${controller.serverUrl}",
-                    modifier = Modifier
+                    modifier = Modifier.pressable(role = Role.Button) { showServer = !showServer }
                         .align(Alignment.CenterHorizontally)
                         .defaultMinSize(minHeight = 44.dp)
-                        .clickable(role = Role.Button) { showServer = !showServer }
                         .padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                 )
                 ErrorBanner(controller.error, onDismiss = controller::dismissError)
                 Box(
-                    Modifier
+                    Modifier.pressable(enabled = ready, role = Role.Button) { submit() }
                         .fillMaxWidth()
                         .height(52.dp)
                         .clip(RoundedCornerShape(999.dp))
-                        .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable(enabled = ready, role = Role.Button) { submit() },
+                        .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -131,11 +129,10 @@ fun AuthScreen(controller: CalendarController) {
 @Composable
 private fun ModeTab(label: String, on: Boolean, modifier: Modifier, click: () -> Unit) {
     Box(
-        modifier
+        modifier.pressable(role = Role.Tab, onClick = click)
             .height(38.dp)
             .clip(RoundedCornerShape(999.dp))
-            .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
-            .clickable(role = Role.Tab, onClick = click),
+            .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
