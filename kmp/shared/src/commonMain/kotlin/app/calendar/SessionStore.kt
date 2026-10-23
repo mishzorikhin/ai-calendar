@@ -15,6 +15,11 @@ class SessionStore(private val settings: Settings) {
             settings.put(KEY_URL, value.trim().trimEnd('/'))
         }
 
+    /** Тема оформления на этом устройстве: system, light или dark. */
+    var theme: String
+        get() = settings.get(KEY_THEME)?.takeIf { it in setOf("light", "dark") } ?: "system"
+        set(value) = settings.put(KEY_THEME, value)
+
     fun loadUser(): User? {
         val raw = settings.get(KEY_USER) ?: return null
         return runCatching { apiJson.decodeFromString<User>(raw) }.getOrNull()
@@ -33,5 +38,6 @@ class SessionStore(private val settings: Settings) {
         const val KEY_TOKEN = "token"
         const val KEY_URL = "apiUrl"
         const val KEY_USER = "user"
+        const val KEY_THEME = "theme"
     }
 }

@@ -53,6 +53,7 @@ import app.calendar.ui.EventEditor
 import app.calendar.ui.EventSheet
 import app.calendar.ui.MemoriesSheet
 import app.calendar.ui.SearchSheet
+import app.calendar.ui.SecuritySheet
 import app.calendar.ui.TaskSheet
 import app.calendar.ui.HomeScreen
 import app.calendar.ui.MonthScreen
@@ -63,7 +64,7 @@ import app.calendar.ui.WeekSheet
 fun App() {
     val scope = rememberCoroutineScope()
     val controller = remember { CalendarController(scope) }
-    CalendarTheme {
+    CalendarTheme(controller.themeMode) {
         val bar = Brush.horizontalGradient(barColors(platformInDarkTheme()))
         Box(
             modifier = Modifier.fillMaxSize().background(bar),
@@ -95,7 +96,7 @@ private fun Shell(controller: CalendarController) {
     val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null ||
         controller.openedEvent != null || controller.openedTask != null || controller.searchSheet ||
         controller.accountSheet || controller.memorySheet || controller.calendarsSheet ||
-        controller.profileSheet || controller.peopleSheet
+        controller.profileSheet || controller.peopleSheet || controller.securitySheet
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
@@ -106,6 +107,7 @@ private fun Shell(controller: CalendarController) {
             controller.openedEvent != null -> controller.openedEvent = null
             controller.openedTask != null -> controller.openedTask = null
             controller.searchSheet -> controller.closeSearch()
+            controller.securitySheet -> controller.securitySheet = false
             controller.memorySheet -> controller.memorySheet = false
             controller.calendarsSheet -> controller.calendarsSheet = false
             controller.profileSheet -> controller.profileSheet = false
@@ -168,7 +170,7 @@ private fun Shell(controller: CalendarController) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
-            EventEditor { title, start, end, badge, allDay, notes, extras ->
+            EventEditor(defaultStart = controller.composerStart) { title, start, end, badge, allDay, notes, extras ->
                 if (composing != null && !controller.loading) {
                     controller.createEvent(composing, title, start, end, badge, allDay, notes, extras) {
                         controller.composerDate = null
@@ -181,7 +183,7 @@ private fun Shell(controller: CalendarController) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             TaskForm(
                 onClose = { controller.taskSheet = false },
-                onSave = { title, note, kind, due, members -> controller.addTask(title, note, kind, due, members) },
+                onSave = { controller.addTask(it) },
             )
         }
         val openedEvent = controller.openedEvent
@@ -200,6 +202,10 @@ private fun Shell(controller: CalendarController) {
         AppSheet(visible = controller.accountSheet, onClose = { controller.accountSheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             AccountSheet(controller)
+        }
+        AppSheet(visible = controller.securitySheet, onClose = { controller.securitySheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            SecuritySheet(controller)
         }
         AppSheet(visible = controller.calendarsSheet, onClose = { controller.calendarsSheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)

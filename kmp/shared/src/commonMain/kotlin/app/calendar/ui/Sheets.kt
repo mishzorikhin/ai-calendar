@@ -1,5 +1,6 @@
 package app.calendar.ui
 
+import app.calendar.api.NewTask
 import app.calendar.domain.parseLogins
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
@@ -168,11 +169,19 @@ fun AppSheet(
     }
 }
 
+private val estimates = listOf(15 to "15 мин", 30 to "30 мин", 60 to "1 ч", 120 to "2 ч", 240 to "4 ч")
+private val tags = listOf("study" to "Учёба", "sport" to "Спорт", "work" to "Работа")
+private val cadences = listOf("daily" to "Каждый день", "weekdays" to "По будням", "weekly" to "Раз в неделю")
+
 @Composable
-fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: String, due: String, members: List<String>) -> Unit) {
+fun TaskForm(onClose: () -> Unit, onSave: (NewTask) -> Unit) {
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("task") }
+    var estimate by rememberSaveable { mutableStateOf(0) }
+    var category by rememberSaveable { mutableStateOf("") }
+    var customTag by rememberSaveable { mutableStateOf("") }
+    var cadence by rememberSaveable { mutableStateOf("daily") }
     var due by rememberSaveable { mutableStateOf("") }
     var guests by rememberSaveable { mutableStateOf("") }
     val dueValid = due.isBlank() || Regex("""\d{4}-\d{2}-\d{2}""").matches(due.trim())
@@ -198,21 +207,62 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
             ChoicePill(label, kind == id) { kind = id }
         }
     }
-    if (kind != "habit") {
+    if (kind == "habit") {
+        Text("Как часто", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        ChoiceRow { cadences.forEach { (id, label) -> ChoicePill(label, cadence == id) { cadence = id } } }
+    }
+    if (kind == "goal") {
         SheetField(due, { due = it }, "Срок, ГГГГ-ММ-ДД — необязательно")
         if (!dueValid) Text("Дата в виде 2026-12-31", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
     }
-    SheetField(guests, { guests = it }, "Вместе с: @логины через пробел")
+    if (kind != "habit") {
+        Text("Сколько займёт", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        ChoiceRow {
+            estimates.forEach { (minutes, label) ->
+                ChoicePill(label, estimate == minutes) { estimate = if (estimate == minutes) 0 else minutes }
+            }
+        }
+    }
+    Text("Тег", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+    ChoiceRow {
+        tags.forEach { (id, label) ->
+            ChoicePill(label, category == id && customTag.isBlank()) {
+                customTag = ""
+                category = if (category == id) "" else id
+            }
+        }
+    }
+    SheetField(customTag, { customTag = it.take(30) }, "Или свой тег…")
+    Text("Вместе с кем-то", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+    SheetField(guests, { guests = it }, "@логин — поделиться задачей")
+    Text("Подсказка: @логин прямо в названии тоже поделится задачей", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
     Box(
         Modifier
             .fillMaxWidth()
             .height(54.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = ready, role = Role.Button) { onSave(title, note, kind, due, parseLogins(guests)) },
+            .clickable(enabled = ready, role = Role.Button) {
+                onSave(
+                    NewTask(
+                        title = title,
+                        note = note,
+                        kind = kind,
+                        category = customTag.trim().ifBlank { category },
+                        estimate = if (kind == "habit") 0 else estimate,
+                        due = if (kind == "goal") due else "",
+                        cadence = if (kind == "habit") cadence else "",
+                        members = parseLogins(guests),
+                    ),
+                )
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Text("Создать задачу", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
+        Text(
+            "Создать задачу",
+            color = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

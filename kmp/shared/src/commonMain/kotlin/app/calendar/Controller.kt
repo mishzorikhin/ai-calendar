@@ -15,6 +15,7 @@ import app.calendar.api.AppNotification
 import app.calendar.api.AuthSession
 import app.calendar.api.ConfirmCard
 import app.calendar.api.Memory
+import app.calendar.api.NewTask
 import app.calendar.api.SearchResult
 import app.calendar.api.Suggestion
 import app.calendar.api.Event
@@ -73,6 +74,8 @@ class CalendarController(private val scope: CoroutineScope) {
     var sending by mutableStateOf(false)
     var serverUrl by mutableStateOf(session.apiUrl)
     var composerDate by mutableStateOf<LocalDate?>(null)
+    /** Время, на которое нажали на шкале дня: подставляется в редактор нового события. */
+    var composerStart by mutableStateOf<Int?>(null)
     var taskSheet by mutableStateOf(false)
     var weekSheet by mutableStateOf(false)
     var weekStart by mutableStateOf(startOfWeek(today()))
@@ -98,6 +101,9 @@ class CalendarController(private val scope: CoroutineScope) {
     var peopleSheet by mutableStateOf(false)
     var people by mutableStateOf<List<Person>>(emptyList())
     var notice by mutableStateOf<String?>(null)
+    var securitySheet by mutableStateOf(false)
+    var themeMode by mutableStateOf(session.theme)
+        private set
 
     private var dayBack: Screen = Screen.Home
     private var inflight = 0
@@ -109,7 +115,8 @@ class CalendarController(private val scope: CoroutineScope) {
 
     fun today(): LocalDate = Clock.System.todayIn(TimeZone.currentSystemDefault())
 
-    fun compose(date: LocalDate = today()) {
+    fun compose(date: LocalDate = today(), start: Int? = null) {
+        composerStart = start
         composerDate = date
     }
 
@@ -285,10 +292,10 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
-    fun addTask(title: String, subtitle: String = "", kind: String = "task", due: String = "", members: List<String> = emptyList()) {
+    fun addTask(task: NewTask) {
         scope.launch {
             guard {
-                api.createTask(title.trim(), subtitle.trim(), kind, due.trim(), members)
+                api.createTask(task.copy(title = task.title.trim(), note = task.note.trim(), due = task.due.trim()))
                 tasks = api.tasks()
                 taskSheet = false
             }
@@ -438,7 +445,8 @@ class CalendarController(private val scope: CoroutineScope) {
     fun search(query: String) {
         val text = query.trim()
         val seq = ++searchSeq
-        if (text.isEmpty()) {
+        // Сервер ищет от двух символов.
+        if (text.length < 2) {
             searchResult = null
             return
         }
@@ -466,6 +474,32 @@ class CalendarController(private val scope: CoroutineScope) {
             guard {
                 notifications = api.notifications()
                 sessions = api.sessions()
+                profile = runCatching { api.profile() }.getOrDefault(profile)
+                memories = runCatching { api.memories() }.getOrDefault(memories)
+            }
+        }
+    }
+
+    /** Обновить уведомления и список устройств, не открывая шторку. */
+    fun refreshAccountData() {
+        scope.launch {
+            guard {
+                notifications = api.notifications()
+                sessions = api.sessions()
+            }
+        }
+    }
+
+    fun setTheme(mode: String) {
+        session.theme = mode
+        themeMode = session.theme
+    }
+
+    fun deleteAccount(password: String) {
+        scope.launch {
+            guard {
+                api.deleteAccount(password)
+                dropSession()
             }
         }
     }
@@ -790,6 +824,7 @@ class CalendarController(private val scope: CoroutineScope) {
         peopleSheet = false
         people = emptyList()
         notice = null
+        securitySheet = false
     }
 
     private fun dropSession() {

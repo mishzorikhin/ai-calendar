@@ -1,5 +1,6 @@
 package app.calendar.ui
 
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -67,10 +68,27 @@ private val CalendarType = Typography(
 )
 
 @Composable
-expect fun platformInDarkTheme(): Boolean
+expect fun systemInDarkTheme(): Boolean
+
+/** Выбор темы в настройках: `null` — как в системе. */
+val LocalThemeOverride = compositionLocalOf<Boolean?> { null }
+
+/** Тёмная ли тема сейчас: выбор пользователя сильнее системной. */
+@Composable
+fun platformInDarkTheme(): Boolean = LocalThemeOverride.current ?: systemInDarkTheme()
 
 @Composable
-fun CalendarTheme(content: @Composable () -> Unit) {
+fun CalendarTheme(themeMode: String = "system", content: @Composable () -> Unit) {
+    val override = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> null
+    }
+    CompositionLocalProvider(LocalThemeOverride provides override) { ThemedContent(content) }
+}
+
+@Composable
+private fun ThemedContent(content: @Composable () -> Unit) {
     val dark = platformInDarkTheme()
     MaterialTheme(
         colorScheme = if (dark) DarkColors else LightColors,

@@ -77,6 +77,20 @@ data class Task(
     val members: List<User> = emptyList(),
     val role: String = "",
     val estimate: Int = 0,
+    val category: String = "",
+    val cadence: String = "",
+)
+
+/** Поля новой задачи, как в форме на сайте. */
+data class NewTask(
+    val title: String,
+    val note: String = "",
+    val kind: String = "task",
+    val category: String = "",
+    val estimate: Int = 0,
+    val due: String = "",
+    val cadence: String = "",
+    val members: List<String> = emptyList(),
 )
 
 @Serializable

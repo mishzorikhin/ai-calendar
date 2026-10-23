@@ -37,6 +37,7 @@ import app.calendar.api.Memory
 import app.calendar.api.Task
 import app.calendar.domain.avatarColor
 import app.calendar.domain.badgeLabel
+import app.calendar.domain.formatMinutes
 import app.calendar.domain.formatRange
 import app.calendar.domain.isoDate
 import app.calendar.domain.monthGenitive
@@ -280,43 +281,144 @@ private fun ResultRow(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-/** Аккаунт: имя, уведомления, пароль, устройства, выход. */
+@Composable
+private fun MenuRow(title: String, sub: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+            if (sub.isNotBlank()) Text(sub, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        ChevronRightIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private val weekdayNames = listOf("вс", "пн", "вт", "ср", "чт", "пт", "сб")
+
+/** «пн–пт» для подряд идущих рабочих дней, иначе перечисление. */
+private fun workDaysLabel(days: List<Int>): String {
+    val ordered = days.sortedBy { if (it == 0) 7 else it }
+    if (ordered.isEmpty()) return "без рабочих дней"
+    val seq = ordered.map { if (it == 0) 7 else it }
+    val consecutive = seq.zipWithNext().all { (x, y) -> y == x + 1 }
+    return if (consecutive && ordered.size > 2) "${weekdayNames[ordered.first()]}–${weekdayNames[ordered.last()]}"
+    else ordered.joinToString(", ") { weekdayNames[it] }
+}
+
+/** Аккаунт: профиль, пункты настроек, оформление, уведомления, выход. */
 @Composable
 fun AccountSheet(controller: CalendarController) {
     val user = controller.user ?: return
     var name by rememberSaveable(user.id) { mutableStateOf(user.name) }
-    var passwordOpen by rememberSaveable { mutableStateOf(false) }
-    var current by rememberSaveable { mutableStateOf("") }
-    var next by rememberSaveable { mutableStateOf("") }
+    var renaming by rememberSaveable { mutableStateOf(false) }
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     val unread = controller.notifications.count { !it.read }
+    val profile = controller.profile
+    val facts = controller.memories.size
 
     SheetTitle("Аккаунт", onClose = { controller.accountSheet = false })
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(48.dp).clip(CircleShape).background(Color(avatarColor(user.username))),
+            Modifier.size(56.dp).clip(CircleShape).background(Color(avatarColor(user.username))),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 user.name.ifBlank { user.username }.trim().take(1).uppercase(),
                 color = Color(0xFF1E1E3C),
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
+                fontSize = 22.sp,
             )
         }
-        Column(Modifier.padding(start = 12.dp)) {
-            Text(user.name.ifBlank { user.username }, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+        Column(Modifier.padding(start = 16.dp)) {
+            Text(user.name.ifBlank { user.username }, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Text(
+                "изменить",
+                modifier = Modifier.clickable(role = Role.Button) { renaming = !renaming },
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Caption("@${user.username}")
         }
     }
-    SheetField(name, { name = it }, "Имя")
-    if (name.trim() != user.name) {
-        ActionPill("Сохранить имя", filled = name.isNotBlank()) { if (name.isNotBlank()) controller.renameMe(name) }
+    if (renaming) {
+        SheetField(name, { name = it }, "Имя")
+        if (name.trim() != user.name) {
+            ActionPill("Сохранить имя", filled = name.isNotBlank()) {
+                if (name.isNotBlank()) {
+                    controller.renameMe(name)
+                    renaming = false
+                }
+            }
+        }
+    }
+
+    MenuRow(
+        "Ассистент обо мне",
+        profile?.let { "Работа ${workDaysLabel(it.workDays)}, ${formatMinutes(it.workStart)}–${formatMinutes(it.workEnd)}" }.orEmpty(),
+    ) {
+        controller.accountSheet = false
+        controller.openProfile()
+    }
+    MenuRow("Что ассистент знает", if (facts == 0) "Пока ничего" else pluralize(facts, "факт", "факта", "фактов")) {
+        controller.accountSheet = false
+        controller.openMemories()
+    }
+
+    Caption("Оформление")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(4.dp),
+    ) {
+        listOf("system" to "Как в системе", "light" to "Светлое", "dark" to "Тёмное").forEach { (mode, label) ->
+            val on = controller.themeMode == mode
+            Box(
+                Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 44.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .clickable(role = Role.RadioButton) { controller.setTheme(mode) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontSize = 14.sp,
+                    color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    MenuRow("Календари", "Google, Яндекс, iCloud, ссылка .ics") {
+        controller.accountSheet = false
+        controller.openCalendars()
+    }
+    MenuRow("Люди", "Кого ассистент знает по имени") {
+        controller.accountSheet = false
+        controller.openPeople()
+    }
+    MenuRow("Безопасность и данные", "Пароль, устройства, удаление") {
+        controller.accountSheet = false
+        controller.securitySheet = true
     }
 
     Caption(if (unread > 0) "Уведомления · ${pluralize(unread, "новое", "новых", "новых")}" else "Уведомления")
     if (controller.notifications.isEmpty()) {
-        Text("Пока тихо", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        Text(
+            "Пока пусто — когда с вами поделятся задачей, она появится здесь",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 15.sp,
+        )
     } else {
         controller.notifications.take(8).forEach { item ->
             Text(
@@ -329,23 +431,39 @@ fun AccountSheet(controller: CalendarController) {
         if (unread > 0) ActionPill("Прочитать все") { controller.markNotificationsRead() }
     }
 
-    Caption("Ассистент и календари")
-    ActionPill("Календари", Modifier.fillMaxWidth()) {
-        controller.accountSheet = false
-        controller.openCalendars()
+    if (confirmLogout) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionPill("Выйти", danger = true) {
+                confirmLogout = false
+                controller.accountSheet = false
+                controller.logout()
+            }
+            ActionPill("Остаться") { confirmLogout = false }
+        }
+    } else {
+        Text(
+            "Выйти из аккаунта",
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 48.dp)
+                .clickable(role = Role.Button) { confirmLogout = true }
+                .padding(12.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 16.sp,
+        )
     }
-    ActionPill("Ассистент обо мне", Modifier.fillMaxWidth()) {
-        controller.accountSheet = false
-        controller.openProfile()
-    }
-    ActionPill("Что ассистент знает", Modifier.fillMaxWidth()) {
-        controller.accountSheet = false
-        controller.openMemories()
-    }
-    ActionPill("Люди", Modifier.fillMaxWidth()) {
-        controller.accountSheet = false
-        controller.openPeople()
-    }
+}
+
+/** «Безопасность и данные»: пароль, где выполнен вход, удаление аккаунта. */
+@Composable
+fun SecuritySheet(controller: CalendarController) {
+    var passwordOpen by rememberSaveable { mutableStateOf(false) }
+    var current by rememberSaveable { mutableStateOf("") }
+    var next by rememberSaveable { mutableStateOf("") }
+    var deleting by rememberSaveable { mutableStateOf(false) }
+    var deletePassword by rememberSaveable { mutableStateOf("") }
+    SheetTitle("Безопасность и данные", onClose = { controller.securitySheet = false })
 
     Caption("Пароль")
     if (passwordOpen) {
@@ -357,8 +475,7 @@ fun AccountSheet(controller: CalendarController) {
                 current = ""
                 next = ""
                 passwordOpen = false
-                // Сервер снимает остальные входы: список устройств обновится сам при следующем открытии.
-                controller.openAccount()
+                controller.refreshAccountData()
             }
         }
         if (next.isNotEmpty() && next.length < 6) Text("Не короче 6 символов", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
@@ -366,11 +483,11 @@ fun AccountSheet(controller: CalendarController) {
         ActionPill("Сменить пароль") { passwordOpen = true }
     }
 
-    Caption("Устройства")
+    Caption("Где выполнен вход")
     controller.sessions.forEach { session ->
         Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                session.label.ifBlank { "Устройство" } + if (session.current) " · это" else "",
+                session.label.ifBlank { "Неизвестное устройство" } + if (session.current) " · это устройство" else "",
                 modifier = Modifier.weight(1f),
                 fontSize = 14.sp,
             )
@@ -384,22 +501,28 @@ fun AccountSheet(controller: CalendarController) {
             }
         }
     }
-    if (controller.sessions.count { !it.current } > 0) {
-        ActionPill("Выйти на других устройствах") { controller.logoutOthers() }
+    if (controller.sessions.any { !it.current }) {
+        ActionPill("Выйти на всех остальных устройствах") { controller.logoutOthers() }
     }
 
-    Box(Modifier.height(4.dp))
-    if (confirmLogout) {
+    Caption("Мои данные")
+    Caption("Выгрузить всё одним файлом можно в веб-версии: Аккаунт → Безопасность и данные.")
+
+    Caption("Удаление")
+    if (deleting) {
+        Caption("Аккаунт, события, задачи и память исчезнут насовсем. Введите пароль, чтобы подтвердить.")
+        SheetField(deletePassword, { deletePassword = it }, "Пароль", password = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ActionPill("Выйти", danger = true) {
-                confirmLogout = false
-                controller.accountSheet = false
-                controller.logout()
+            ActionPill("Удалить насовсем", danger = true) {
+                if (deletePassword.isNotBlank() && !controller.loading) controller.deleteAccount(deletePassword)
             }
-            ActionPill("Остаться") { confirmLogout = false }
+            ActionPill("Отмена") {
+                deleting = false
+                deletePassword = ""
+            }
         }
     } else {
-        ActionPill("Выйти из аккаунта", Modifier.fillMaxWidth(), danger = true) { confirmLogout = true }
+        ActionPill("Удалить аккаунт", danger = true) { deleting = true }
     }
 }
 

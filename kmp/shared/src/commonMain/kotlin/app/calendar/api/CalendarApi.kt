@@ -110,19 +110,16 @@ class CalendarApi(
 
     suspend fun tasks(): List<Task> = decode(request(HttpMethod.Get, "/api/tasks", null))
 
-    suspend fun createTask(
-        title: String,
-        subtitle: String = "",
-        kind: String = "task",
-        due: String = "",
-        members: List<String> = emptyList(),
-    ): Task =
+    suspend fun createTask(task: NewTask): Task =
         decode(request(HttpMethod.Post, "/api/tasks", buildJsonObject {
-            put("title", title)
-            if (subtitle.isNotBlank()) put("subtitle", subtitle)
-            if (kind != "task") put("kind", kind)
-            if (due.isNotBlank()) put("due", due)
-            if (members.isNotEmpty()) put("members", JsonArray(members.map { JsonPrimitive(it) }))
+            put("title", task.title)
+            if (task.note.isNotBlank()) put("subtitle", task.note)
+            if (task.kind != "task") put("kind", task.kind)
+            if (task.category.isNotBlank()) put("category", task.category)
+            if (task.estimate > 0) put("estimate", task.estimate)
+            if (task.due.isNotBlank()) put("due", task.due)
+            if (task.cadence.isNotBlank()) put("cadence", task.cadence)
+            if (task.members.isNotEmpty()) put("members", JsonArray(task.members.map { JsonPrimitive(it) }))
         }))
 
     suspend fun updateTask(id: String, fields: JsonObject): Task =
@@ -155,6 +152,11 @@ class CalendarApi(
 
     suspend fun logoutOthers() {
         request(HttpMethod.Post, "/api/auth/logout-others", buildJsonObject { })
+    }
+
+    suspend fun deleteAccount(password: String) {
+        request(HttpMethod.Delete, "/api/me", buildJsonObject { put("password", password) })
+        session.clear()
     }
 
     suspend fun notifications(): List<AppNotification> = decode(request(HttpMethod.Get, "/api/notifications", null))
