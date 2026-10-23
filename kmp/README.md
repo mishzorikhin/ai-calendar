@@ -48,4 +48,4 @@ iOS: открыть `iosApp/iosApp.xcodeproj` на Mac и запустить с�
 
 ## Анимации и значки
 
-Пружины (`uiSpring`, `softSpring`, `bouncySpring`) переведены из `src/lib/motion.ts` (`Motion.kt`). Нажатие со сжатием — `Modifier.pressable`, каскадное появление — `Modifier.appear`, переходы экранов и шторки повторяют `screenVariants` и `BottomSheet`. Значки взяты из `src/components/Icons.tsx`. Шрифт Inter не подключён: для него нужен плагин ресурсов Compose, который в этой среде не собрать, поэтому текст набирается системным шрифтом.
+Пружины (`uiSpring`, `softSpring`, `bouncySpring`) переведены из `src/lib/motion.ts` (`Motion.kt`). Нажатие со сжатием — `Modifier.pressable`, каскадное появление — `Modifier.appear`, переходы экранов и шторки повторяют `screenVariants` и `BottomSheet`. Значки взяты из `src/components/Icons.tsx`. Шрифт — Inter 400/500/600/700 (TTF с кириллицей, лицензия OFL — `FONTS-LICENSE.txt`) из `shared/src/commonMain/composeResources/font`; класс `Res` генерируется при сборке (пакет `app.calendar.resources`).

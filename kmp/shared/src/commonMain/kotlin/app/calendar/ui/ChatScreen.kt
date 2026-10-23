@@ -122,7 +122,7 @@ fun ChatScreen(controller: CalendarController) {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontFamily = LocalInter.current),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.fillMaxWidth(),
                     decorationBox = { inner ->

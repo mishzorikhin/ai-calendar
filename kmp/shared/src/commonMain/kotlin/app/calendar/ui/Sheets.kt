@@ -284,7 +284,7 @@ fun SheetField(
             KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done)
         },
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
-        textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp),
+        textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp, fontFamily = LocalInter.current),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
         modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         decorationBox = { inner ->

@@ -162,7 +162,7 @@ private fun Field(
         ),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-        textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp),
+        textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontFamily = LocalInter.current),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
         modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         decorationBox = { inner ->

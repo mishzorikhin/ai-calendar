@@ -1,5 +1,15 @@
 package app.calendar.ui
 
+import androidx.compose.material3.ProvideTextStyle
+import org.jetbrains.compose.resources.Font
+import app.calendar.resources.inter_bold
+import app.calendar.resources.inter_semibold
+import app.calendar.resources.inter_medium
+import app.calendar.resources.inter_regular
+import app.calendar.resources.Res
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -87,17 +97,52 @@ fun CalendarTheme(themeMode: String = "system", content: @Composable () -> Unit)
     CompositionLocalProvider(LocalThemeOverride provides override) { ThemedContent(content) }
 }
 
+/** Шрифт приложения (Inter) для полей ввода: `BasicTextField` не берёт семейство из темы. */
+val LocalInter = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
+
+/** Inter из ресурсов приложения: 400, 500, 600 и 700 — кириллица и латиница. */
+@Composable
+private fun interFamily(): FontFamily = FontFamily(
+    Font(Res.font.inter_regular, FontWeight.Normal),
+    Font(Res.font.inter_medium, FontWeight.Medium),
+    Font(Res.font.inter_semibold, FontWeight.SemiBold),
+    Font(Res.font.inter_bold, FontWeight.Bold),
+)
+
+private fun Typography.withFamily(family: FontFamily) = Typography(
+    displayLarge = displayLarge.copy(fontFamily = family),
+    displayMedium = displayMedium.copy(fontFamily = family),
+    displaySmall = displaySmall.copy(fontFamily = family),
+    headlineLarge = headlineLarge.copy(fontFamily = family),
+    headlineMedium = headlineMedium.copy(fontFamily = family),
+    headlineSmall = headlineSmall.copy(fontFamily = family),
+    titleLarge = titleLarge.copy(fontFamily = family),
+    titleMedium = titleMedium.copy(fontFamily = family),
+    titleSmall = titleSmall.copy(fontFamily = family),
+    bodyLarge = bodyLarge.copy(fontFamily = family),
+    bodyMedium = bodyMedium.copy(fontFamily = family),
+    bodySmall = bodySmall.copy(fontFamily = family),
+    labelLarge = labelLarge.copy(fontFamily = family),
+    labelMedium = labelMedium.copy(fontFamily = family),
+    labelSmall = labelSmall.copy(fontFamily = family),
+)
+
 @Composable
 private fun ThemedContent(content: @Composable () -> Unit) {
     val dark = platformInDarkTheme()
-    MaterialTheme(
-        colorScheme = if (dark) DarkColors else LightColors,
-        shapes = CalendarShapes,
-        typography = CalendarType,
-    ) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
-            ApplySystemBars()
-            content()
+    val family = interFamily()
+    val typography = remember(family) { CalendarType.withFamily(family) }
+    CompositionLocalProvider(LocalInter provides family) {
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            shapes = CalendarShapes,
+            typography = typography,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+                ApplySystemBars()
+                // Текст без явного стиля (Text("…", fontSize = …)) тоже набирается Inter.
+                ProvideTextStyle(TextStyle(fontFamily = family)) { content() }
+            }
         }
     }
 }

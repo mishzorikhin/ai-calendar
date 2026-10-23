@@ -30,6 +30,8 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions { jvmTarget = JvmTarget.JVM_11 }
+        // Без этого ресурсы Compose (шрифт Inter) не попадут в Android-сборку.
+        androidResources { enable = true }
     }
 
     sourceSets {
@@ -38,6 +40,7 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation(compose.components.resources)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
@@ -61,4 +64,9 @@ kotlin {
             implementation(libs.ktor.client.js)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "app.calendar.resources"
+    generateResClass = always
 }
