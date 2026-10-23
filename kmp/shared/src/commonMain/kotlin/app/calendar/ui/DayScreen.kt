@@ -1,5 +1,8 @@
 package app.calendar.ui
 
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -53,13 +56,13 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
 
 private val badges = listOf("routine", "work", "food", "sport", "read", "sleep")
-private val starts = listOf(8, 9, 10, 12, 14, 16, 18, 20).map { it * 60 }
-private val lengths = listOf(30, 60, 90)
+/** Начало — каждые полчаса, в течение всех суток. */
+private val starts = (0 until 48).map { it * 30 }
 
 @Composable
 fun DayModeSwitch(timeline: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(999.dp)).background(Color.White.copy(alpha = 0.72f)).padding(4.dp),
+        Modifier.clip(RoundedCornerShape(999.dp)).background(barInk(platformInDarkTheme()).copy(alpha = 0.12f)).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         ModeKnob("Шкала", timeline) { onChange(true) }
@@ -70,8 +73,14 @@ fun DayModeSwitch(timeline: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun ModeKnob(label: String, on: Boolean, click: () -> Unit) {
     Box(
-        Modifier.clip(CircleShape).background(if (on) Color.White else Color.Transparent).clickable(onClick = click).padding(horizontal = 12.dp, vertical = 8.dp),
-    ) { Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface) }
+        Modifier
+            .defaultMinSize(minHeight = 44.dp)
+            .clip(CircleShape)
+            .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .clickable(role = Role.Tab, onClick = click)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, fontSize = 13.sp, color = if (on) MaterialTheme.colorScheme.onSurface else barInk(platformInDarkTheme())) }
 }
 
 @Composable
@@ -101,24 +110,26 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                 )
             }
             Box(
-                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).clickable { controller.back() },
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(role = Role.Button, onClickLabel = "Закрыть день") { controller.back() },
                 contentAlignment = Alignment.Center,
             ) { CloseIcon(size = 20.dp) }
         }
         Column(Modifier.weight(1f).padding(top = 12.dp)) {
-            DayPart.entries.forEachIndexed { index, part ->
+            DayPart.entries.forEach { part ->
                 val slice = events.filter { partOf(it.start) == part }
                 val expanded = controller.dayTimeline && open == part.name
                 PartLayer(
                     part = part,
                     events = slice,
-                    expanded = expanded && controller.dayTimeline,
+                    expanded = expanded,
                     list = !controller.dayTimeline,
                     onOpen = { open = part.name },
                     onEvent = { pendingDelete = it.id },
-                    modifier = Modifier
-                        .then(if (expanded) Modifier.weight(1f) else Modifier.height(if (controller.dayTimeline) 72.dp else 0.dp))
-                        .then(if (index > 0 && controller.dayTimeline) Modifier.padding(top = 0.dp) else Modifier),
+                    modifier = if (expanded) Modifier.weight(1f) else Modifier.height(if (controller.dayTimeline) 72.dp else 0.dp),
                 )
             }
             if (!controller.dayTimeline) {
@@ -134,7 +145,8 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
     if (victim != null) {
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text(if (victim.readOnly) "Только просмотр" else "Удалить «${victim.title}»?") },
+            title = { Text(if (victim.readOnly) "Только просмотр" else "Удалить «${victim.title.ifBlank { "Без названия" }}»?") },
+            text = { Text("${formatRange(victim.start, victim.end, victim.allDay)} · ${badgeLabel(victim.badge)}") },
             confirmButton = {
                 if (!victim.readOnly) {
                     TextButton(onClick = {
@@ -160,6 +172,8 @@ private fun PartLayer(
 ) {
     if (list) return
     val dark = platformInDarkTheme()
+    // Подписи на градиентах: светлый градиент — тёмные чернила, тёмный — светлые.
+    val soft = (if (dark) Color.White else Color(0xFF0D0D10)).copy(alpha = 0.7f)
     val brush = when (part) {
         DayPart.Morning -> if (dark) {
             Brush.verticalGradient(listOf(Color(0xFF24361F), Color(0xFF1B211B), Color(0xFF19191F)))
@@ -182,24 +196,24 @@ private fun PartLayer(
             .fillMaxWidth()
             .clip(RoundedCornerShape(30.dp))
             .background(brush)
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(part.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             if (!expanded && events.isNotEmpty()) {
-                Text(pluralize(events.size, "событие", "события", "событий"), color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                Text(pluralize(events.size, "событие", "события", "событий"), color = soft, fontSize = 14.sp)
             }
         }
         if (expanded) {
             Column(Modifier.padding(top = 8.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 events.sortedBy { it.start }.forEach { event ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatMinutes(event.start), modifier = Modifier.padding(end = 10.dp), color = Color.White.copy(alpha = 0.55f), fontSize = 12.sp)
+                        Text(formatMinutes(event.start), modifier = Modifier.padding(end = 10.dp), color = soft, fontSize = 12.sp)
                         EventCard(event) { onEvent(event) }
                     }
                 }
-                if (events.isEmpty()) Text("Пусто", color = Color.White.copy(alpha = 0.6f))
+                if (events.isEmpty()) Text("Пусто", color = soft)
             }
         }
     }
@@ -217,7 +231,7 @@ private fun EventCard(event: Event, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(event.title, fontWeight = FontWeight.SemiBold)
+            Text(event.title.ifBlank { "Без названия" }, fontWeight = FontWeight.SemiBold)
             if (event.subtitle.isNotBlank()) {
                 Text(event.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
@@ -238,6 +252,7 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
             .padding(horizontal = 6.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+        val dark = platformInDarkTheme()
         (0 until 7).forEach { offset ->
             val day = start.plus(DatePeriod(days = offset))
             val on = day == selected
@@ -248,7 +263,7 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
                 Text(
                     weekdayShort(day),
                     fontSize = 12.sp,
-                    color = if (offset >= 5) Color(0xFFE5484D) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (offset >= 5) weekendColor(dark) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Box(
                     Modifier.padding(top = 2.dp).size(32.dp).clip(CircleShape).background(if (on) MaterialTheme.colorScheme.primary else Color.Transparent),
@@ -280,12 +295,12 @@ fun EventEditor(onSave: (title: String, start: Int, end: Int, badge: String, all
         }
         if (!allDay) {
             Text("Начало", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            ChoiceRow {
+            ChoiceRow(focusIndex = starts.indexOf(start)) {
                 starts.forEach { value -> ChoicePill(formatMinutes(value), value == start) { start = value } }
             }
             Text("Длительность", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             ChoiceRow {
-                listOf(30 to "30 мин", 60 to "1 ч", 90 to "1,5 ч", 120 to "2 ч").forEach { (value, label) ->
+                listOf(30 to "30 мин", 60 to "1 ч", 90 to "1,5 ч", 120 to "2 ч", 180 to "3 ч").forEach { (value, label) ->
                     ChoicePill(label, value == length) { length = value }
                 }
             }
@@ -300,7 +315,7 @@ fun EventEditor(onSave: (title: String, start: Int, end: Int, badge: String, all
                 .height(54.dp)
                 .clip(CircleShape)
                 .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(enabled = title.isNotBlank()) {
+                .clickable(enabled = title.isNotBlank(), role = Role.Button) {
                     onSave(title, start, (start + length).coerceAtMost(24 * 60), badge, allDay)
                 },
             contentAlignment = Alignment.Center,

@@ -1,5 +1,6 @@
 package app.calendar.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -49,9 +50,6 @@ fun WeekSheet(controller: CalendarController, onClose: () -> Unit) {
     val start = controller.weekStart
     val insights = controller.weekInsights
     val dark = platformInDarkTheme()
-    LaunchedEffect(start, controller.weekSheet) {
-        if (controller.weekSheet) controller.refreshWeek()
-    }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -69,13 +67,13 @@ fun WeekSheet(controller: CalendarController, onClose: () -> Unit) {
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            GrayCircleButton(onClick = { controller.shiftWeek(-1) }) {
+            GrayCircleButton("Предыдущая неделя", onClick = { controller.shiftWeek(-1) }) {
                 ChevronLeftIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface)
             }
-            GrayCircleButton(onClick = { controller.shiftWeek(1) }) {
+            GrayCircleButton("Следующая неделя", onClick = { controller.shiftWeek(1) }) {
                 ChevronRightIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface)
             }
-            GrayCircleButton(onClick = onClose) {
+            GrayCircleButton("Закрыть", onClick = onClose) {
                 CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface)
             }
         }
@@ -92,13 +90,13 @@ fun WeekSheet(controller: CalendarController, onClose: () -> Unit) {
 }
 
 @Composable
-private fun GrayCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun GrayCircleButton(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
         Modifier
             .size(44.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         content()
@@ -232,7 +230,7 @@ private fun WeekDayColumn(
         modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
-            .clickable { onDay(day.date) },
+            .clickable(role = Role.Button) { onDay(day.date) },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

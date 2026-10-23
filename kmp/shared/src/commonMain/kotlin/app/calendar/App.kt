@@ -1,5 +1,7 @@
 package app.calendar
 
+import androidx.compose.ui.backhandler.BackHandler
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,7 +48,6 @@ import app.calendar.ui.ErrorBanner
 import app.calendar.ui.EventEditor
 import app.calendar.ui.HomeScreen
 import app.calendar.ui.MonthScreen
-import app.calendar.ui.TasksScreen
 import app.calendar.ui.SheetChrome
 import app.calendar.ui.WeekSheet
 
@@ -80,6 +80,7 @@ fun App() {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Shell(controller: CalendarController) {
     val screen = controller.screen
@@ -87,12 +88,18 @@ private fun Shell(controller: CalendarController) {
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
+    // Системная «Назад»: сначала шторки, потом экран, и только с главной приложение закрывается.
+    BackHandler(enabled = sheetOpen || screen != Screen.Home) {
+        when {
+            controller.composerDate != null -> controller.composerDate = null
+            controller.taskSheet -> controller.taskSheet = false
+            controller.weekSheet -> controller.weekSheet = false
+            screen is Screen.Day -> controller.back()
+            else -> controller.open(Screen.Home)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .then(if (sheetOpen) Modifier.blur(3.dp) else Modifier),
-        ) {
+        Column(Modifier.fillMaxSize()) {
             // Лист как на сайте: фон до строки состояния, низ скруглён на 40px и открывает градиент панели.
             Column(
                 Modifier
@@ -103,14 +110,14 @@ private fun Shell(controller: CalendarController) {
                     .statusBarsPadding(),
             ) {
                 CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
-                ErrorBanner(controller.error, onDismiss = controller::dismissError)
+                ErrorBanner(if (sheetOpen) null else controller.error, onDismiss = controller::dismissError)
                 AnimatedContent(
                     targetState = screen,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                 ) { current ->
                     when (current) {
-                        Screen.Home, Screen.Tasks -> HomeScreen(controller)
+                        Screen.Home -> HomeScreen(controller)
                         Screen.Month -> MonthScreen(controller)
                         Screen.Chat -> ChatScreen(controller)
                         is Screen.Day -> DayScreen(controller, current.date)
@@ -141,15 +148,18 @@ private fun Shell(controller: CalendarController) {
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
             EventEditor { title, start, end, badge, allDay ->
-                if (composing != null) {
-                    controller.createEvent(composing, title, start, end, badge, allDay)
-                    controller.composerDate = null
-                    controller.open(Screen.Day(composing))
+                if (composing != null && !controller.loading) {
+                    controller.createEvent(composing, title, start, end, badge, allDay) {
+                        controller.composerDate = null
+                        controller.open(Screen.Day(composing))
+                    }
                 }
             }
         }
         AppSheet(visible = controller.taskSheet, onClose = { controller.taskSheet = false }) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
             TaskForm(
                 onClose = { controller.taskSheet = false },
                 onSave = { title, note, kind -> controller.addTask(title, note, kind) },

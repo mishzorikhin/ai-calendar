@@ -1,5 +1,12 @@
 package app.calendar.ui
 
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +45,9 @@ fun AuthScreen(controller: CalendarController) {
     var password by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var register by rememberSaveable { mutableStateOf(false) }
+    var showServer by rememberSaveable { mutableStateOf(false) }
+    val ready = username.isNotBlank() && password.isNotBlank() && !controller.loading
+    val submit = { if (ready) controller.login(username, password, register, name) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
         Column(
             Modifier
@@ -73,22 +83,45 @@ fun AuthScreen(controller: CalendarController) {
                 ModeTab("Регистрация", register, Modifier.weight(1f)) { register = true }
             }
             Column(Modifier.padding(top = 16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Field(username, { username = it }, "Логин")
-                if (register) Field(name, { name = it }, "Имя")
-                Field(password, { password = it }, "Пароль", password = true)
+                Field(username, { username = it }, "Логин", ime = ImeAction.Next, type = KeyboardType.Ascii, capitalization = KeyboardCapitalization.None)
+                if (register) Field(name, { name = it }, "Имя", ime = ImeAction.Next, capitalization = KeyboardCapitalization.Words)
+                Field(password, { password = it }, "Пароль", password = true, ime = ImeAction.Done, type = KeyboardType.Password, onDone = submit)
+                if (showServer) {
+                    Field(
+                        controller.serverUrl,
+                        { controller.serverUrl = it },
+                        "Адрес сервера",
+                        ime = ImeAction.Done,
+                        type = KeyboardType.Uri,
+                        capitalization = KeyboardCapitalization.None,
+                        onDone = controller::checkServer,
+                    )
+                }
+                Text(
+                    if (showServer) "Скрыть адрес сервера" else "Сервер: ${controller.serverUrl}",
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .defaultMinSize(minHeight = 44.dp)
+                        .clickable(role = Role.Button) { showServer = !showServer }
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
                 ErrorBanner(controller.error, onDismiss = controller::dismissError)
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .height(52.dp)
                         .clip(RoundedCornerShape(999.dp))
-                        .background(if (username.isNotBlank() && password.isNotBlank()) Color(0xFFF3F3F6) else Color(0xFF3A3A44))
-                        .clickable(enabled = username.isNotBlank() && password.isNotBlank() && !controller.loading) {
-                            controller.login(username, password, register, name)
-                        },
+                        .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable(enabled = ready, role = Role.Button) { submit() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(if (register) "Создать аккаунт" else "Войти", color = Color(0xFF0D0D10), fontWeight = FontWeight.Medium)
+                    Text(
+                        if (controller.loading) "Секунду…" else if (register) "Создать аккаунт" else "Войти",
+                        color = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }
@@ -102,7 +135,7 @@ private fun ModeTab(label: String, on: Boolean, modifier: Modifier, click: () ->
             .height(38.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
-            .clickable(onClick = click),
+            .clickable(role = Role.Tab, onClick = click),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
@@ -110,11 +143,27 @@ private fun ModeTab(label: String, on: Boolean, modifier: Modifier, click: () ->
 }
 
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, placeholder: String, password: Boolean = false) {
+private fun Field(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    password: Boolean = false,
+    ime: ImeAction = ImeAction.Next,
+    type: KeyboardType = KeyboardType.Text,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    onDone: (() -> Unit)? = null,
+) {
     BasicTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            capitalization = capitalization,
+            autoCorrectEnabled = false,
+            keyboardType = type,
+            imeAction = ime,
+        ),
+        keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
         textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),

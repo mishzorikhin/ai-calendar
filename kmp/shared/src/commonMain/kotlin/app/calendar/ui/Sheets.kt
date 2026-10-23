@@ -1,5 +1,21 @@
 package app.calendar.ui
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.Role
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -70,7 +86,12 @@ fun AppSheet(
         val maxSheetHeight = maxHeight * heightFraction
         Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(160))) {
-            Box(Modifier.fillMaxSize().background(scrim).clickable(onClick = onClose))
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(scrim)
+                    .clickable(interactionSource = null, indication = null, role = Role.Button, onClickLabel = "Закрыть", onClick = onClose),
+            )
         }
         AnimatedVisibility(
             visible = visible,
@@ -78,8 +99,10 @@ fun AppSheet(
             exit = slideOutVertically(tween(200)) { it },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
+            var drag by remember { mutableFloatStateOf(0f) }
             Surface(
                 modifier = Modifier
+                    .offset { IntOffset(0, drag.roundToInt()) }
                     .fillMaxWidth()
                     .heightIn(max = maxSheetHeight)
                     .imePadding()
@@ -92,10 +115,20 @@ fun AppSheet(
                 BoxWithConstraints(Modifier.fillMaxWidth().heightIn(max = maxSheetHeight)) {
                     val scrollMax = maxHeight - 26.dp
                     Column(Modifier.fillMaxWidth()) {
+                        // Свайп вниз за ручку закрывает шторку (тело прокручивается своим жестом).
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .height(26.dp),
+                                .height(26.dp)
+                                .draggable(
+                                    orientation = Orientation.Vertical,
+                                    state = rememberDraggableState { delta -> drag = (drag + delta).coerceAtLeast(0f) },
+                                    onDragStopped = { velocity ->
+                                        val close = drag > 140f || velocity > 1400f
+                                        drag = 0f
+                                        if (close) onClose()
+                                    },
+                                ),
                             contentAlignment = Alignment.TopCenter,
                         ) {
                             Box(
@@ -112,15 +145,12 @@ fun AppSheet(
                             SheetChrome.Form -> Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
                         }
                         val scroll = rememberScrollState()
+                        // Прокрутка нужна и формам: с клавиатурой кнопка «Создать» иначе уезжает за край.
                         Column(
-                            bodyModifier
-                                .then(
-                                    if (chrome == SheetChrome.Modal) {
-                                        Modifier.heightIn(max = scrollMax).verticalScroll(scroll)
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
+                            Modifier
+                                .heightIn(max = scrollMax)
+                                .verticalScroll(scroll)
+                                .then(bodyModifier),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             content()
@@ -147,7 +177,10 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Box(Modifier.clickable(onClick = onClose)) { CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface) }
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Закрыть", onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) { CloseIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurface) }
     }
     SheetField(title, { title = it }, "Что нужно сделать?")
     SheetField(note, { note = it }, "Заметка — необязательно")
@@ -163,7 +196,7 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
             .height(54.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = title.isNotBlank()) { onSave(title, note, kind); onClose() },
+            .clickable(enabled = title.isNotBlank(), role = Role.Button) { onSave(title, note, kind) },
         contentAlignment = Alignment.Center,
     ) {
         Text("Создать задачу", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)
@@ -171,11 +204,13 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
 }
 
 @Composable
-fun SheetField(value: String, onChange: (String) -> Unit, placeholder: String) {
+fun SheetField(value: String, onChange: (String) -> Unit, placeholder: String, onDone: (() -> Unit)? = null) {
     BasicTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
         textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
         modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
@@ -195,14 +230,17 @@ fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
         fontSize = 14.sp,
     )
 }
 
 @Composable
-fun ChoiceRow(content: @Composable () -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+fun ChoiceRow(focusIndex: Int = 0, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    // Примерно по ширине плашки: выбранное значение не прячется за краем.
+    val initial = with(density) { (focusIndex.coerceAtLeast(0) * 76).dp.roundToPx() }
+    Row(Modifier.horizontalScroll(rememberScrollState(initial)), horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }

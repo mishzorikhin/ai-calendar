@@ -1,5 +1,17 @@
 package app.calendar.ui
 
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -40,13 +52,30 @@ private val prompts = listOf("Запланировать завтрак", "За�
 @Composable
 fun ChatScreen(controller: CalendarController) {
     var draft by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val waiting = controller.sending && controller.liveReply.isBlank() && controller.toolStatus.isBlank()
+    val status = controller.toolStatus.takeIf { it.isNotBlank() } ?: if (waiting) "Думаю…" else ""
+    val total = controller.messages.size + controller.confirms.size +
+        (if (controller.liveReply.isNotBlank()) 1 else 0) +
+        (if (controller.memoryNote.isNotBlank()) 1 else 0) +
+        (if (status.isNotEmpty()) 1 else 0)
+    // Новое сообщение и растущий ответ всегда в поле зрения.
+    LaunchedEffect(total, controller.liveReply.length) {
+        if (total > 0) listState.animateScrollToItem(total - 1)
+    }
+    val send = {
+        if (draft.isNotBlank() && !controller.sending) {
+            controller.send(draft)
+            draft = ""
+        }
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (controller.toolStatus.isNotBlank()) {
-                item { Text(controller.toolStatus, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-            items(controller.messages, key = { "${it.id}:${it.role}:${it.text.hashCode()}" }) { Bubble(it) }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(controller.messages, key = { "${it.id}:${it.role}" }) { Bubble(it) }
             if (controller.liveReply.isNotBlank()) item { Bubble(ChatMessage(role = "ai", text = controller.liveReply)) }
+            if (status.isNotEmpty()) {
+                item { Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            }
             if (controller.memoryNote.isNotBlank()) {
                 item { Text("Запомнил: ${controller.memoryNote}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }
             }
@@ -57,8 +86,13 @@ fun ChatScreen(controller: CalendarController) {
                     Text(card.title, fontWeight = FontWeight.SemiBold)
                     if (card.detail.isNotBlank()) Text(card.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row {
-                        Text(card.button.ifBlank { "Да" }, modifier = Modifier.clickable { controller.decide(card, true) }.padding(12.dp), color = MaterialTheme.colorScheme.secondary)
-                        Text("Нет", modifier = Modifier.clickable { controller.decide(card, false) }.padding(12.dp))
+                        Text(
+                            card.button.ifBlank { "Да" },
+                            modifier = Modifier.defaultMinSize(minHeight = 44.dp).clickable(role = Role.Button) { controller.decide(card, true) }.padding(12.dp),
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text("Нет", modifier = Modifier.defaultMinSize(minHeight = 44.dp).clickable(role = Role.Button) { controller.decide(card, false) }.padding(12.dp))
                     }
                 }
             }
@@ -67,7 +101,7 @@ fun ChatScreen(controller: CalendarController) {
             prompts.forEach { label ->
                 Text(
                     label,
-                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { draft = label }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(role = Role.Button) { draft = label }.padding(horizontal = 14.dp, vertical = 12.dp),
                     fontSize = 14.sp,
                 )
             }
@@ -86,7 +120,10 @@ fun ChatScreen(controller: CalendarController) {
                     value = draft,
                     onValueChange = { draft = it },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
                     textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.fillMaxWidth(),
                     decorationBox = { inner ->
                         if (draft.isEmpty()) Text("Сообщение", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -99,13 +136,10 @@ fun ChatScreen(controller: CalendarController) {
                     .padding(start = 8.dp)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF15141A))
-                    .clickable(enabled = draft.isNotBlank() && !controller.sending) {
-                        controller.send(draft)
-                        draft = ""
-                    },
+                    .background(if (draft.isNotBlank() && !controller.sending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(enabled = draft.isNotBlank() && !controller.sending, role = Role.Button, onClickLabel = "Отправить") { send() },
                 contentAlignment = Alignment.Center,
-            ) { Text("›", color = Color.White, fontSize = 26.sp) }
+            ) { Text("›", color = MaterialTheme.colorScheme.onPrimary, fontSize = 26.sp) }
         }
     }
 }
@@ -119,9 +153,9 @@ private fun Bubble(message: ChatMessage) {
             modifier = Modifier
                 .widthIn(max = 300.dp)
                 .clip(RoundedCornerShape(22.dp))
-                .background(if (mine) Color(0xFF15141A) else MaterialTheme.colorScheme.surface)
+                .background(if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
-            color = if (mine) Color.White else MaterialTheme.colorScheme.onSurface,
+            color = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             fontSize = 16.sp,
         )
     }

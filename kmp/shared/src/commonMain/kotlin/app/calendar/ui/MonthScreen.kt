@@ -1,5 +1,6 @@
 package app.calendar.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -76,7 +77,9 @@ fun MonthScreen(controller: CalendarController) {
     val cursor = controller.monthCursor
     val today = controller.today()
     var pickedDay by rememberSaveable { mutableStateOf(today.dayOfMonth) }
-    val picked = runCatching { LocalDate(cursor.year, cursor.monthNumber, pickedDay) }.getOrElse { today }
+    // 31-е при переходе на февраль — последний день месяца, а не «сегодня» из другого месяца.
+    val lastDay = cursor.plus(DatePeriod(months = 1)).plus(DatePeriod(days = -1)).dayOfMonth
+    val picked = LocalDate(cursor.year, cursor.monthNumber, pickedDay.coerceIn(1, lastDay))
     LaunchedEffect(picked) { controller.load(Screen.Day(picked)) }
     val density = LocalDensity.current
     val touchSlop = LocalViewConfiguration.current.touchSlop
@@ -87,9 +90,9 @@ fun MonthScreen(controller: CalendarController) {
     var pickerOpen by remember { mutableStateOf(false) }
     val chevron by animateFloatAsState(if (pickerOpen) 180f else 0f, spring(dampingRatio = 0.98f, stiffness = 420f))
     var dotCache by remember { mutableStateOf(mapOf<String, Map<Int, List<String>>>()) }
-    LaunchedEffect(cursor.year, cursor.monthNumber, controller.monthDots) {
-        val key = "${cursor.year}-${cursor.monthNumber}"
-        dotCache = dotCache + (key to controller.monthDots)
+    // Кладём точки под ключ, которому они принадлежат: ответ мог прийти уже после смены месяца.
+    LaunchedEffect(controller.monthDots, controller.monthDotsKey) {
+        controller.monthDotsKey?.let { key -> dotCache = dotCache + (key to controller.monthDots) }
     }
     val motion = spring<IntOffset>(dampingRatio = 0.98f, stiffness = 420f)
     val fade = spring<Float>(dampingRatio = 0.98f, stiffness = 420f)
@@ -126,7 +129,7 @@ fun MonthScreen(controller: CalendarController) {
                     .padding(start = 4.dp)
                     .size(44.dp)
                     .clip(CircleShape)
-                    .clickable { pickerOpen = !pickerOpen },
+                    .clickable(role = Role.Button, onClickLabel = if (pickerOpen) "Скрыть выбор года" else "Выбрать год и месяц") { pickerOpen = !pickerOpen },
                 contentAlignment = Alignment.Center,
             ) {
                 ChevronDownIcon(
@@ -136,14 +139,14 @@ fun MonthScreen(controller: CalendarController) {
                 )
             }
             Box(Modifier.weight(1f))
-            Circle(onClick = { controller.open(Screen.Home) }) { CloseIcon(size = 18.dp) }
+            Circle("Закрыть месяц", onClick = { controller.open(Screen.Home) }) { CloseIcon(size = 18.dp) }
         }
         AnimatedVisibility(pickerOpen, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             Row(
                 Modifier.padding(top = 8.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Circle(onClick = { shiftYear(-1) }) { ChevronLeftIcon(size = 16.dp) }
+                Circle("Предыдущий год", onClick = { shiftYear(-1) }) { ChevronLeftIcon(size = 16.dp) }
                 Row(
                     Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -161,7 +164,7 @@ fun MonthScreen(controller: CalendarController) {
                         }
                     }
                 }
-                Circle(onClick = { shiftYear(1) }) { ChevronRightIcon(size = 16.dp) }
+                Circle("Следующий год", onClick = { shiftYear(1) }) { ChevronRightIcon(size = 16.dp) }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -183,9 +186,9 @@ fun MonthScreen(controller: CalendarController) {
                     letterSpacing = (-1).sp,
                 )
             }
-            Circle(onClick = { go(-1) }) { ChevronLeftIcon(size = 18.dp) }
+            Circle("Предыдущий месяц", onClick = { go(-1) }) { ChevronLeftIcon(size = 18.dp) }
             Box(Modifier.size(8.dp))
-            Circle(onClick = { go(1) }) { ChevronRightIcon(size = 18.dp) }
+            Circle("Следующий месяц", onClick = { go(1) }) { ChevronRightIcon(size = 18.dp) }
         }
         Column(
             Modifier
@@ -203,7 +206,7 @@ fun MonthScreen(controller: CalendarController) {
                         label,
                         modifier = Modifier.weight(1f),
                         textAlign = TextAlign.Center,
-                        color = if (index >= 5) Color(0xFFE5484D) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (index >= 5) weekendColor(platformInDarkTheme()) else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                     )
                 }
@@ -267,7 +270,7 @@ fun MonthScreen(controller: CalendarController) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .clickable { controller.open(Screen.Day(picked)) }
+                .clickable(role = Role.Button) { controller.open(Screen.Day(picked)) }
                 .padding(18.dp),
         ) {
             Text(picked.dayOfMonth.toString(), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
@@ -303,7 +306,7 @@ private fun MonthDays(
                     val selected = day != null && day == picked.dayOfMonth && picked.monthNumber == page.monthNumber && picked.year == page.year
                     val isToday = day != null && today.year == page.year && today.monthNumber == page.monthNumber && today.dayOfMonth == day
                     Box(
-                        Modifier.weight(1f).height(52.dp).clickable(enabled = day != null) { if (day != null) onPick(day) },
+                        Modifier.weight(1f).height(52.dp).clickable(enabled = day != null, role = Role.Button) { if (day != null) onPick(day) },
                         contentAlignment = Alignment.Center,
                     ) {
                         if (day != null) {
@@ -322,7 +325,7 @@ private fun MonthDays(
                                         day.toString(),
                                         color = when {
                                             isToday -> MaterialTheme.colorScheme.onPrimary
-                                            index >= 5 -> Color(0xFFE5484D)
+                                            index >= 5 -> weekendColor(platformInDarkTheme())
                                             else -> MaterialTheme.colorScheme.onSurface
                                         },
                                     )
@@ -342,9 +345,14 @@ private fun MonthDays(
 }
 
 @Composable
-private fun Circle(onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun Circle(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
-        Modifier.padding(start = 8.dp).size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).clickable(onClick = onClick),
+        Modifier
+            .padding(start = 8.dp)
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }
 }

@@ -106,34 +106,37 @@ fun ActionBar(
     modifier: Modifier = Modifier,
     center: (@Composable () -> Unit)? = null,
 ) {
-    val ink = Color(0xFFF0E1F0).copy(alpha = 0.8f)
+    val ink = barInk(platformInDarkTheme())
     Row(
         modifier.fillMaxWidth().height(76.dp).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BarSide(label = "Ассистент", active = assistantActive, onClick = onAssistant) {
-            InfinityIcon(size = 22.dp, color = Color(0xFFFFE1EB))
+        BarSide(label = "Ассистент", ink = ink, active = assistantActive, onClick = onAssistant) {
+            InfinityIcon(size = 22.dp, color = ink)
         }
-        Box(Modifier.weight(1f).height(48.dp).clickable(onClick = onSay), contentAlignment = Alignment.Center) {
-            if (center != null) center() else Text("Нажмите и говорите", color = ink, fontSize = 15.sp)
+        Box(
+            Modifier.weight(1f).height(48.dp).then(if (center == null) Modifier.clickable(role = Role.Button, onClick = onSay) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (center != null) center() else Text("Спросить ассистента", color = ink.copy(alpha = 0.85f), fontSize = 15.sp)
         }
-        BarSide(label = "Событие", active = false, onClick = onCreate) {
-            PlusIcon(size = 22.dp, color = Color(0xFFF0E1F0))
+        BarSide(label = "Событие", ink = ink, active = false, onClick = onCreate) {
+            PlusIcon(size = 22.dp, color = ink)
         }
     }
 }
 
 @Composable
-private fun BarSide(label: String, active: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit) {
+private fun BarSide(label: String, ink: Color, active: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = if (active) 0.28f else 0.16f))
-                .clickable(onClick = onClick),
+                .background(ink.copy(alpha = if (active) 0.22f else 0.12f))
+                .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) { icon() }
-        Text(label, color = Color(0xFFF0E1F0).copy(alpha = 0.62f), fontSize = 10.sp)
+        Text(label, color = ink.copy(alpha = 0.8f), fontSize = 10.sp)
     }
 }

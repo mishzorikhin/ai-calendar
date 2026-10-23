@@ -100,6 +100,9 @@ fun barColors(dark: Boolean): List<Color> = if (dark) {
     listOf(Color(0xFFF6C4BD), Color(0xFFF1D0D6), Color(0xFFE3D6EC), Color(0xFFCDD2F3))
 }
 
+/** Выходные в сетках и полосках: красный с запасом контраста в обеих темах. */
+fun weekendColor(dark: Boolean): Color = if (dark) Color(0xFFFF7A80) else Color(0xFFD13A40)
+
 fun barInk(dark: Boolean): Color = if (dark) Color(0xFFF0E1F0) else Color(0xFF372841)
 
 /** --scrim из global.css */

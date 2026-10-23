@@ -1,5 +1,17 @@
 package app.calendar.ui
 
+import app.calendar.domain.isoDate
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlin.time.Clock
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +60,8 @@ fun HomeScreen(controller: CalendarController) {
     val today = controller.today()
     val user = controller.user
     val count = controller.todayEvents.size
+    var confirmLogout by remember { mutableStateOf(false) }
+    val nowMinutes = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).let { it.hour * 60 + it.minute }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
@@ -67,7 +81,6 @@ fun HomeScreen(controller: CalendarController) {
                     ArrowRightIcon(size = 13.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            CircleButton { SearchIcon(size = 19.dp, color = MaterialTheme.colorScheme.onSurface) }
             if (user != null) {
                 val initial = (user.name.ifBlank { user.username }).trim().take(1).uppercase()
                 Box(
@@ -76,13 +89,27 @@ fun HomeScreen(controller: CalendarController) {
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(Color(avatarColor(user.username)))
-                        .clickable { controller.logout() },
+                        .clickable(role = Role.Button, onClickLabel = "Аккаунт") { confirmLogout = true },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(initial, color = Color(0xFF1E1E3C), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 }
             }
             DateChip(day = today.dayOfMonth, month = monthShort(today)) { controller.open(Screen.Month) }
+        }
+        if (confirmLogout) {
+            AlertDialog(
+                onDismissRequest = { confirmLogout = false },
+                title = { Text("Выйти из аккаунта?") },
+                text = { Text(user?.let { "Вы вошли как ${it.username}" } ?: "") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmLogout = false
+                        controller.logout()
+                    }) { Text("Выйти") }
+                },
+                dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Остаться") } },
+            )
         }
         Surface(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -104,7 +131,7 @@ fun HomeScreen(controller: CalendarController) {
                     Surface(
                         shape = RoundedCornerShape(999.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.clickable { controller.showWeek() },
+                        modifier = Modifier.clickable(role = Role.Button) { controller.showWeek() },
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             ChartIcon(size = 15.dp, color = MaterialTheme.colorScheme.onSurface)
@@ -112,11 +139,21 @@ fun HomeScreen(controller: CalendarController) {
                         }
                     }
                 }
-                val next = controller.todayEvents.filter { !it.allDay }.minByOrNull { it.start }
-                Column(Modifier.padding(top = 30.dp).clickable {
-                    if (next == null) controller.compose(today) else controller.open(Screen.Day(today))
+                // «Далее» — ближайшее не закончившееся событие, а не самое раннее за день.
+                val timed = controller.todayEvents.filter { !it.allDay }
+                val next = timed.filter { it.end > nowMinutes }.minByOrNull { it.start }
+                Column(Modifier.padding(top = 30.dp).clickable(role = Role.Button) {
+                    if (timed.isEmpty()) controller.compose(today) else controller.open(Screen.Day(today))
                 }) {
-                    if (next == null) {
+                    if (next == null && timed.isNotEmpty()) {
+                        Text("На сегодня всё", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            "Все события дня уже позади — нажмите, чтобы открыть день",
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 15.sp,
+                        )
+                    } else if (next == null) {
                         Text("Свободный день", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             "Нажмите, чтобы что-нибудь запланировать",
@@ -142,8 +179,7 @@ fun HomeScreen(controller: CalendarController) {
                             Text(next.subtitle, modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                         }
                         Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            GhostPill("Изменить") { controller.compose(today) }
-                            GhostPill("Весь день") { controller.open(Screen.Day(today)) }
+                            GhostPill("Открыть день") { controller.open(Screen.Day(today)) }
                         }
                     }
                 }
@@ -156,7 +192,7 @@ fun HomeScreen(controller: CalendarController) {
         ) {
             Text("Задачи и цели", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable { controller.taskSheet = true },
+                Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Новая задача") { controller.taskSheet = true },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
@@ -182,29 +218,46 @@ fun HomeScreen(controller: CalendarController) {
             }
         } else {
             Spacer(Modifier.height(8.dp))
-            controller.tasks.filter { it.kind != "habit" || true }.forEach { task ->
-                Text(
-                    task.title,
-                    modifier = Modifier.clickable { controller.toggleTask(task) }.padding(vertical = 8.dp, horizontal = 6.dp),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (task.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                )
+            val todayIso = isoDate(today)
+            controller.tasks.forEach { task ->
+                val done = if (task.kind == "habit") todayIso in task.checks else task.done
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clickable(role = Role.Checkbox) { controller.toggleTask(task) }
+                        .semantics { stateDescription = if (done) "Выполнено" else "Не выполнено" }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (done) Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontSize = 14.sp)
+                    }
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text(
+                            task.title,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = if (done) TextDecoration.LineThrough else null,
+                            color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
+                        )
+                        val kind = when (task.kind) {
+                            "goal" -> "цель"
+                            "habit" -> "привычка"
+                            else -> null
+                        }
+                        if (kind != null) Text(kind, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     }
-}
-
-@Composable
-private fun CircleButton(onClick: () -> Unit = {}, content: @Composable () -> Unit) {
-    Box(
-        Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 @Composable
@@ -214,8 +267,8 @@ private fun GhostPill(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         fontSize = 14.sp,
         color = MaterialTheme.colorScheme.onSurface,
     )
@@ -223,7 +276,7 @@ private fun GhostPill(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun DateChip(day: Int, month: String, onClick: () -> Unit) {
-    Box(Modifier.padding(start = 10.dp).clickable(onClick = onClick)) {
+    Box(Modifier.padding(start = 10.dp).clickable(role = Role.Button, onClickLabel = "Месяц", onClick = onClick)) {
         Column(
             Modifier
                 .size(width = 60.dp, height = 62.dp)

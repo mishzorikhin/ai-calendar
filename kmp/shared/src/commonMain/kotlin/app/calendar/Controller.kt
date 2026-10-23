@@ -28,7 +28,6 @@ import kotlinx.datetime.todayIn
 sealed interface Screen {
     data object Home : Screen
     data object Month : Screen
-    data object Tasks : Screen
     data object Chat : Screen
     data class Day(val date: LocalDate) : Screen
 }
@@ -41,11 +40,14 @@ class CalendarController(private val scope: CoroutineScope) {
     var booting by mutableStateOf(session.token != null)
     var error by mutableStateOf<String?>(null)
     var loading by mutableStateOf(false)
+        private set
     var screen by mutableStateOf<Screen>(Screen.Home)
     var todayEvents by mutableStateOf<List<Event>>(emptyList())
     var tasks by mutableStateOf<List<Task>>(emptyList())
     var monthCursor by mutableStateOf(today().let { LocalDate(it.year, it.monthNumber, 1) })
     var monthDots by mutableStateOf<Map<Int, List<String>>>(emptyMap())
+    /** Какому месяцу («2026-10») принадлежат [monthDots]: ответ мог прийти после смены месяца. */
+    var monthDotsKey by mutableStateOf<String?>(null)
     var dayEvents by mutableStateOf<List<Event>>(emptyList())
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
     var confirms by mutableStateOf<List<ConfirmCard>>(emptyList())
@@ -63,6 +65,8 @@ class CalendarController(private val scope: CoroutineScope) {
     var dayTimeline by mutableStateOf(true)
 
     private var dayBack: Screen = Screen.Home
+    private var inflight = 0
+    private var dayWanted: LocalDate? = null
 
     init {
         scope.launch { restore() }
@@ -95,12 +99,14 @@ class CalendarController(private val scope: CoroutineScope) {
 
     fun showWeek() {
         weekStart = startOfWeek(today())
+        weekInsights = null
         weekSheet = true
         refreshWeek()
     }
 
     fun shiftWeek(delta: Int) {
         weekStart = weekStart.plus(DatePeriod(days = delta * 7))
+        weekInsights = null
         refreshWeek()
     }
 
@@ -110,15 +116,19 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     fun refreshWeek() {
+        val requested = weekStart
         scope.launch {
             weekError = false
             try {
-                weekInsights = api.weekInsights(isoDate(weekStart))
+                val result = api.weekInsights(isoDate(requested))
+                if (requested == weekStart) weekInsights = result
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                weekInsights = null
-                weekError = true
+                if (requested == weekStart) {
+                    weekInsights = null
+                    weekError = true
+                }
             }
         }
     }
@@ -130,13 +140,14 @@ class CalendarController(private val scope: CoroutineScope) {
     fun login(username: String, password: String, register: Boolean, name: String) {
         val url = normalizeUrl(serverUrl)
         if (url == null) {
-            error = "Адрес должен начинаться с http:// или https://"
+            error = URL_HINT
             return
         }
         session.apiUrl = url
         serverUrl = url
         scope.launch {
             guard {
+                resetData()
                 user = if (register) api.register(username, password, name) else api.login(username, password)
                 screen = Screen.Home
             }
@@ -146,7 +157,7 @@ class CalendarController(private val scope: CoroutineScope) {
     fun checkServer() {
         val url = normalizeUrl(serverUrl)
         if (url == null) {
-            error = "Адрес должен начинаться с http:// или https://"
+            error = URL_HINT
             return
         }
         session.apiUrl = url
@@ -162,10 +173,7 @@ class CalendarController(private val scope: CoroutineScope) {
     fun logout() {
         scope.launch {
             api.logout()
-            user = null
-            screen = Screen.Home
-            messages = emptyList()
-            confirms = emptyList()
+            dropSession()
         }
     }
 
@@ -178,24 +186,31 @@ class CalendarController(private val scope: CoroutineScope) {
                         todayEvents = api.events(isoDate(today()))
                         tasks = api.tasks()
                     }
-                    Screen.Month -> monthDots = api.monthDots(monthCursor.year, monthCursor.monthNumber)
-                    Screen.Tasks -> tasks = api.tasks()
+                    Screen.Month -> {
+                        val cursor = monthCursor
+                        val dots = api.monthDots(cursor.year, cursor.monthNumber)
+                        if (cursor == monthCursor) {
+                            monthDots = dots
+                            monthDotsKey = "${cursor.year}-${cursor.monthNumber}"
+                        }
+                    }
                     Screen.Chat -> {
                         messages = api.messages()
                         confirms = api.confirms()
                     }
-                    is Screen.Day -> dayEvents = api.events(isoDate(current.date))
+                    is Screen.Day -> refreshDay(current.date)
                 }
             }
         }
     }
 
-    fun createEvent(date: LocalDate, title: String, start: Int, end: Int, badge: String, allDay: Boolean) {
+    /** [onDone] вызывается только после успеха: при ошибке шторка остаётся открытой и ввод не пропадает. */
+    fun createEvent(date: LocalDate, title: String, start: Int, end: Int, badge: String, allDay: Boolean, onDone: () -> Unit = {}) {
         scope.launch {
             guard {
                 api.createEvent(isoDate(date), title.trim(), start, end, badge, allDay)
-                dayEvents = api.events(isoDate(date))
-                if (date == today()) todayEvents = dayEvents
+                refreshDay(date)
+                onDone()
             }
         }
     }
@@ -208,8 +223,7 @@ class CalendarController(private val scope: CoroutineScope) {
         scope.launch {
             guard {
                 api.deleteEvent(event.id)
-                dayEvents = api.events(isoDate(date))
-                if (date == today()) todayEvents = dayEvents
+                refreshDay(date)
             }
         }
     }
@@ -252,21 +266,27 @@ class CalendarController(private val scope: CoroutineScope) {
                         ChatFrame.Opened -> accepted = true
                         is ChatFrame.Delta -> liveReply += frame.text
                         is ChatFrame.Tool -> if (frame.status != "done") toolStatus = toolLabel(frame.name)
-                        is ChatFrame.Confirm -> confirms = confirms + frame.card
+                        is ChatFrame.Confirm -> if (confirms.none { it.id == frame.card.id }) confirms = confirms + frame.card
                         is ChatFrame.Memory -> memoryNote = frame.lines.joinToString(". ")
                         ChatFrame.Done -> toolStatus = ""
                         is ChatFrame.Failure -> error = frame.message
                     }
                 }
-                messages = api.messages()
                 liveReply = ""
+                runCatching { api.messages() }.onSuccess { messages = it }
                 tasks = runCatching { api.tasks() }.getOrDefault(tasks)
                 todayEvents = runCatching { api.events(isoDate(today())) }.getOrDefault(todayEvents)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (!accepted) messages = messages.filterNot { it.id == -1L && it.text == clean }
-                error = if (accepted) "Ответ оборвался" else (e.message ?: "Не отправилось")
+                if (session.token == null) {
+                    dropSession()
+                    error = e.message
+                } else {
+                    if (!accepted) messages = messages.filterNot { it.id == -1L && it.text == clean }
+                    error = if (accepted) "Ответ оборвался" else (e.message ?: "Не отправилось")
+                    if (accepted) runCatching { api.messages() }.onSuccess { messages = it }
+                }
             } finally {
                 sending = false
                 toolStatus = ""
@@ -302,24 +322,73 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
+    /** Свежие события дня. Устаревший ответ (пока листали дни) выбрасывается. */
+    private suspend fun refreshDay(date: LocalDate) {
+        dayWanted = date
+        val events = api.events(isoDate(date))
+        if (dayWanted == date) dayEvents = events
+        if (date == today()) todayEvents = events
+    }
+
+    /** Чужие данные не должны мелькать после выхода или смены аккаунта. */
+    private fun resetData() {
+        todayEvents = emptyList()
+        tasks = emptyList()
+        dayEvents = emptyList()
+        monthDots = emptyMap()
+        monthDotsKey = null
+        messages = emptyList()
+        confirms = emptyList()
+        liveReply = ""
+        toolStatus = ""
+        memoryNote = ""
+        weekInsights = null
+        weekSheet = false
+        taskSheet = false
+        composerDate = null
+    }
+
+    private fun dropSession() {
+        user = null
+        screen = Screen.Home
+        resetData()
+    }
+
     private suspend fun guard(block: suspend () -> Unit) {
+        inflight++
         loading = true
         try {
             block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (session.token == null) user = null
+            if (session.token == null) {
+                dropSession()
+            }
             error = e.message ?: "Что-то пошло не так"
         } finally {
-            loading = false
+            inflight--
+            loading = inflight > 0
         }
     }
 }
 
+private const val URL_HINT = "Адрес — https://… (http:// только для локальной сети)"
+
 private fun normalizeUrl(raw: String): String? {
     val trimmed = raw.trim().trimEnd('/')
     if (trimmed.isEmpty()) return defaultApiUrl()
-    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
-    return trimmed
+    if (trimmed.startsWith("https://")) return trimmed
+    if (!trimmed.startsWith("http://")) return null
+    val host = trimmed.removePrefix("http://").substringBefore('/').substringBefore(':')
+    return trimmed.takeIf { isLocalHost(host) }
+}
+
+/** Пароль и токен не должны уходить по открытому каналу в интернет: HTTP — только свой компьютер и своя сеть. */
+internal fun isLocalHost(host: String): Boolean {
+    if (host == "localhost" || host.endsWith(".local")) return true
+    val parts = host.split('.').mapNotNull { it.toIntOrNull() }
+    if (parts.size != 4 || host.split('.').size != 4) return false
+    val (a, b) = parts
+    return a == 127 || a == 10 || (a == 192 && b == 168) || (a == 172 && b in 16..31)
 }
