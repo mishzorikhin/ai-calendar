@@ -115,9 +115,9 @@ fun EventSheet(controller: CalendarController, opened: OpenedEvent) {
 
     if (editing && editable) {
         SheetTitle("Изменить событие", onClose = { editing = false })
-        EventEditor(initial = event, submit = "Сохранить") { title, start, end, badge, allDay, notes ->
+        EventEditor(initial = event, submit = "Сохранить") { title, start, end, badge, allDay, notes, extras ->
             if (!controller.loading) {
-                controller.updateEvent(opened, title, start, end, badge, allDay, notes) { close() }
+                controller.updateEvent(opened, title, start, end, badge, allDay, notes, extras) { close() }
             }
         }
         return
@@ -198,9 +198,30 @@ fun TaskSheet(controller: CalendarController, task: Task) {
         SheetField(due, { due = it }, "Срок, ГГГГ-ММ-ДД — необязательно")
         if (!dueValid) Text("Дата в виде 2026-12-31", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
     }
-    val people = listOfNotNull(task.owner) + task.members
-    if (people.isNotEmpty()) {
-        Caption("Вместе: " + people.joinToString(", ") { it.name.ifBlank { it.username } })
+    var guest by rememberSaveable(task.id) { mutableStateOf("") }
+    Caption("Вместе")
+    task.owner?.let { Text("${it.name.ifBlank { it.username }} · владелец", fontSize = 14.sp) }
+    task.members.forEach { member ->
+        Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(member.name.ifBlank { member.username }, modifier = Modifier.weight(1f), fontSize = 14.sp)
+            if (task.role != "member") {
+                Text(
+                    "Убрать",
+                    modifier = Modifier.clickable(role = Role.Button) { controller.removeMember(task, member.username) }.padding(12.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    }
+    if (task.role != "member") {
+        SheetField(guest, { guest = it }, "Добавить: @логин")
+        if (guest.isNotBlank()) {
+            ActionPill("Добавить участника") {
+                controller.addMember(task, guest)
+                guest = ""
+            }
+        }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ActionPill("Сохранить", filled = canSave) { if (canSave) controller.updateTask(task, title, note, due) }
@@ -308,9 +329,22 @@ fun AccountSheet(controller: CalendarController) {
         if (unread > 0) ActionPill("Прочитать все") { controller.markNotificationsRead() }
     }
 
-    ActionPill("Что ассистент знает обо мне", Modifier.fillMaxWidth()) {
+    Caption("Ассистент и календари")
+    ActionPill("Календари", Modifier.fillMaxWidth()) {
+        controller.accountSheet = false
+        controller.openCalendars()
+    }
+    ActionPill("Ассистент обо мне", Modifier.fillMaxWidth()) {
+        controller.accountSheet = false
+        controller.openProfile()
+    }
+    ActionPill("Что ассистент знает", Modifier.fillMaxWidth()) {
         controller.accountSheet = false
         controller.openMemories()
+    }
+    ActionPill("Люди", Modifier.fillMaxWidth()) {
+        controller.accountSheet = false
+        controller.openPeople()
     }
 
     Caption("Пароль")

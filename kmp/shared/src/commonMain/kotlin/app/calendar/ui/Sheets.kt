@@ -1,5 +1,6 @@
 package app.calendar.ui
 
+import app.calendar.domain.parseLogins
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalDensity
@@ -168,10 +169,14 @@ fun AppSheet(
 }
 
 @Composable
-fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: String) -> Unit) {
+fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: String, due: String, members: List<String>) -> Unit) {
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("task") }
+    var due by rememberSaveable { mutableStateOf("") }
+    var guests by rememberSaveable { mutableStateOf("") }
+    val dueValid = due.isBlank() || Regex("""\d{4}-\d{2}-\d{2}""").matches(due.trim())
+    val ready = title.isNotBlank() && dueValid
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Новая задача",
@@ -193,13 +198,18 @@ fun TaskForm(onClose: () -> Unit, onSave: (title: String, note: String, kind: St
             ChoicePill(label, kind == id) { kind = id }
         }
     }
+    if (kind != "habit") {
+        SheetField(due, { due = it }, "Срок, ГГГГ-ММ-ДД — необязательно")
+        if (!dueValid) Text("Дата в виде 2026-12-31", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+    }
+    SheetField(guests, { guests = it }, "Вместе с: @логины через пробел")
     Box(
         Modifier
             .fillMaxWidth()
             .height(54.dp)
             .clip(RoundedCornerShape(999.dp))
-            .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(enabled = title.isNotBlank(), role = Role.Button) { onSave(title, note, kind) },
+            .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(enabled = ready, role = Role.Button) { onSave(title, note, kind, due, parseLogins(guests)) },
         contentAlignment = Alignment.Center,
     ) {
         Text("Создать задачу", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Medium)

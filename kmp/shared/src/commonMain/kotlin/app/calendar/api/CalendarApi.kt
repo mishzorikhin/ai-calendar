@@ -1,5 +1,7 @@
 package app.calendar.api
 
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObjectBuilder
 import app.calendar.SessionStore
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
@@ -20,7 +22,9 @@ import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -59,7 +63,16 @@ class CalendarApi(
         return parsed.mapNotNull { (day, badges) -> day.toIntOrNull()?.let { it to badges } }.toMap()
     }
 
-    suspend fun createEvent(date: String, title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String = ""): Event {
+    suspend fun createEvent(
+        date: String,
+        title: String,
+        start: Int,
+        end: Int,
+        badge: String,
+        allDay: Boolean,
+        notes: String = "",
+        extras: EventExtras = EventExtras(),
+    ): Event {
         val body = buildJsonObject {
             put("date", date)
             put("title", title)
@@ -68,13 +81,18 @@ class CalendarApi(
             put("badge", badge)
             if (allDay) put("allDay", true)
             if (notes.isNotBlank()) put("notes", notes.trim())
+            putExtras(extras, update = false)
         }
         return decode(request(HttpMethod.Post, "/api/events", body))
     }
 
     /** Правка события целиком: поля, которых нет в [fields], не трогаются. */
-    suspend fun updateEvent(id: String, fields: JsonObject): Event =
-        decode(request(HttpMethod.Patch, "/api/events/$id", fields))
+    suspend fun updateEvent(id: String, extras: EventExtras, fields: JsonObject): Event {
+        val merged = JsonObject(fields + buildJsonObject { putExtras(extras, update = true) })
+        return decode(request(HttpMethod.Patch, "/api/events/$id", merged))
+    }
+
+    suspend fun updateEvent(id: String, fields: JsonObject): Event = updateEvent(id, EventExtras(), fields)
 
     suspend fun rsvp(id: String, status: String) {
         request(HttpMethod.Post, "/api/events/$id/rsvp", buildJsonObject { put("status", status) })
@@ -92,11 +110,19 @@ class CalendarApi(
 
     suspend fun tasks(): List<Task> = decode(request(HttpMethod.Get, "/api/tasks", null))
 
-    suspend fun createTask(title: String, subtitle: String = "", kind: String = "task"): Task =
+    suspend fun createTask(
+        title: String,
+        subtitle: String = "",
+        kind: String = "task",
+        due: String = "",
+        members: List<String> = emptyList(),
+    ): Task =
         decode(request(HttpMethod.Post, "/api/tasks", buildJsonObject {
             put("title", title)
             if (subtitle.isNotBlank()) put("subtitle", subtitle)
             if (kind != "task") put("kind", kind)
+            if (due.isNotBlank()) put("due", due)
+            if (members.isNotEmpty()) put("members", JsonArray(members.map { JsonPrimitive(it) }))
         }))
 
     suspend fun updateTask(id: String, fields: JsonObject): Task =
@@ -155,6 +181,67 @@ class CalendarApi(
     suspend fun dismissSuggestion(id: Int) {
         request(HttpMethod.Post, "/api/suggestions/$id/dismiss", buildJsonObject { })
     }
+
+    suspend fun integrations(): IntegrationsInfo = decode(request(HttpMethod.Get, "/api/integrations", null))
+
+    suspend fun discoverCalDav(url: String, username: String, password: String): List<CalDavCalendar> =
+        decode<CalDavFound>(
+            request(HttpMethod.Post, "/api/integrations/caldav/discover", buildJsonObject {
+                put("url", url)
+                put("username", username)
+                put("password", password)
+            }),
+        ).calendars
+
+    suspend fun createIntegration(fields: JsonObject): Integration =
+        decode(request(HttpMethod.Post, "/api/integrations", fields))
+
+    suspend fun updateIntegration(id: String, fields: JsonObject): Integration =
+        decode(request(HttpMethod.Patch, "/api/integrations/$id", fields))
+
+    suspend fun deleteIntegration(id: String) {
+        request(HttpMethod.Delete, "/api/integrations/$id", null)
+    }
+
+    suspend fun syncIntegration(id: String): Integration =
+        decode(request(HttpMethod.Post, "/api/integrations/$id/sync", buildJsonObject { }))
+
+    suspend fun startOAuth(provider: String): String =
+        apiJson.decodeFromString<Map<String, String>>(
+            request(HttpMethod.Post, "/api/integrations/oauth/$provider/start", buildJsonObject { }),
+        )["url"].orEmpty()
+
+    /** Путь секретной ленты `.ics` или пустая строка, если лента выключена. */
+    suspend fun feedPath(): String = decode<FeedPath>(request(HttpMethod.Get, "/api/feed", null)).path
+
+    suspend fun resetFeed(): String = decode<FeedPath>(request(HttpMethod.Post, "/api/feed", buildJsonObject { })).path
+
+    suspend fun disableFeed() {
+        request(HttpMethod.Delete, "/api/feed", null)
+    }
+
+    suspend fun profile(): Profile = decode(request(HttpMethod.Get, "/api/profile", null))
+
+    suspend fun updateProfile(fields: JsonObject): Profile =
+        decode(request(HttpMethod.Patch, "/api/profile", fields))
+
+    suspend fun people(): List<Person> = decode(request(HttpMethod.Get, "/api/people", null))
+
+    suspend fun createPerson(fields: JsonObject): Person =
+        decode(request(HttpMethod.Post, "/api/people", fields))
+
+    suspend fun updatePerson(id: Int, fields: JsonObject): Person =
+        decode(request(HttpMethod.Patch, "/api/people/$id", fields))
+
+    suspend fun deletePerson(id: Int) {
+        request(HttpMethod.Delete, "/api/people/$id", null)
+    }
+
+    suspend fun addTaskMember(taskId: String, username: String): Task =
+        decode(request(HttpMethod.Post, "/api/tasks/$taskId/members", buildJsonObject { put("username", username) }))
+
+    suspend fun removeTaskMember(taskId: String, username: String): Task =
+        decode(request(HttpMethod.Delete, "/api/tasks/$taskId/members/${username.encodeURLParameter()}", null))
 
     suspend fun messages(): List<ChatMessage> = decode(request(HttpMethod.Get, "/api/messages", null))
 
@@ -222,6 +309,20 @@ class CalendarApi(
         session.saveUser(sessionBody.user)
         runCatching { setTimeZone(TimeZone.currentSystemDefault().id) }
         return sessionBody.user
+    }
+
+    private fun JsonObjectBuilder.putExtras(extras: EventExtras, update: Boolean) {
+        extras.repeat?.let { if (update || it.isNotBlank()) put("repeat", it) }
+        extras.attendees?.let { list -> if (update || list.isNotEmpty()) put("attendees", JsonArray(list.map { JsonPrimitive(it) })) }
+        extras.url?.let { if (update || it.isNotBlank()) put("url", it.trim()) }
+        if (extras.reminderTouched) {
+            val minutes = extras.reminder
+            when {
+                minutes == null -> if (update) put("reminders", JsonNull)
+                minutes < 0 -> put("reminders", JsonArray(emptyList()))
+                else -> put("reminders", JsonArray(listOf(JsonPrimitive(minutes))))
+            }
+        }
     }
 
     private suspend inline fun <reified T> decode(body: String): T = apiJson.decodeFromString(body)

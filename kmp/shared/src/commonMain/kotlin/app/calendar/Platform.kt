@@ -13,3 +13,6 @@ expect fun platformSettings(): Settings
 expect fun createHttpClient(): HttpClient
 
 fun defaultApiUrl(): String = "https://aicall.mish-tech.ru"
+
+/** Открывает ссылку во внешнем браузере (вход Google/Outlook, адрес ленты). */
+expect fun openUrl(url: String)

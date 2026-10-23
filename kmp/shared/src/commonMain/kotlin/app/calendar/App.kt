@@ -46,6 +46,9 @@ import app.calendar.ui.DayModeSwitch
 import app.calendar.ui.DayScreen
 import app.calendar.ui.ErrorBanner
 import app.calendar.ui.AccountSheet
+import app.calendar.ui.CalendarsSheet
+import app.calendar.ui.PeopleSheet
+import app.calendar.ui.ProfileSheet
 import app.calendar.ui.EventEditor
 import app.calendar.ui.EventSheet
 import app.calendar.ui.MemoriesSheet
@@ -91,7 +94,8 @@ private fun Shell(controller: CalendarController) {
     val screen = controller.screen
     val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null ||
         controller.openedEvent != null || controller.openedTask != null || controller.searchSheet ||
-        controller.accountSheet || controller.memorySheet
+        controller.accountSheet || controller.memorySheet || controller.calendarsSheet ||
+        controller.profileSheet || controller.peopleSheet
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
@@ -103,6 +107,9 @@ private fun Shell(controller: CalendarController) {
             controller.openedTask != null -> controller.openedTask = null
             controller.searchSheet -> controller.closeSearch()
             controller.memorySheet -> controller.memorySheet = false
+            controller.calendarsSheet -> controller.calendarsSheet = false
+            controller.profileSheet -> controller.profileSheet = false
+            controller.peopleSheet -> controller.peopleSheet = false
             controller.accountSheet -> controller.accountSheet = false
             controller.taskSheet -> controller.taskSheet = false
             controller.weekSheet -> controller.weekSheet = false
@@ -161,9 +168,9 @@ private fun Shell(controller: CalendarController) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
-            EventEditor { title, start, end, badge, allDay, notes ->
+            EventEditor { title, start, end, badge, allDay, notes, extras ->
                 if (composing != null && !controller.loading) {
-                    controller.createEvent(composing, title, start, end, badge, allDay, notes) {
+                    controller.createEvent(composing, title, start, end, badge, allDay, notes, extras) {
                         controller.composerDate = null
                         controller.open(Screen.Day(composing))
                     }
@@ -174,7 +181,7 @@ private fun Shell(controller: CalendarController) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             TaskForm(
                 onClose = { controller.taskSheet = false },
-                onSave = { title, note, kind -> controller.addTask(title, note, kind) },
+                onSave = { title, note, kind, due, members -> controller.addTask(title, note, kind, due, members) },
             )
         }
         val openedEvent = controller.openedEvent
@@ -193,6 +200,18 @@ private fun Shell(controller: CalendarController) {
         AppSheet(visible = controller.accountSheet, onClose = { controller.accountSheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             AccountSheet(controller)
+        }
+        AppSheet(visible = controller.calendarsSheet, onClose = { controller.calendarsSheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            CalendarsSheet(controller)
+        }
+        AppSheet(visible = controller.profileSheet, onClose = { controller.profileSheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            ProfileSheet(controller)
+        }
+        AppSheet(visible = controller.peopleSheet, onClose = { controller.peopleSheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            PeopleSheet(controller)
         }
         AppSheet(visible = controller.memorySheet, onClose = { controller.memorySheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)

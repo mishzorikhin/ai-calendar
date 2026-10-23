@@ -1,5 +1,9 @@
 package app.calendar.ui
 
+import app.calendar.domain.reminderShortLabel
+import app.calendar.domain.reminderPresets
+import app.calendar.domain.parseLogins
+import app.calendar.api.EventExtras
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.defaultMinSize
@@ -273,7 +277,7 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
 fun EventEditor(
     initial: Event? = null,
     submit: String = "Создать",
-    onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String) -> Unit,
+    onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String, extras: EventExtras) -> Unit,
 ) {
     var title by rememberSaveable { mutableStateOf(initial?.title.orEmpty()) }
     var start by rememberSaveable { mutableStateOf(initial?.takeIf { !it.allDay }?.start ?: (10 * 60)) }
@@ -283,6 +287,12 @@ fun EventEditor(
     var badge by rememberSaveable { mutableStateOf(initial?.badge ?: "routine") }
     var allDay by rememberSaveable { mutableStateOf(initial?.allDay ?: false) }
     var notes by rememberSaveable { mutableStateOf(initial?.notes.orEmpty()) }
+    var repeat by rememberSaveable { mutableStateOf(initial?.repeat.orEmpty()) }
+    var url by rememberSaveable { mutableStateOf(initial?.url.orEmpty()) }
+    var guests by rememberSaveable { mutableStateOf(initial?.attendees.orEmpty().joinToString(" ") { "@${it.username}" }) }
+    // null — напоминание по умолчанию из настроек, -1 — не напоминать.
+    var reminder by rememberSaveable { mutableStateOf<Int?>(initial?.reminders?.let { it.firstOrNull() ?: -1 }) }
+    var reminderTouched by rememberSaveable { mutableStateOf(false) }
     // Нестандартные время и длительность из события не теряются: добавляем их в список выбора.
     val startOptions = (starts + start).distinct().sorted()
     val lengthOptions = (listOf(30, 60, 90, 120, 180) + length).distinct().sorted()
@@ -309,6 +319,27 @@ fun EventEditor(
         ChoiceRow {
             badges.forEach { value -> ChoicePill(badgeLabel(value), value == badge) { badge = value } }
         }
+        Text("Повтор", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        ChoiceRow {
+            repeats.forEach { (value, label) -> ChoicePill(label, value == repeat) { repeat = value } }
+        }
+        if (!allDay) {
+            Text("Напомнить", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            ChoiceRow {
+                ChoicePill("Как в настройках", reminder == null) {
+                    reminder = null
+                    reminderTouched = true
+                }
+                (listOf(-1) + reminderPresets).forEach { value ->
+                    ChoicePill(reminderShortLabel(value), reminder == value) {
+                        reminder = value
+                        reminderTouched = true
+                    }
+                }
+            }
+        }
+        SheetField(guests, { guests = it }, "Позвать: @логины через пробел")
+        SheetField(url, { url = it }, "Ссылка — необязательно")
         Box(
             Modifier
                 .fillMaxWidth()
@@ -316,7 +347,23 @@ fun EventEditor(
                 .clip(CircleShape)
                 .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(enabled = title.isNotBlank(), role = Role.Button) {
-                    onSave(title, start, (start + length).coerceAtMost(24 * 60), badge, allDay, notes)
+                    val logins = parseLogins(guests)
+                    val before = initial?.attendees.orEmpty().map { it.username }
+                    onSave(
+                        title,
+                        start,
+                        (start + length).coerceAtMost(24 * 60),
+                        badge,
+                        allDay,
+                        notes,
+                        EventExtras(
+                            repeat = if (initial == null) repeat.ifBlank { null } else repeat.takeIf { it != initial.repeat },
+                            attendees = if (initial == null) logins.takeIf { it.isNotEmpty() } else logins.takeIf { it != before },
+                            url = if (initial == null) url.ifBlank { null } else url.takeIf { it != initial.url },
+                            reminder = reminder,
+                            reminderTouched = reminderTouched,
+                        ),
+                    )
                 },
             contentAlignment = Alignment.Center,
         ) {
@@ -328,6 +375,15 @@ fun EventEditor(
         }
     }
 }
+
+private val repeats = listOf(
+    "" to "Не повторять",
+    "daily" to "Каждый день",
+    "weekdays" to "По будням",
+    "weekly" to "Каждую неделю",
+    "monthly" to "Каждый месяц",
+    "yearly" to "Каждый год",
+)
 
 private fun lengthLabel(minutes: Int): String = when {
     minutes < 60 -> "$minutes мин"

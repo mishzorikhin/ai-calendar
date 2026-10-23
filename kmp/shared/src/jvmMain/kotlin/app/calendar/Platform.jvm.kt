@@ -16,3 +16,7 @@ private class MemorySettings : Settings {
 actual fun platformSettings(): Settings = MemorySettings()
 
 actual fun createHttpClient(): HttpClient = HttpClient(OkHttp) { installCalendar() }
+
+actual fun openUrl(url: String) {
+    runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
+}

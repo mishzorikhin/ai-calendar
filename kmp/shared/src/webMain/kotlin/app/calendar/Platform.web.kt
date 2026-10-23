@@ -1,5 +1,6 @@
 package app.calendar
 
+import kotlinx.browser.window
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import kotlinx.browser.localStorage
@@ -15,3 +16,7 @@ private class WebSettings : Settings {
 actual fun platformSettings(): Settings = WebSettings()
 
 actual fun createHttpClient(): HttpClient = HttpClient(Js) { installCalendar() }
+
+actual fun openUrl(url: String) {
+    window.open(url, "_blank")
+}

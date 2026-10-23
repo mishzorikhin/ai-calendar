@@ -1,5 +1,10 @@
 package app.calendar
 
+import app.calendar.api.Profile
+import app.calendar.api.Person
+import app.calendar.api.IntegrationsInfo
+import app.calendar.api.Integration
+import app.calendar.api.CalDavCalendar
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,6 +18,7 @@ import app.calendar.api.Memory
 import app.calendar.api.SearchResult
 import app.calendar.api.Suggestion
 import app.calendar.api.Event
+import app.calendar.api.EventExtras
 import app.calendar.api.Task
 import app.calendar.api.User
 import app.calendar.api.WeekInsights
@@ -83,6 +89,15 @@ class CalendarController(private val scope: CoroutineScope) {
     var sessions by mutableStateOf<List<AuthSession>>(emptyList())
     var memories by mutableStateOf<List<Memory>>(emptyList())
     var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
+    var calendarsSheet by mutableStateOf(false)
+    var integrations by mutableStateOf<IntegrationsInfo?>(null)
+    var feedUrl by mutableStateOf<String?>(null)
+    var found by mutableStateOf<List<CalDavCalendar>?>(null)
+    var profileSheet by mutableStateOf(false)
+    var profile by mutableStateOf<Profile?>(null)
+    var peopleSheet by mutableStateOf(false)
+    var people by mutableStateOf<List<Person>>(emptyList())
+    var notice by mutableStateOf<String?>(null)
 
     private var dayBack: Screen = Screen.Home
     private var inflight = 0
@@ -226,10 +241,20 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     /** [onDone] вызывается только после успеха: при ошибке шторка остаётся открытой и ввод не пропадает. */
-    fun createEvent(date: LocalDate, title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String = "", onDone: () -> Unit = {}) {
+    fun createEvent(
+        date: LocalDate,
+        title: String,
+        start: Int,
+        end: Int,
+        badge: String,
+        allDay: Boolean,
+        notes: String = "",
+        extras: EventExtras = EventExtras(),
+        onDone: () -> Unit = {},
+    ) {
         scope.launch {
             guard {
-                api.createEvent(isoDate(date), title.trim(), start, end, badge, allDay, notes)
+                api.createEvent(isoDate(date), title.trim(), start, end, badge, allDay, notes, extras)
                 refreshDay(date)
                 onDone()
             }
@@ -260,10 +285,10 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
-    fun addTask(title: String, subtitle: String = "", kind: String = "task") {
+    fun addTask(title: String, subtitle: String = "", kind: String = "task", due: String = "", members: List<String> = emptyList()) {
         scope.launch {
             guard {
-                api.createTask(title.trim(), subtitle.trim(), kind)
+                api.createTask(title.trim(), subtitle.trim(), kind, due.trim(), members)
                 tasks = api.tasks()
                 taskSheet = false
             }
@@ -325,6 +350,10 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
+    fun dismissNotice() {
+        notice = null
+    }
+
     fun openEvent(event: Event, date: LocalDate) {
         openedEvent = OpenedEvent(event, date)
     }
@@ -338,12 +367,13 @@ class CalendarController(private val scope: CoroutineScope) {
         badge: String,
         allDay: Boolean,
         notes: String,
+        extras: EventExtras = EventExtras(),
         onDone: () -> Unit = {},
     ) {
         val event = opened.event
         scope.launch {
             guard {
-                api.updateEvent(event.id, buildJsonObject {
+                api.updateEvent(event.id, extras, buildJsonObject {
                     put("title", title.trim())
                     put("start", if (allDay) 0 else start)
                     put("end", if (allDay) 24 * 60 else end)
@@ -480,6 +510,176 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
+    // --- Календари --------------------------------------------------------------------------
+
+    fun openCalendars() {
+        calendarsSheet = true
+        notice = null
+        found = null
+        scope.launch {
+            guard {
+                integrations = api.integrations()
+                feedUrl = api.feedPath().takeIf { it.isNotBlank() }?.let { session.apiUrl + it }
+            }
+        }
+    }
+
+    private suspend fun reloadCalendars() {
+        integrations = api.integrations()
+        // События внешних календарей лежат рядом со своими: дни и месяцы устарели.
+        runCatching { todayEvents = api.events(isoDate(today())) }
+    }
+
+    fun syncCalendar(item: Integration) {
+        scope.launch {
+            guard {
+                api.syncIntegration(item.id)
+                reloadCalendars()
+                notice = "«${item.name}» обновлён"
+            }
+        }
+    }
+
+    fun makePrimary(item: Integration) {
+        scope.launch {
+            guard {
+                api.updateIntegration(item.id, buildJsonObject { put("primary", true) })
+                reloadCalendars()
+            }
+        }
+    }
+
+    fun disconnectCalendar(item: Integration) {
+        scope.launch {
+            guard {
+                api.deleteIntegration(item.id)
+                reloadCalendars()
+            }
+        }
+    }
+
+    fun connectIcs(url: String, name: String, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                api.createIntegration(buildJsonObject {
+                    put("kind", "ics")
+                    put("url", url.trim())
+                    if (name.isNotBlank()) put("name", name.trim())
+                })
+                reloadCalendars()
+                notice = "Подписка подключена"
+                onDone()
+            }
+        }
+    }
+
+    fun discoverCalDav(url: String, username: String, password: String) {
+        scope.launch {
+            guard { found = api.discoverCalDav(url.trim(), username.trim(), password) }
+        }
+    }
+
+    fun connectCalDav(url: String, username: String, password: String, picked: List<CalDavCalendar>, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                picked.forEach { calendar ->
+                    api.createIntegration(buildJsonObject {
+                        put("kind", "caldav")
+                        put("url", calendar.url)
+                        put("name", calendar.name)
+                        put("username", username.trim())
+                        put("password", password)
+                        put("writable", calendar.writable)
+                    })
+                }
+                reloadCalendars()
+                found = null
+                notice = if (picked.size == 1) "Подключили «${picked.first().name}»" else "Подключили календарей: ${picked.size}"
+                onDone()
+            }
+        }
+    }
+
+    fun connectOAuth(provider: String) {
+        scope.launch {
+            guard {
+                val link = api.startOAuth(provider)
+                if (link.isNotBlank()) {
+                    openUrl(link)
+                    notice = "Войдите в браузере и вернитесь сюда — календарь появится в списке"
+                }
+            }
+        }
+    }
+
+    fun resetFeed() {
+        scope.launch { guard { feedUrl = session.apiUrl + api.resetFeed() } }
+    }
+
+    fun disableFeed() {
+        scope.launch {
+            guard {
+                api.disableFeed()
+                feedUrl = null
+            }
+        }
+    }
+
+    // --- Ассистент обо мне ------------------------------------------------------------------
+
+    fun openProfile() {
+        profileSheet = true
+        scope.launch { guard { profile = api.profile() } }
+    }
+
+    fun patchProfile(fields: kotlinx.serialization.json.JsonObject) {
+        scope.launch { guard { profile = api.updateProfile(fields) } }
+    }
+
+    fun openPeople() {
+        peopleSheet = true
+        scope.launch { guard { people = api.people() } }
+    }
+
+    fun savePerson(id: Int?, fields: kotlinx.serialization.json.JsonObject, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                if (id == null) api.createPerson(fields) else api.updatePerson(id, fields)
+                people = api.people()
+                onDone()
+            }
+        }
+    }
+
+    fun deletePerson(person: Person) {
+        scope.launch {
+            guard {
+                api.deletePerson(person.id)
+                people = api.people()
+            }
+        }
+    }
+
+    // --- Участники задачи -------------------------------------------------------------------
+
+    fun addMember(task: Task, username: String) {
+        scope.launch {
+            guard {
+                openedTask = api.addTaskMember(task.id, username.trim().removePrefix("@"))
+                tasks = api.tasks()
+            }
+        }
+    }
+
+    fun removeMember(task: Task, username: String) {
+        scope.launch {
+            guard {
+                openedTask = api.removeTaskMember(task.id, username)
+                tasks = api.tasks()
+            }
+        }
+    }
+
     fun openMemories() {
         memorySheet = true
         scope.launch { guard { memories = api.memories() } }
@@ -581,6 +781,15 @@ class CalendarController(private val scope: CoroutineScope) {
         sessions = emptyList()
         memories = emptyList()
         suggestions = emptyList()
+        calendarsSheet = false
+        integrations = null
+        feedUrl = null
+        found = null
+        profileSheet = false
+        profile = null
+        peopleSheet = false
+        people = emptyList()
+        notice = null
     }
 
     private fun dropSession() {

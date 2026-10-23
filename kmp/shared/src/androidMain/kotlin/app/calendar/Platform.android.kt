@@ -1,5 +1,7 @@
 package app.calendar
 
+import android.net.Uri
+import android.content.Intent
 import android.content.Context
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -26,3 +28,8 @@ private class AndroidSettings(context: Context) : Settings {
 actual fun platformSettings(): Settings = AndroidSettings(appContext)
 
 actual fun createHttpClient(): HttpClient = HttpClient(OkHttp) { installCalendar() }
+
+actual fun openUrl(url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { appContext.startActivity(intent) }
+}

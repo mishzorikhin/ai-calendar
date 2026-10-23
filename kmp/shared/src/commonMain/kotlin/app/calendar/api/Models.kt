@@ -41,6 +41,20 @@ data class Event(
     val endDate: String = "",
     val attendees: List<Attendee> = emptyList(),
     val invite: Invite? = null,
+    /** `null` — напоминание по умолчанию из настроек, пусто — не напоминать. */
+    val reminders: List<Int>? = null,
+)
+
+/**
+ * Дополнительные поля события. `null` — «не трогать» (при правке) или «по умолчанию» (при создании).
+ * [reminderTouched] отделяет «напоминание по умолчанию» (reminder = null) от «не менять».
+ */
+data class EventExtras(
+    val repeat: String? = null,
+    val attendees: List<String>? = null,
+    val url: String? = null,
+    val reminder: Int? = null,
+    val reminderTouched: Boolean = false,
 )
 
 @Serializable
@@ -169,3 +183,75 @@ internal fun errorText(body: String, status: Int): String {
     if (!parsed.isNullOrBlank()) return parsed
     return if (status == 0) "Нет соединения с сервером" else "Ошибка $status"
 }
+
+@Serializable
+data class Integration(
+    val id: String,
+    val kind: String = "ics",
+    val name: String = "",
+    val account: String = "",
+    val badge: String = "routine",
+    val writable: Boolean = false,
+    val primary: Boolean = false,
+    val lastSync: String = "",
+    val lastError: String = "",
+)
+
+@Serializable
+data class IntegrationProviders(val google: Boolean = false, val outlook: Boolean = false)
+
+@Serializable
+data class IntegrationsInfo(
+    val items: List<Integration> = emptyList(),
+    val providers: IntegrationProviders = IntegrationProviders(),
+)
+
+@Serializable
+data class CalDavCalendar(val url: String, val name: String = "", val writable: Boolean = false)
+
+@Serializable
+data class CalDavFound(val calendars: List<CalDavCalendar> = emptyList())
+
+@Serializable
+data class ProtectedBlock(
+    val title: String = "",
+    val start: Int = 0,
+    val end: Int = 0,
+    val days: List<Int> = emptyList(),
+)
+
+@Serializable
+data class Profile(
+    val wakeUp: Int = 7 * 60,
+    val bedTime: Int = 23 * 60,
+    val workStart: Int = 9 * 60,
+    val workEnd: Int = 18 * 60,
+    val workDays: List<Int> = listOf(1, 2, 3, 4, 5),
+    val focus: String = "none",
+    val meetingMinutes: Int = 60,
+    val bufferMinutes: Int = 0,
+    val protected: List<ProtectedBlock> = emptyList(),
+    val tone: String = "brief",
+    val address: String = "ty",
+    val about: String = "",
+    val memory: Boolean = true,
+    val proactive: Int = 2,
+    val muted: List<String> = emptyList(),
+    val onboarded: Boolean = false,
+)
+
+@Serializable
+data class Person(
+    val id: Int,
+    val name: String = "",
+    val aliases: List<String> = emptyList(),
+    val relation: String = "",
+    val place: String = "",
+    val meetingMinutes: Int = 0,
+    val birthday: String = "",
+    val notes: String = "",
+    val username: String = "",
+)
+
+@Serializable
+data class FeedPath(val path: String = "")
