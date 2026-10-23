@@ -302,6 +302,32 @@ class CalendarApi(
         request(HttpMethod.Post, "/api/notifications/read", buildJsonObject { })
     }
 
+    suspend fun pushInfo(): PushInfo = decode(request(HttpMethod.Get, "/api/push", null))
+
+    /** Меняет только переданные поля; сервер отвечает полными настройками. */
+    suspend fun updateNotifySettings(fields: JsonObject): NotifySettings =
+        decode(request(HttpMethod.Patch, "/api/push/settings", fields))
+
+    /** Отправляет проверочное уведомление; возвращает, на сколько устройств ушло (409 — нигде не включено). */
+    suspend fun testPush(): Int =
+        decode<Map<String, Int>>(request(HttpMethod.Post, "/api/push/test", buildJsonObject { }))["sent"] ?: 0
+
+    suspend fun pushDevices(): List<PushDevice> = decode(request(HttpMethod.Get, "/api/push/devices", null))
+
+    suspend fun deletePushDevice(id: String) {
+        request(HttpMethod.Delete, "/api/push/devices/${id.encodeURLParameter()}", null)
+    }
+
+    suspend fun alarms(): List<Alarm> = decode(request(HttpMethod.Get, "/api/reminders", null))
+
+    /** [atIso] — момент в UTC, `2026-10-23T18:00:00Z`: сервер разбирает RFC 3339. */
+    suspend fun createAlarm(text: String, atIso: String): Alarm =
+        decode(request(HttpMethod.Post, "/api/reminders", buildJsonObject { put("text", text); put("at", atIso) }))
+
+    suspend fun deleteAlarm(id: Int) {
+        request(HttpMethod.Delete, "/api/reminders/$id", null)
+    }
+
     suspend fun memories(): List<Memory> = decode(request(HttpMethod.Get, "/api/memories", null))
 
     suspend fun createMemory(text: String, kind: String = "about"): Memory =

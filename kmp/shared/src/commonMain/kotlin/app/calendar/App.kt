@@ -66,6 +66,7 @@ import app.calendar.ui.ErrorBanner
 import app.calendar.ui.AccountSheet
 import app.calendar.ui.CalendarsSheet
 import app.calendar.ui.PeopleSheet
+import app.calendar.ui.RemindersSheet
 import app.calendar.ui.ProfileSheet
 import app.calendar.ui.EventEditor
 import app.calendar.ui.EventSheet
@@ -127,7 +128,7 @@ private fun Shell(controller: CalendarController) {
     val sheetOpen = controller.weekSheet || controller.taskSheet || controller.composerDate != null ||
         controller.openedEvent != null || controller.openedTask != null || controller.searchSheet ||
         controller.accountSheet || controller.memorySheet || controller.calendarsSheet ||
-        controller.profileSheet || controller.peopleSheet || controller.securitySheet
+        controller.profileSheet || controller.peopleSheet || controller.securitySheet || controller.remindersSheet
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
@@ -166,6 +167,7 @@ private fun Shell(controller: CalendarController) {
             controller.openedEvent != null -> controller.openedEvent = null
             controller.openedTask != null -> controller.openedTask = null
             controller.searchSheet -> controller.closeSearch()
+            controller.remindersSheet -> controller.remindersSheet = false
             controller.securitySheet -> controller.securitySheet = false
             controller.memorySheet -> controller.memorySheet = false
             controller.calendarsSheet -> controller.calendarsSheet = false
@@ -313,6 +315,10 @@ private fun Shell(controller: CalendarController) {
         AppSheet(visible = controller.securitySheet, onClose = { controller.securitySheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             SecuritySheet(controller)
+        }
+        AppSheet(visible = controller.remindersSheet, onClose = { controller.remindersSheet = false }, chrome = SheetChrome.Modal) {
+            ErrorBanner(controller.error, onDismiss = controller::dismissError)
+            RemindersSheet(controller)
         }
         AppSheet(visible = controller.calendarsSheet, onClose = { controller.calendarsSheet = false }, chrome = SheetChrome.Modal) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)

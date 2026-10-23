@@ -14,7 +14,11 @@ import app.calendar.api.ReadCache
 import app.calendar.domain.pluralize
 import app.calendar.api.ChatFrame
 import app.calendar.api.ChatMessage
+import app.calendar.api.Alarm
 import app.calendar.api.AppNotification
+import app.calendar.api.NotifySettings
+import app.calendar.api.PushDevice
+import app.calendar.api.PushInfo
 import app.calendar.api.AuthSession
 import app.calendar.api.ConfirmCard
 import app.calendar.api.Memory
@@ -145,6 +149,12 @@ class CalendarController(private val scope: CoroutineScope) {
     var people by mutableStateOf<List<Person>>(emptyList())
     var notice by mutableStateOf<String?>(null)
     var securitySheet by mutableStateOf(false)
+    var remindersSheet by mutableStateOf(false)
+    var pushInfo by mutableStateOf<PushInfo?>(null)
+    var pushDevices by mutableStateOf<List<PushDevice>>(emptyList())
+    var alarms by mutableStateOf<List<Alarm>>(emptyList())
+    /** На сколько устройств ушло проверочное уведомление (после «Проверить»). */
+    var testSent by mutableStateOf<Int?>(null)
     var themeMode by mutableStateOf(session.theme)
         private set
 
@@ -732,6 +742,81 @@ class CalendarController(private val scope: CoroutineScope) {
         }
     }
 
+    // --- Напоминания ------------------------------------------------------------------------
+
+    fun openReminders() {
+        accountSheet = false
+        remindersSheet = true
+        testSent = null
+        loadReminders()
+    }
+
+    private fun loadReminders() {
+        scope.launch {
+            guard(retry = ::loadReminders) {
+                pushInfo = api.pushInfo()
+                pushDevices = api.pushDevices()
+                alarms = api.alarms()
+            }
+        }
+    }
+
+    /** Меняет настройки уведомлений на всех устройствах аккаунта: сначала на экране, потом на сервере. */
+    fun setNotify(fields: kotlinx.serialization.json.JsonObject, local: (NotifySettings) -> NotifySettings) {
+        val info = pushInfo ?: return
+        pushInfo = info.copy(settings = local(info.settings))
+        testSent = null
+        scope.launch {
+            guard {
+                try {
+                    pushInfo = pushInfo?.copy(settings = api.updateNotifySettings(fields))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    pushInfo = info
+                    throw e
+                }
+            }
+        }
+    }
+
+    fun testPush() {
+        scope.launch {
+            guard {
+                testSent = api.testPush()
+            }
+        }
+    }
+
+    fun deletePushDevice(id: String) {
+        scope.launch {
+            guard {
+                api.deletePushDevice(id)
+                pushDevices = api.pushDevices()
+                pushInfo = api.pushInfo()
+            }
+        }
+    }
+
+    fun createAlarm(text: String, atIso: String, onDone: () -> Unit) {
+        scope.launch {
+            guard {
+                api.createAlarm(text, atIso)
+                alarms = api.alarms()
+                onDone()
+            }
+        }
+    }
+
+    fun deleteAlarm(id: Int) {
+        scope.launch {
+            guard {
+                api.deleteAlarm(id)
+                alarms = api.alarms()
+            }
+        }
+    }
+
     // --- Календари --------------------------------------------------------------------------
 
     fun openCalendars() {
@@ -1026,6 +1111,11 @@ class CalendarController(private val scope: CoroutineScope) {
         people = emptyList()
         notice = null
         securitySheet = false
+        remindersSheet = false
+        pushInfo = null
+        pushDevices = emptyList()
+        alarms = emptyList()
+        testSent = null
     }
 
     private fun dropSession() {

@@ -76,12 +76,12 @@ fun ActionPill(label: String, modifier: Modifier = Modifier, filled: Boolean = f
 }
 
 @Composable
-private fun Caption(text: String) {
+internal fun Caption(text: String) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
 }
 
 @Composable
-private fun SheetTitle(text: String, onClose: () -> Unit) {
+internal fun SheetTitle(text: String, onClose: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text,
@@ -431,6 +431,9 @@ fun AccountSheet(controller: CalendarController) {
     MenuRow("Календари", "Google, Яндекс, iCloud, ссылка .ics", icon = { CalendarIcon(size = 20.dp, color = it) }) {
         controller.accountSheet = false
         controller.openCalendars()
+    }
+    MenuRow("Напоминания", "Когда и как напоминать, свои напоминания", icon = { BellIcon(size = 20.dp, color = it) }) {
+        controller.openReminders()
     }
     MenuRow("Люди", "Кого ассистент знает по имени", icon = { UsersIcon(size = 20.dp, color = it) }) {
         controller.accountSheet = false

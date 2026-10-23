@@ -269,3 +269,32 @@ data class Person(
 
 @Serializable
 data class FeedPath(val path: String = "")
+
+/** Когда напоминать — зеркало `model.NotifySettings` на сервере. Минуты от полуночи, `-1` — выключено. */
+@Serializable
+data class NotifySettings(
+    val eventReminder: Int = 10,
+    val taskTime: Int = 9 * 60,
+    val digest: Int = -1,
+    val evening: Int = -1,
+    val quietFrom: Int = -1,
+    val quietTo: Int = -1,
+    /** Своё «по умолчанию» для типа события (минуты, −1 — не напоминать). */
+    val badgeReminders: Map<String, Int> = emptyMap(),
+)
+
+/** `GET /api/push`: настройки и число подписанных устройств. */
+@Serializable
+data class PushInfo(
+    val publicKey: String? = null,
+    val settings: NotifySettings = NotifySettings(),
+    val devices: Int = 0,
+)
+
+/** Устройство с уведомлениями. `id` — начало sha256 адреса подписки. */
+@Serializable
+data class PushDevice(val id: String, val label: String = "", val createdAt: String = "")
+
+/** Своё напоминание без события или отложенное из уведомления (`GET /api/reminders`). */
+@Serializable
+data class Alarm(val id: Int, val at: String = "", val text: String = "", val kind: String = "reminder")
