@@ -283,9 +283,9 @@ private fun durationLabel(minutes: Int): String = when {
 @Composable
 private fun TimeChoice(value: Int, onChange: (Int) -> Unit) {
     val shown = if (value == 24 * 60) 0 else value
-    ChoiceRow(focusIndex = timeOptions.indexOf(shown)) {
+    ChoiceRow {
         timeOptions.forEach { minutes ->
-            ChoicePill(formatMinutes(minutes), minutes == shown) { onChange(minutes) }
+            ChoicePill(formatMinutes(minutes), minutes == shown, reveal = minutes == shown) { onChange(minutes) }
         }
     }
 }

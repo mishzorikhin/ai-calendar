@@ -147,14 +147,17 @@ private fun ThemedContent(content: @Composable () -> Unit) {
     }
 }
 
-fun badgeColor(badge: String): Color = when (badge) {
-    "sleep" -> Color(0xFF7F8A9B)
-    "routine" -> Color(0xFF9B7AF0)
-    "work" -> Color(0xFF3A78F2)
-    "food" -> Color(0xFFF08B3D)
-    "sport" -> Color(0xFF4CC46D)
-    "read" -> Color(0xFFF5C445)
-    else -> Color(0xFF8B8B95)
+/** Как `src/lib/badges.ts` на сайте: сон и спорт зелёные, быт и работа синие, еда оранжевая, чтение фиолетовое. */
+@Composable
+fun badgeColor(badge: String): Color {
+    val blue = if (platformInDarkTheme()) Color(0xFF5A8FF5) else Color(0xFF3A78F2)
+    return when (badge) {
+        "sleep", "sport" -> Color(0xFF4CC46D)
+        "routine", "work" -> blue
+        "food" -> Color(0xFFF08B3D)
+        "read" -> Color(0xFF9B7AF0)
+        else -> Color(0xFF8B8B95)
+    }
 }
 
 fun barColors(dark: Boolean): List<Color> = if (dark) {

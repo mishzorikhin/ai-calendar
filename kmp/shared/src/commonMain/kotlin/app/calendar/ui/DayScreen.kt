@@ -7,6 +7,12 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlin.time.Clock
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import app.calendar.domain.parseIsoDate
+import app.calendar.domain.dayTitle
+import app.calendar.domain.isoDate
+import app.calendar.domain.conflictWith
+import app.calendar.domain.suggestStart
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.offset
@@ -29,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -42,6 +49,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import app.calendar.domain.formatRange
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,33 +92,42 @@ private val starts = (0 until 48).map { it * 30 }
 
 @Composable
 fun DayModeSwitch(timeline: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.clip(RoundedCornerShape(999.dp)).background(barInk(platformInDarkTheme()).copy(alpha = 0.12f)).padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    val bounds = rememberKnobBounds()
+    val haptics = rememberHaptics()
+    Box(
+        Modifier.then(bounds.container()).clip(RoundedCornerShape(999.dp)).background(barInk(platformInDarkTheme()).copy(alpha = 0.12f)),
     ) {
-        ModeKnob("Шкала", timeline) { onChange(true) }
-        ModeKnob("Список", !timeline) { onChange(false) }
+        SlidingKnob(bounds, if (timeline) 0 else 1, MaterialTheme.colorScheme.surface, CircleShape)
+        Row(Modifier.padding(2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            ModeKnob("Шкала", timeline, bounds.item(0), { c -> TimelineIcon(size = 16.dp, color = c) }) { if (!timeline) haptics.tick(); onChange(true) }
+            ModeKnob("Список", !timeline, bounds.item(1), { c -> AgendaIcon(size = 16.dp, color = c) }) { if (timeline) haptics.tick(); onChange(false) }
+        }
     }
 }
 
 @Composable
-private fun ModeKnob(label: String, on: Boolean, click: () -> Unit) {
-    Box(
-        Modifier.pressable(role = Role.Tab, onClick = click)
+private fun ModeKnob(label: String, on: Boolean, modifier: Modifier, icon: @Composable (Color) -> Unit, click: () -> Unit) {
+    val ink = if (on) MaterialTheme.colorScheme.onSurface else barInk(platformInDarkTheme())
+    Column(
+        modifier.pressable(role = Role.Tab, onClick = click)
             .defaultMinSize(minHeight = 44.dp)
-            .clip(CircleShape)
-            .background(animateColorAsState(if (on) MaterialTheme.colorScheme.surface else Color.Transparent, uiSpring(), label = "knob").value)
             .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, fontSize = 13.sp, color = if (on) MaterialTheme.colorScheme.onSurface else barInk(platformInDarkTheme())) }
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        icon(ink)
+        Text(label, fontSize = 11.sp, lineHeight = 13.sp, color = ink)
+    }
 }
 
 @Composable
 fun DayScreen(controller: CalendarController, date: LocalDate) {
-    var open by rememberSaveable { mutableStateOf(DayPart.Morning.name) }
+    val haptics = rememberHaptics()
     val events = controller.dayEvents.filter { !it.allDay }
     val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
     val nowMinutes = (now.hour * 60 + now.minute).takeIf { date == controller.today() }
+    // Как на сайте: сегодня раскрыт текущий слой суток, в другие дни — утро.
+    val open = controller.dayOpenPart ?: (nowMinutes?.let(::partOf) ?: DayPart.Morning).name
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp).appear(0), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
@@ -137,7 +162,28 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                 allDayEvents.forEachIndexed { i, event -> EventCard(event, Modifier.appear(i, dy = 14.dp, scaleFrom = 0.97f)) { controller.openEvent(event, date) } }
             }
         }
-        BoxWithConstraints(Modifier.weight(1f).padding(top = 12.dp).appear(1)) {
+        var swipe by remember { mutableFloatStateOf(0f) }
+        BoxWithConstraints(
+            Modifier.weight(1f).padding(top = 12.dp).appear(1)
+                // Свайп в сторону — предыдущий или следующий день, как лента недели.
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { swipe += it },
+                    onDragStopped = { velocity ->
+                        val moved = swipe
+                        swipe = 0f
+                        val delta = when {
+                            moved < -110f || velocity < -1100f -> 1
+                            moved > 110f || velocity > 1100f -> -1
+                            else -> 0
+                        }
+                        if (delta != 0) {
+                            haptics.tick()
+                            controller.open(Screen.Day(date.plus(DatePeriod(days = delta))))
+                        }
+                    },
+                ),
+        ) {
             val collapsed = 58.dp
             val expandedHeight = maxHeight - collapsed * (DayPart.entries.size - 1)
             Column(Modifier.fillMaxSize()) {
@@ -160,20 +206,14 @@ fun DayScreen(controller: CalendarController, date: LocalDate) {
                         expanded = expanded,
                         list = !controller.dayTimeline,
                         nowMinutes = nowMinutes,
-                        onOpen = { open = part.name },
+                        onOpen = { if (open != part.name) haptics.tick(); controller.dayOpenPart = part.name },
                         onEvent = { controller.openEvent(it, date) },
                         onCreate = { start -> controller.compose(date, start) },
                         modifier = Modifier.height(height.coerceAtLeast(0.dp)),
                     )
                 }
                 if (!controller.dayTimeline) {
-                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        events.sortedBy { it.start }.forEachIndexed { i, event ->
-                            EventCard(event, Modifier.appear(i, dy = 14.dp, startDelay = 60, step = 40, scaleFrom = 0.97f)) {
-                                controller.openEvent(event, date)
-                            }
-                        }
-                    }
+                    Agenda(events, Modifier.weight(1f)) { controller.openEvent(it, date) }
                 }
             }
         }
@@ -287,18 +327,20 @@ private fun PartLayer(
                             },
                     ) {
                         repeat(hours) { h ->
+                            // Прошедшие часы приглушены, чтобы взгляд шёл к тому, что впереди.
+                            val past = nowMinutes != null && from + h * 60 + 60 <= nowMinutes
                             Text(
                                 formatMinutes(from + h * 60),
                                 modifier = Modifier.padding(start = 18.dp).offset(y = hourHeight * h - 2.dp),
                                 fontSize = 11.5.sp,
-                                color = soft,
+                                color = if (past) soft.copy(alpha = soft.alpha * 0.55f) else soft,
                             )
                         }
                         events.sortedBy { it.start }.forEachIndexed { index, event ->
                             val start = maxOf(event.start, from)
                             val end = minOf(event.end, to)
                             val top = hourHeight * ((start - from) / 60f) + 3.dp
-                            val height = maxOf(hourHeight * ((end - start) / 60f) - 6.dp, 44.dp)
+                            val height = maxOf(hourHeight * ((end - start) / 60f) - 6.dp, 52.dp)
                             EventCard(
                                 event,
                                 Modifier
@@ -306,6 +348,7 @@ private fun PartLayer(
                                     .offset(y = top)
                                     .height(height)
                                     .appear(index, dy = 14.dp, startDelay = 150, step = 60, scaleFrom = 0.97f),
+                                compact = true,
                             ) { onEvent(event) }
                         }
                         if (nowInside && nowMinutes != null) {
@@ -336,13 +379,69 @@ private fun PartLayer(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlusIcon(size = 15.dp, color = soft)
-                        Text(" Добавить событие · или нажмите на свободное время", color = soft, fontSize = 12.5.sp)
+                        Text(" Добавить событие", color = soft, fontSize = 12.5.sp)
                     }
                 }
             }
         }
     }
 }
+
+/** «Список» как `Agenda.tsx`: слои суток с заголовками, время слева, цветная полоска, название и место. */
+@Composable
+private fun Agenda(events: List<Event>, modifier: Modifier = Modifier, onEvent: (Event) -> Unit) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(30.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (events.isEmpty()) {
+            Text("В этот день событий нет", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+        }
+        var index = 0
+        DayPart.entries.forEach { part ->
+            val slice = events.filter { partOf(it.start) == part }.sortedBy { it.start }
+            if (slice.isEmpty()) return@forEach
+            Text(part.title, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+            slice.forEach { event ->
+                val i = index++
+                Row(
+                    Modifier.appear(i, dy = 12.dp, startDelay = 40, step = 40, scaleFrom = 0.97f)
+                        .pressable(onClick = { onEvent(event) })
+                        .semantics { contentDescription = eventDescription(event) }
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(Modifier.width(56.dp)) {
+                        Text(formatMinutes(event.start), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, softWrap = false)
+                        Text(formatMinutes(event.end), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Box(Modifier.width(3.dp).height(34.dp).clip(RoundedCornerShape(2.dp)).background(badgeColor(event.badge)))
+                    Column(Modifier.weight(1f)) {
+                        Text(event.title.ifBlank { "Без названия" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        val sub = event.subtitle.ifBlank { event.invite?.let { "от @${it.from.username}" }.orEmpty() }
+                        if (sub.isNotBlank()) Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Для скринридера: «Планёрка, 10:00–11:00, Офис». */
+private fun eventDescription(event: Event): String = buildList {
+    add(event.title.ifBlank { "Без названия" })
+    add(formatRange(event.start, event.end, event.allDay))
+    if (event.subtitle.isNotBlank()) add(event.subtitle)
+}.joinToString(", ")
 
 /** Первое свободное получасовое окно в слое, иначе его начало. */
 private fun firstFreeTime(events: List<Event>, from: Int, to: Int): Int {
@@ -355,13 +454,14 @@ private fun firstFreeTime(events: List<Event>, from: Int, to: Int): Int {
 }
 
 @Composable
-private fun EventCard(event: Event, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun EventCard(event: Event, modifier: Modifier = Modifier, compact: Boolean = false, onClick: () -> Unit) {
     Row(
         modifier.pressable(onClick = onClick)
+            .semantics { contentDescription = eventDescription(event) }
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = if (compact) 6.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -387,21 +487,47 @@ private fun EventCard(event: Event, modifier: Modifier = Modifier, onClick: () -
 @Composable
 private fun WeekStrip(selected: LocalDate, modifier: Modifier = Modifier, onSelect: (LocalDate) -> Unit) {
     val start = selected.plus(DatePeriod(days = -(selected.dayOfWeek.isoDayNumber - 1)))
-    Row(
+    // Свайп по ленте листает недели, как на сайте.
+    var finger by remember { mutableFloatStateOf(0f) }
+    val bounds = rememberKnobBounds()
+    val haptics = rememberHaptics()
+    val pick = { day: LocalDate -> haptics.tick(); onSelect(day) }
+    val todayDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    Box(
         modifier
             .padding(vertical = 8.dp)
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { finger += it },
+                onDragStopped = { velocity ->
+                    val moved = finger
+                    finger = 0f
+                    when {
+                        moved < -90f || velocity < -900f -> pick(selected.plus(DatePeriod(days = 7)))
+                        moved > 90f || velocity > 900f -> pick(selected.plus(DatePeriod(days = -7)))
+                    }
+                },
+            )
             .fillMaxWidth()
+            .then(bounds.container())
             .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 6.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .background(MaterialTheme.colorScheme.surface),
     ) {
+        SlidingKnob(bounds, selected.dayOfWeek.isoDayNumber - 1, MaterialTheme.colorScheme.primary, CircleShape)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         val dark = platformInDarkTheme()
+        WeekArrow("Прошлая неделя", back = true) { pick(selected.plus(DatePeriod(days = -7))) }
         (0 until 7).forEach { offset ->
             val day = start.plus(DatePeriod(days = offset))
             val on = day == selected
             Column(
-                Modifier.pressable { onSelect(day) }.clip(CircleShape).padding(horizontal = 6.dp, vertical = 4.dp),
+                Modifier.pressable { pick(day) }
+                    .semantics { contentDescription = "${weekdayName(day)}, ${day.dayOfMonth} ${monthGenitive(day)}"; this.selected = on }
+                    .clip(CircleShape).padding(horizontal = 3.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
@@ -410,7 +536,7 @@ private fun WeekStrip(selected: LocalDate, modifier: Modifier = Modifier, onSele
                     color = if (offset >= 5) weekendColor(dark) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Box(
-                    Modifier.padding(top = 2.dp).size(32.dp).clip(CircleShape).background(if (on) MaterialTheme.colorScheme.primary else Color.Transparent),
+                    Modifier.padding(top = 2.dp).then(bounds.item(offset)).size(32.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -419,47 +545,96 @@ private fun WeekStrip(selected: LocalDate, modifier: Modifier = Modifier, onSele
                         fontWeight = FontWeight.Medium,
                     )
                 }
+                // Точка под сегодняшним днём: видно «где я», даже когда выбран другой день.
+                Box(
+                    Modifier.padding(top = 1.dp).size(4.dp).clip(CircleShape)
+                        .background(if (day == todayDate) Color(0xFFFF3B55) else Color.Transparent),
+                )
             }
+        }
+        WeekArrow("Следующая неделя", back = false) { pick(selected.plus(DatePeriod(days = 7))) }
         }
     }
 }
 
-/** Редактор события: без [initial] — создание, с ним — правка. */
+@Composable
+private fun WeekArrow(label: String, back: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.pressable(role = Role.Button, onClickLabel = label, onClick = onClick).size(36.dp).clip(CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (back) ChevronLeftIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else ChevronRightIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Редактор события: без [initial] — создание, с ним — правка. [date] — день события, [today] нужен для быстрых «Завтра» и т.п.
+ * [eventsFor] отдаёт известные события дня (или `null`): по ним подбирается свободное время и показывается пересечение.
+ */
 @Composable
 fun EventEditor(
     initial: Event? = null,
     defaultStart: Int? = null,
+    date: LocalDate,
+    today: LocalDate,
+    nowMinutes: Int,
+    eventsFor: (LocalDate) -> List<Event>? = { null },
     submit: String = "Создать",
-    onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String, extras: EventExtras) -> Unit,
+    onDirtyChange: (Boolean) -> Unit = {},
+    onDelegate: ((String) -> Unit)? = null,
+    onSave: (title: String, start: Int, end: Int, badge: String, allDay: Boolean, notes: String, extras: EventExtras, date: LocalDate) -> Unit,
 ) {
     var title by rememberSaveable { mutableStateOf(initial?.title.orEmpty()) }
-    var start by rememberSaveable { mutableStateOf(initial?.takeIf { !it.allDay }?.start ?: defaultStart ?: (10 * 60)) }
+    var dayIso by rememberSaveable { mutableStateOf(isoDate(date)) }
+    val day = parseIsoDate(dayIso)
+    fun busy(forDay: LocalDate) = eventsFor(forDay).orEmpty().filter { it.id != initial?.id }
+    var startTouched by rememberSaveable { mutableStateOf(false) }
+    var start by rememberSaveable {
+        mutableStateOf(
+            initial?.takeIf { !it.allDay }?.start ?: defaultStart
+                ?: suggestStart(busy(date), nowMinutes.takeIf { date == today }),
+        )
+    }
     var length by rememberSaveable {
         mutableStateOf(initial?.takeIf { !it.allDay && it.end > it.start }?.let { it.end - it.start } ?: 60)
     }
     var badge by rememberSaveable { mutableStateOf(initial?.badge ?: "routine") }
     var allDay by rememberSaveable { mutableStateOf(initial?.allDay ?: false) }
     var notes by rememberSaveable { mutableStateOf(initial?.notes.orEmpty()) }
+    var place by rememberSaveable { mutableStateOf(initial?.subtitle.orEmpty()) }
     var repeat by rememberSaveable { mutableStateOf(initial?.repeat.orEmpty()) }
     var url by rememberSaveable { mutableStateOf(initial?.url.orEmpty()) }
     var guests by rememberSaveable { mutableStateOf(initial?.attendees.orEmpty().joinToString(" ") { "@${it.username}" }) }
     // null — напоминание по умолчанию из настроек, -1 — не напоминать.
     var reminder by rememberSaveable { mutableStateOf<Int?>(initial?.reminders?.let { it.firstOrNull() ?: -1 }) }
     var reminderTouched by rememberSaveable { mutableStateOf(false) }
+    // Другой день — другое «ближайшее свободное»: пока время не трогали руками, подбираем заново.
+    LaunchedEffect(dayIso) {
+        if (initial == null && defaultStart == null && !startTouched) {
+            start = suggestStart(busy(day), nowMinutes.takeIf { day == today }, length)
+        }
+    }
+    val dirty = initial == null && (title.isNotBlank() || place.isNotBlank() || notes.isNotBlank() || guests.isNotBlank() || url.isNotBlank())
+    LaunchedEffect(dirty) { onDirtyChange(dirty) }
+    DisposableEffect(Unit) { onDispose { onDirtyChange(false) } }
     // Нестандартные время и длительность из события не теряются: добавляем их в список выбора.
     val startOptions = (starts + start).distinct().sorted()
     val lengthOptions = (listOf(30, 60, 90, 120, 180) + length).distinct().sorted()
+    val canMove = initial == null || initial.repeat.isBlank()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SheetField(title, { title = it }, "Название")
+        SheetField(title, { title = it }, "Название события")
+        SheetField(place, { place = it }, "Место — необязательно")
         SheetField(notes, { notes = it }, "Заметка — необязательно")
+        if (canMove) DayChips(day, today) { dayIso = isoDate(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Весь день", modifier = Modifier.weight(1f))
             Switch(checked = allDay, onCheckedChange = { allDay = it })
         }
         if (!allDay) {
             Text("Начало", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            ChoiceRow(focusIndex = startOptions.indexOf(start)) {
-                startOptions.forEach { value -> ChoicePill(formatMinutes(value), value == start) { start = value } }
+            ChoiceRow {
+                startOptions.forEach { value -> ChoicePill(formatMinutes(value), value == start, reveal = value == start) { start = value; startTouched = true } }
             }
             Text("Длительность", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             ChoiceRow {
@@ -470,7 +645,9 @@ fun EventEditor(
         }
         Text("Тип", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         ChoiceRow {
-            badges.forEach { value -> ChoicePill(badgeLabel(value), value == badge) { badge = value } }
+            badges.forEach { value ->
+                ChoicePill(badgeLabel(value), value == badge, icon = { c -> BadgeIcon(value, size = 14.dp, color = c) }) { badge = value }
+            }
         }
         Text("Повтор", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         ChoiceRow {
@@ -492,38 +669,71 @@ fun EventEditor(
             }
         }
         SheetField(guests, { guests = it }, "Позвать: @логины через пробел")
-        SheetField(url, { url = it }, "Ссылка — необязательно")
-        Box(
-            Modifier.pressable(enabled = title.isNotBlank(), role = Role.Button) {
-                    val logins = parseLogins(guests)
-                    val before = initial?.attendees.orEmpty().map { it.username }
-                    onSave(
-                        title,
-                        start,
-                        (start + length).coerceAtMost(24 * 60),
-                        badge,
-                        allDay,
-                        notes,
-                        EventExtras(
-                            repeat = if (initial == null) repeat.ifBlank { null } else repeat.takeIf { it != initial.repeat },
-                            attendees = if (initial == null) logins.takeIf { it.isNotEmpty() } else logins.takeIf { it != before },
-                            url = if (initial == null) url.ifBlank { null } else url.takeIf { it != initial.url },
-                            reminder = reminder,
-                            reminderTouched = reminderTouched,
-                        ),
+        SheetField(url, { url = it }, "Ссылка — необязательно", last = true)
+        if (initial == null && onDelegate != null) {
+            // Не хочется выбирать чипы — отдать задачу ассистенту: текст запроса собираем из уже введённого.
+            Row(
+                Modifier.fillMaxWidth().pressable(role = Role.Button, haptic = true) {
+                    val what = if (title.isBlank()) "Поставь событие" else "Поставь «${title.trim()}»"
+                    val when_ = if (allDay) "${dayTitle(day).replaceFirstChar { it.lowercase() }}, на весь день"
+                    else "${dayTitle(day).replaceFirstChar { it.lowercase() }}, ${formatMinutes(start)}–${formatMinutes((start + length).coerceAtMost(24 * 60))}"
+                    onDelegate("$what — $when_" + if (place.isNotBlank()) ", место: ${place.trim()}" else "")
+                }.defaultMinSize(minHeight = 44.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InfinityIcon(size = 18.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(" Поручить ассистенту", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            }
+        }
+    }
+    SheetFooter {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val known = eventsFor(day)
+            if (!allDay && known != null) {
+                val end = (start + length).coerceAtMost(24 * 60)
+                val clash = conflictWith(busy(day), start, end)
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background((if (clash == null) Color(0xFF4CC46D) else Color(0xFFF08B3D)).copy(alpha = 0.16f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (clash == null) Color(0xFF4CC46D) else Color(0xFFF08B3D)))
+                    Text(
+                        if (clash == null) {
+                            "${formatMinutes(start)}–${formatMinutes(end)} — время свободно"
+                        } else {
+                            "Пересекается с «${clash.title.ifBlank { "Без названия" }}» (${formatMinutes(clash.start)}–${formatMinutes(clash.end)})"
+                        },
+                        fontSize = 13.sp,
+                        maxLines = 2,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                .fillMaxWidth()
-                .height(54.dp)
-                .clip(CircleShape)
-                .background(if (title.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                submit,
-                color = if (title.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-            )
+            }
+            SheetButton(submit, title.isNotBlank()) {
+                val logins = parseLogins(guests)
+                val before = initial?.attendees.orEmpty().map { it.username }
+                onSave(
+                    title,
+                    start,
+                    (start + length).coerceAtMost(24 * 60),
+                    badge,
+                    allDay,
+                    notes,
+                    EventExtras(
+                        subtitle = if (initial == null) place.ifBlank { null } else place.takeIf { it != initial.subtitle },
+                        repeat = if (initial == null) repeat.ifBlank { null } else repeat.takeIf { it != initial.repeat },
+                        attendees = if (initial == null) logins.takeIf { it.isNotEmpty() } else logins.takeIf { it != before },
+                        url = if (initial == null) url.ifBlank { null } else url.takeIf { it != initial.url },
+                        reminder = reminder,
+                        reminderTouched = reminderTouched,
+                    ),
+                    day,
+                )
+            }
         }
     }
 }

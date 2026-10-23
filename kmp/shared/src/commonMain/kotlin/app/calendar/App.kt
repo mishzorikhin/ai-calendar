@@ -29,6 +29,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import app.calendar.ui.DiscardPrompt
+import app.calendar.ui.ToastHost
+import app.calendar.ui.LoadingBar
+import app.calendar.ui.OfflineBadge
+import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,6 +58,7 @@ import app.calendar.ui.CalendarTheme
 import app.calendar.ui.TaskForm
 import app.calendar.ui.barColors
 import app.calendar.ui.platformInDarkTheme
+import app.calendar.ui.ChatBar
 import app.calendar.ui.ChatScreen
 import app.calendar.ui.DayModeSwitch
 import app.calendar.ui.DayScreen
@@ -121,10 +131,38 @@ private fun Shell(controller: CalendarController) {
     LaunchedEffect(screen, controller.monthCursor) {
         controller.load(screen)
     }
+    // Вернулись в приложение — данные могли устареть: обновляем текущий экран.
+    val focused = LocalWindowInfo.current.isWindowFocused
+    var wasAway by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (!focused) {
+            wasAway = true
+        } else if (wasAway) {
+            wasAway = false
+            controller.load(screen)
+            controller.sync()
+        }
+    }
+    // Повтор неотправленного раз в полминуты, как на сайте: сеть могла вернуться без события.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            controller.sync()
+        }
+    }
     // Системная «Назад»: сначала шторки, потом экран, и только с главной приложение закрывается.
-    BackHandler(enabled = sheetOpen || screen != Screen.Home) {
+    var exitArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(exitArmed) {
+        if (exitArmed) {
+            delay(2_000)
+            exitArmed = false
+        }
+    }
+    // На главной первое «Назад» только предупреждает; второе в течение двух секунд выходит из приложения.
+    BackHandler(enabled = sheetOpen || screen != Screen.Home || !exitArmed) {
         when {
-            controller.composerDate != null -> controller.composerDate = null
+            controller.discardAction != null -> controller.keepEditing()
+            controller.composerDate != null -> controller.closeForm { controller.composerDate = null }
             controller.openedEvent != null -> controller.openedEvent = null
             controller.openedTask != null -> controller.openedTask = null
             controller.searchSheet -> controller.closeSearch()
@@ -134,10 +172,14 @@ private fun Shell(controller: CalendarController) {
             controller.profileSheet -> controller.profileSheet = false
             controller.peopleSheet -> controller.peopleSheet = false
             controller.accountSheet -> controller.accountSheet = false
-            controller.taskSheet -> controller.taskSheet = false
+            controller.taskSheet -> controller.closeForm { controller.taskSheet = false }
             controller.weekSheet -> controller.weekSheet = false
             screen is Screen.Day -> controller.back()
-            else -> controller.open(Screen.Home)
+            screen != Screen.Home -> controller.open(Screen.Home)
+            else -> {
+                exitArmed = true
+                controller.showToast("Нажмите «Назад» ещё раз, чтобы выйти")
+            }
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -152,10 +194,18 @@ private fun Shell(controller: CalendarController) {
                     .statusBarsPadding(),
             ) {
                 CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
-                ErrorBanner(if (sheetOpen) null else controller.error, onDismiss = controller::dismissError)
+                LoadingBar(controller.loading || controller.refreshing)
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { OfflineBadge(controller.offline, controller.pending) }
+                ErrorBanner(
+                    if (sheetOpen) null else controller.error,
+                    onDismiss = controller::dismissError,
+                    onRetry = controller.errorRetry?.let { retry -> { controller.dismissError(); retry() } },
+                )
                 AnimatedContent(
                     targetState = screen,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
+                    // Смена дня лентой недели — тот же экран: плашка и слои не пересоздаются, а плавно переезжают.
+                    contentKey = { if (it is Screen.Day) "day" else it },
                     transitionSpec = {
                         // Вперёд — «погружение», назад — «всплытие», как screenVariants на сайте.
                         val forward = isForward(initialState, targetState)
@@ -181,7 +231,9 @@ private fun Shell(controller: CalendarController) {
                 }
                 }
             }
-            if (!sheetOpen) {
+            if (!sheetOpen && screen is Screen.Chat) {
+                ChatBar(controller, modifier = Modifier.navigationBarsPadding())
+            } else if (!sheetOpen) {
                 ActionBar(
                     assistantActive = screen is Screen.Chat,
                     onAssistant = { controller.open(if (screen is Screen.Chat) Screen.Home else Screen.Chat) },
@@ -197,7 +249,7 @@ private fun Shell(controller: CalendarController) {
             }
         }
         val composing = controller.composerDate
-        AppSheet(visible = composing != null, onClose = { controller.composerDate = null }) {
+        AppSheet(visible = composing != null, onClose = { controller.closeForm { controller.composerDate = null } }) {
             Text(
                 "Новое событие",
                 fontSize = 24.sp,
@@ -205,20 +257,40 @@ private fun Shell(controller: CalendarController) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
-            EventEditor(defaultStart = controller.composerStart) { title, start, end, badge, allDay, notes, extras ->
-                if (composing != null && !controller.loading) {
-                    controller.createEvent(composing, title, start, end, badge, allDay, notes, extras) {
+            // Пока шторка уезжает, редактор остаётся на экране с тем же днём.
+            var shownDate by remember { mutableStateOf(controller.today()) }
+            if (composing != null) shownDate = composing
+            run {
+                EventEditor(
+                    defaultStart = controller.composerStart,
+                    date = shownDate,
+                    today = controller.today(),
+                    nowMinutes = controller.nowMinutes(),
+                    eventsFor = controller::eventsKnownFor,
+                    onDirtyChange = { controller.formDirty = it },
+                    onDelegate = { request ->
+                        controller.formDirty = false
                         controller.composerDate = null
-                        controller.open(Screen.Day(composing))
+                        controller.chatDraft = request
+                        controller.open(Screen.Chat)
+                    },
+                ) { title, start, end, badge, allDay, notes, extras, day ->
+                    if (!controller.loading) {
+                        controller.createEvent(day, title, start, end, badge, allDay, notes, extras) {
+                            controller.formDirty = false
+                            controller.composerDate = null
+                            controller.open(Screen.Day(day))
+                        }
                     }
                 }
             }
         }
-        AppSheet(visible = controller.taskSheet, onClose = { controller.taskSheet = false }) {
+        AppSheet(visible = controller.taskSheet, onClose = { controller.closeForm { controller.taskSheet = false } }) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             TaskForm(
-                onClose = { controller.taskSheet = false },
-                onSave = { controller.addTask(it) },
+                onClose = { controller.closeForm { controller.taskSheet = false } },
+                onDirtyChange = { controller.formDirty = it },
+                onSave = { controller.formDirty = false; controller.addTask(it) },
             )
         }
         val openedEvent = controller.openedEvent
@@ -265,5 +337,11 @@ private fun Shell(controller: CalendarController) {
         ) {
             WeekSheet(controller, onClose = { controller.weekSheet = false })
         }
+        ToastHost(
+            controller.toast,
+            onDismiss = controller::dismissToast,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (sheetOpen) 24.dp else 92.dp),
+        )
+        DiscardPrompt(controller.discardAction != null, onDiscard = controller::confirmDiscard, onKeep = controller::keepEditing)
     }
 }

@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +64,7 @@ fun AuthScreen(controller: CalendarController) {
                     .clip(RoundedCornerShape(18.dp))
                     .background(Color(0xFF2A2A36))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) { Text("◐", fontSize = 26.sp, color = Color.White) }
+            ) { InfinityIcon(size = 28.dp, color = Color.White) }
             Text("Календарь", modifier = Modifier.padding(top = 16.dp), fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 if (register) "Аккаунт для задач и совместной работы" else "Войдите, чтобы продолжить",
@@ -150,6 +151,7 @@ private fun Field(
     capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
     onDone: (() -> Unit)? = null,
 ) {
+    var shown by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
         onValueChange = onChange,
@@ -161,14 +163,17 @@ private fun Field(
             imeAction = ime,
         ),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
-        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        visualTransformation = if (password && !shown) PasswordVisualTransformation() else VisualTransformation.None,
         textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontFamily = LocalInter.current),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
         modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         decorationBox = { inner ->
-            Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
-                inner()
+            Row(Modifier.padding(start = 16.dp, end = if (password) 2.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
+                    inner()
+                }
+                if (password) PasswordEye(shown, { shown = !shown })
             }
         },
     )

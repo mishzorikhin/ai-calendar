@@ -9,6 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.calendar.api.CalendarApi
+import app.calendar.api.Outbox
+import app.calendar.api.ReadCache
+import app.calendar.domain.pluralize
 import app.calendar.api.ChatFrame
 import app.calendar.api.ChatMessage
 import app.calendar.api.AppNotification
@@ -23,6 +26,8 @@ import app.calendar.api.EventExtras
 import app.calendar.api.Task
 import app.calendar.api.User
 import app.calendar.api.WeekInsights
+import app.calendar.domain.habitCheckedNow
+import app.calendar.domain.habitMarkToClear
 import app.calendar.domain.isoDate
 import app.calendar.domain.parseIsoDate
 import app.calendar.domain.startOfWeek
@@ -34,10 +39,16 @@ import kotlinx.datetime.plus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
+import kotlinx.datetime.toLocalDateTime
+
+/** Сообщение внизу экрана; [action] — необязательная кнопка («Вернуть»). */
+data class Toast(val text: String, val actionLabel: String? = null, val action: (() -> Unit)? = null)
 
 /** Событие, открытое в шторке, и день, на котором на него нажали (у повторов это день вхождения). */
 data class OpenedEvent(val event: Event, val date: LocalDate)
@@ -50,10 +61,19 @@ sealed interface Screen {
 }
 
 class CalendarController(private val scope: CoroutineScope) {
-    private val session = SessionStore(platformSettings())
-    private val api = CalendarApi(createHttpClient(), session)
+    private val settings = platformSettings()
+    private val session = SessionStore(settings)
+    private val outbox = Outbox(settings)
+    private val cache = ReadCache(settings)
+    private val api = CalendarApi(createHttpClient(), session, outbox, cache)
 
     var user by mutableStateOf<User?>(null)
+    /** Последний запрос не достучался до сервера: экран показывает сохранённые данные. */
+    var offline by mutableStateOf(false)
+        private set
+    /** Сколько изменений ещё не уехало на сервер. */
+    var pending by mutableStateOf(outbox.size)
+        private set
     var booting by mutableStateOf(session.token != null)
     var error by mutableStateOf<String?>(null)
     var loading by mutableStateOf(false)
@@ -66,12 +86,16 @@ class CalendarController(private val scope: CoroutineScope) {
     /** Какому месяцу («2026-10») принадлежат [monthDots]: ответ мог прийти после смены месяца. */
     var monthDotsKey by mutableStateOf<String?>(null)
     var dayEvents by mutableStateOf<List<Event>>(emptyList())
+    /** День, которому принадлежат [dayEvents]. */
+    var dayEventsDate by mutableStateOf<LocalDate?>(null)
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
     var confirms by mutableStateOf<List<ConfirmCard>>(emptyList())
     var liveReply by mutableStateOf("")
     var toolStatus by mutableStateOf("")
     var memoryNote by mutableStateOf("")
     var sending by mutableStateOf(false)
+    /** Черновик реплики: поле ввода живёт в нижней панели, а не в экране чата. */
+    var chatDraft by mutableStateOf("")
     var serverUrl by mutableStateOf(session.apiUrl)
     var composerDate by mutableStateOf<LocalDate?>(null)
     /** Время, на которое нажали на шкале дня: подставляется в редактор нового события. */
@@ -84,6 +108,25 @@ class CalendarController(private val scope: CoroutineScope) {
     var dayTimeline by mutableStateOf(true)
     var openedEvent by mutableStateOf<OpenedEvent?>(null)
     var openedTask by mutableStateOf<Task?>(null)
+    var openedEventEdit by mutableStateOf(false)
+    /** Короткое сообщение внизу, у него может быть кнопка («Вернуть»). */
+    var toast by mutableStateOf<Toast?>(null)
+    /** Повтор последнего неудавшегося запроса экрана — кнопка «Повторить» у плашки ошибки. */
+    var errorRetry by mutableStateOf<(() -> Unit)?>(null)
+    /** Идёт обновление потягиванием на главной. */
+    var refreshing by mutableStateOf(false)
+        private set
+    /** Главная уже получила данные хотя бы раз: до этого показываем заглушки вместо «пусто». */
+    var homeLoaded by mutableStateOf(false)
+        private set
+    /** Раскрытый слой суток, выбранный руками; `null` — по умолчанию (текущий слой сегодня). */
+    var dayOpenPart by mutableStateOf<String?>(null)
+    /** В форме есть несохранённый ввод — закрытие спрашивает подтверждение. */
+    var formDirty by mutableStateOf(false)
+    /** Закрытие формы ждёт ответа «Отбросить?». */
+    var discardAction by mutableStateOf<(() -> Unit)?>(null)
+    /** Выполненные задачи на главной свёрнуты. */
+    var showDoneTasks by mutableStateOf(false)
     var searchSheet by mutableStateOf(false)
     var searchResult by mutableStateOf<SearchResult?>(null)
     var accountSheet by mutableStateOf(false)
@@ -110,10 +153,52 @@ class CalendarController(private val scope: CoroutineScope) {
     private var dayWanted: LocalDate? = null
 
     init {
+        outbox.onChange = { pending = outbox.size }
+        api.onConnection = { reachable ->
+            offline = !reachable
+            // Сеть вернулась — доигрываем очередь сразу, не дожидаясь таймера.
+            if (reachable && outbox.size > 0) sync()
+        }
         scope.launch { restore() }
     }
 
+    /** Повторяет неотправленные изменения; если что-то уехало — обновляет текущий экран. */
+    fun sync() {
+        if (outbox.size == 0 || (user == null && session.token == null)) return
+        scope.launch {
+            val result = try {
+                api.flushOutbox()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch
+            }
+            // Токен мог умереть во время повтора (401): очередь остаётся, вход — заново.
+            if (session.token == null && user != null) dropSession()
+            if (result.dropped > 0) {
+                showToast(pluralize(result.dropped, "изменение не удалось отправить", "изменения не удалось отправить", "изменений не удалось отправить"))
+            }
+            if (result.synced + result.dropped > 0) load(screen)
+        }
+    }
+
+    /** Чьё это устройство: чужие неотправленные правки не должны уйти в другой аккаунт. */
+    private fun adoptOwner(adopt: Boolean) {
+        val id = user?.id?.toString() ?: return
+        if (outbox.setOwner(id, adopt)) cache.clear()
+    }
+
     fun today(): LocalDate = Clock.System.todayIn(TimeZone.currentSystemDefault())
+
+    fun nowMinutes(): Int =
+        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).let { it.hour * 60 + it.minute }
+
+    /** События дня, если они уже загружены: по ним подбирается время и показывается пересечение. */
+    fun eventsKnownFor(date: LocalDate): List<Event>? = when {
+        date == today() && homeLoaded -> todayEvents
+        dayEventsDate == date -> dayEvents
+        else -> null
+    }
 
     fun compose(date: LocalDate = today(), start: Int? = null) {
         composerStart = start
@@ -121,7 +206,8 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     fun open(next: Screen) {
-        if (next is Screen.Day) dayBack = screen
+        // Листание дней лентой недели не должно менять, куда ведёт «закрыть день».
+        if (next is Screen.Day && screen !is Screen.Day) dayBack = screen
         screen = next
         error = null
     }
@@ -177,6 +263,51 @@ class CalendarController(private val scope: CoroutineScope) {
 
     fun dismissError() {
         error = null
+        errorRetry = null
+    }
+
+    fun showToast(text: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
+        toast = Toast(text, actionLabel, action)
+    }
+
+    fun dismissToast() {
+        toast = null
+    }
+
+    /** Закрыть форму: если в ней есть ввод — сначала спросить. */
+    fun closeForm(action: () -> Unit) {
+        if (formDirty) discardAction = action else action()
+    }
+
+    fun confirmDiscard() {
+        val action = discardAction
+        discardAction = null
+        formDirty = false
+        action?.invoke()
+    }
+
+    fun keepEditing() {
+        discardAction = null
+    }
+
+    /** Потянули вниз на главной. */
+    fun refreshHome() {
+        if (refreshing) return
+        refreshing = true
+        scope.launch {
+            try {
+                guard { loadHome() }
+            } finally {
+                refreshing = false
+            }
+        }
+    }
+
+    private suspend fun loadHome() {
+        todayEvents = api.events(isoDate(today()))
+        tasks = api.tasks()
+        suggestions = runCatching { api.suggestions() }.getOrDefault(suggestions)
+        homeLoaded = true
     }
 
     fun login(username: String, password: String, register: Boolean, name: String) {
@@ -191,6 +322,7 @@ class CalendarController(private val scope: CoroutineScope) {
             guard {
                 resetData()
                 user = if (register) api.register(username, password, name) else api.login(username, password)
+                adoptOwner(adopt = false)
                 screen = Screen.Home
             }
         }
@@ -213,6 +345,7 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     fun logout() {
+        flushPending()
         scope.launch {
             api.logout()
             dropSession()
@@ -222,13 +355,9 @@ class CalendarController(private val scope: CoroutineScope) {
     fun load(current: Screen) {
         if (user == null && session.token == null) return
         scope.launch {
-            guard {
+            guard(retry = { load(current) }) {
                 when (current) {
-                    Screen.Home -> {
-                        todayEvents = api.events(isoDate(today()))
-                        tasks = api.tasks()
-                        suggestions = runCatching { api.suggestions() }.getOrDefault(suggestions)
-                    }
+                    Screen.Home -> loadHome()
                     Screen.Month -> {
                         val cursor = monthCursor
                         val dots = api.monthDots(cursor.year, cursor.monthNumber)
@@ -273,20 +402,70 @@ class CalendarController(private val scope: CoroutineScope) {
             error = "Это событие только для просмотра"
             return
         }
-        scope.launch {
-            guard {
+        deferred(
+            "Событие удалено",
+            hide = {
+                dayEvents = dayEvents.filterNot { it.id == event.id }
+                todayEvents = todayEvents.filterNot { it.id == event.id }
+            },
+            commit = {
                 api.deleteEvent(event.id)
                 refreshDay(date)
-            }
+            },
+            restore = { refreshDay(date) },
+        )
+    }
+
+    private var pendingJob: Job? = null
+    private var pendingCommit: (suspend () -> Unit)? = null
+
+    /** Выполнить уже отложенное удаление сразу (перед новым удалением и выходом). */
+    private fun flushPending() {
+        val commit = pendingCommit
+        pendingJob?.cancel()
+        pendingJob = null
+        pendingCommit = null
+        if (commit != null) scope.launch { guard { commit() } }
+    }
+
+    /**
+     * Удаление с отменой: запись сразу пропадает с экрана, а на сервере удаляется через пять секунд,
+     * если не нажали «Вернуть». Одновременно ждёт одно удаление — предыдущее выполняется сразу.
+     */
+    private fun deferred(message: String, hide: () -> Unit, commit: suspend () -> Unit, restore: suspend () -> Unit) {
+        flushPending()
+        hide()
+        val job = scope.launch {
+            delay(UNDO_MILLIS)
+            pendingJob = null
+            pendingCommit = null
+            guard { commit() }
+        }
+        pendingJob = job
+        pendingCommit = commit
+        showToast(message, "Вернуть") {
+            job.cancel()
+            pendingJob = null
+            pendingCommit = null
+            scope.launch { guard { restore() } }
         }
     }
 
     fun toggleTask(task: Task) {
         scope.launch {
             guard {
-                val date = isoDate(today())
-                if (task.kind == "habit") api.checkHabit(task.id, date, done = date !in task.checks)
-                else api.setTaskDone(task.id, !task.done)
+                val day = today()
+                if (task.kind == "habit") {
+                    val cadence = task.cadence.ifBlank { "daily" }
+                    if (habitCheckedNow(cadence, task.checks, day)) {
+                        // Раз в неделю снимаем отметку этой недели, в какой бы день её ни поставили.
+                        habitMarkToClear(cadence, task.checks, day)?.let { api.checkHabit(task.id, it, done = false) }
+                    } else {
+                        api.checkHabit(task.id, isoDate(day), done = true)
+                    }
+                } else {
+                    api.setTaskDone(task.id, !task.done)
+                }
                 tasks = api.tasks()
             }
         }
@@ -361,7 +540,9 @@ class CalendarController(private val scope: CoroutineScope) {
         notice = null
     }
 
-    fun openEvent(event: Event, date: LocalDate) {
+    /** [edit] — сразу открыть редактор (кнопка «Изменить» на главной). */
+    fun openEvent(event: Event, date: LocalDate, edit: Boolean = false) {
+        openedEventEdit = edit
         openedEvent = OpenedEvent(event, date)
     }
 
@@ -375,6 +556,7 @@ class CalendarController(private val scope: CoroutineScope) {
         allDay: Boolean,
         notes: String,
         extras: EventExtras = EventExtras(),
+        date: LocalDate = opened.date,
         onDone: () -> Unit = {},
     ) {
         val event = opened.event
@@ -388,8 +570,10 @@ class CalendarController(private val scope: CoroutineScope) {
                     put("allDay", allDay)
                     put("notes", notes.trim())
                     if (event.repeat.isNotBlank()) put("occurrence", isoDate(opened.date))
+                    if (date != opened.date) put("date", isoDate(date))
                 })
                 refreshDay(opened.date)
+                if (date != opened.date && date == today()) todayEvents = api.events(isoDate(today()))
                 onDone()
             }
         }
@@ -431,13 +615,16 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     fun deleteTask(task: Task) {
-        scope.launch {
-            guard {
+        openedTask = null
+        deferred(
+            if (task.role == "member") "Вы вышли из задачи" else "Задача удалена",
+            hide = { tasks = tasks.filterNot { it.id == task.id } },
+            commit = {
                 api.deleteTask(task.id)
                 tasks = api.tasks()
-                openedTask = null
-            }
-        }
+            },
+            restore = { tasks = api.tasks() },
+        )
     }
 
     private var searchSeq = 0
@@ -499,6 +686,7 @@ class CalendarController(private val scope: CoroutineScope) {
         scope.launch {
             guard {
                 api.deleteAccount(password)
+                outbox.wipe()
                 dropSession()
             }
         }
@@ -771,21 +959,26 @@ class CalendarController(private val scope: CoroutineScope) {
         try {
             user = api.me()
             session.saveUser(user)
+            adoptOwner(adopt = true)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             user = session.loadUser()
-            if (user == null) error = e.message
+            if (user == null) error = e.message else adoptOwner(adopt = true)
         } finally {
             booting = false
         }
+        sync()
     }
 
     /** Свежие события дня. Устаревший ответ (пока листали дни) выбрасывается. */
     private suspend fun refreshDay(date: LocalDate) {
         dayWanted = date
         val events = api.events(isoDate(date))
-        if (dayWanted == date) dayEvents = events
+        if (dayWanted == date) {
+            dayEvents = events
+            dayEventsDate = date
+        }
         if (date == today()) todayEvents = events
     }
 
@@ -797,6 +990,14 @@ class CalendarController(private val scope: CoroutineScope) {
         monthDots = emptyMap()
         monthDotsKey = null
         messages = emptyList()
+        chatDraft = ""
+        homeLoaded = false
+        toast = null
+        formDirty = false
+        discardAction = null
+        pendingJob?.cancel()
+        pendingJob = null
+        pendingCommit = null
         confirms = emptyList()
         liveReply = ""
         toolStatus = ""
@@ -828,12 +1029,14 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     private fun dropSession() {
+        // Закэшированные ответы личные — на устройстве они не остаются. Очередь остаётся: тот же человек доиграет её.
+        cache.clear()
         user = null
         screen = Screen.Home
         resetData()
     }
 
-    private suspend fun guard(block: suspend () -> Unit) {
+    private suspend fun guard(retry: (() -> Unit)? = null, block: suspend () -> Unit) {
         inflight++
         loading = true
         try {
@@ -845,12 +1048,15 @@ class CalendarController(private val scope: CoroutineScope) {
                 dropSession()
             }
             error = e.message ?: "Что-то пошло не так"
+            errorRetry = retry
         } finally {
             inflight--
             loading = inflight > 0
         }
     }
 }
+
+private const val UNDO_MILLIS = 5_000L
 
 private const val URL_HINT = "Адрес — https://… (http:// только для локальной сети)"
 

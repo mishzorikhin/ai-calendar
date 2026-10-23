@@ -20,6 +20,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +41,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,18 +67,24 @@ import app.calendar.domain.formatRange
 import app.calendar.domain.monthShort
 import app.calendar.domain.pluralize
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(controller: CalendarController) {
     val today = controller.today()
     val user = controller.user
     val count = controller.todayEvents.size
     val nowMinutes = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).let { it.hour * 60 + it.minute }
+    PullToRefreshBox(
+        isRefreshing = controller.refreshing,
+        onRefresh = controller::refreshHome,
+        modifier = Modifier.fillMaxSize(),
+    ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(Modifier.appear(0), verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.pressable { controller.open(Screen.Day(today)) }.weight(1f).padding(vertical = 4.dp),
+                Modifier.pressable(haptic = true) { controller.open(Screen.Day(today)) }.weight(1f).padding(vertical = 4.dp),
             ) {
                 Text(
                     dayTitle(today),
@@ -84,7 +99,7 @@ fun HomeScreen(controller: CalendarController) {
                 }
             }
             Box(
-                Modifier.pressable(role = Role.Button, onClickLabel = "Поиск") { controller.searchSheet = true }
+                Modifier.pressable(role = Role.Button, onClickLabel = "Поиск", haptic = true) { controller.searchSheet = true }
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface),
@@ -93,7 +108,7 @@ fun HomeScreen(controller: CalendarController) {
             if (user != null) {
                 val initial = (user.name.ifBlank { user.username }).trim().take(1).uppercase()
                 Box(
-                    Modifier.pressable(role = Role.Button, onClickLabel = "Аккаунт") { controller.openAccount() }
+                    Modifier.pressable(role = Role.Button, onClickLabel = "Аккаунт", haptic = true) { controller.openAccount() }
                         .padding(start = 10.dp)
                         .size(44.dp)
                         .clip(CircleShape)
@@ -116,16 +131,19 @@ fun HomeScreen(controller: CalendarController) {
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text("Сегодня", fontSize = 48.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1.2).sp, lineHeight = 50.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text(
-                            pluralize(count, "событие", "события", "событий") + " в календаре",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp,
-                        )
+                        // Пустой день говорит о себе ниже («Свободный день») — второй раз про «0 событий» не пишем.
+                        if (!controller.homeLoaded || count > 0) {
+                            Text(
+                                if (controller.homeLoaded) pluralize(count, "событие", "события", "событий") + " в календаре" else "Загружаем…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp,
+                            )
+                        }
                     }
                     Surface(
                         shape = RoundedCornerShape(999.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.pressable(role = Role.Button) { controller.showWeek() },
+                        modifier = Modifier.pressable(role = Role.Button, haptic = true) { controller.showWeek() },
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             ChartIcon(size = 15.dp, color = MaterialTheme.colorScheme.onSurface)
@@ -136,9 +154,10 @@ fun HomeScreen(controller: CalendarController) {
                 // «Далее» — ближайшее не закончившееся событие, а не самое раннее за день.
                 val timed = controller.todayEvents.filter { !it.allDay }
                 val next = timed.filter { it.end > nowMinutes }.minByOrNull { it.start }
-                Column(Modifier.pressable(role = Role.Button) {
-                    if (timed.isEmpty()) controller.compose(today) else controller.open(Screen.Day(today))
-                }.padding(top = 30.dp)) {
+                Column(
+                    (if (timed.isEmpty() && next == null) Modifier else Modifier.pressable(role = Role.Button, haptic = true) { controller.open(Screen.Day(today)) })
+                        .padding(top = 30.dp),
+                ) {
                     if (next == null && timed.isNotEmpty()) {
                         Text("На сегодня всё", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
@@ -150,11 +169,13 @@ fun HomeScreen(controller: CalendarController) {
                     } else if (next == null) {
                         Text("Свободный день", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.6).sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "Нажмите, чтобы что-нибудь запланировать",
+                            "Самое время что-нибудь запланировать",
                             modifier = Modifier.padding(top = 6.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 15.sp,
                         )
+                        // Спросить ассистента можно из нижней панели — второй кнопки здесь не нужно.
+                        Box(Modifier.padding(top = 18.dp)) { GhostPill("Запланировать") { controller.compose(today) } }
                     } else {
                         Text(
                             "Далее · ${formatRange(next.start, next.end, next.allDay)}",
@@ -173,6 +194,7 @@ fun HomeScreen(controller: CalendarController) {
                             Text(next.subtitle, modifier = Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                         }
                         Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!next.readOnly && next.invite == null) GhostPill("Изменить") { controller.openEvent(next, today, edit = true) }
                             GhostPill("Открыть день") { controller.open(Screen.Day(today)) }
                         }
                     }
@@ -205,9 +227,11 @@ fun HomeScreen(controller: CalendarController) {
             Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 22.dp, bottom = 4.dp).appear(3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Задачи и цели", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(
+                "Задачи и цели" + if (controller.tasks.isNotEmpty()) " · ${controller.tasks.count { !it.done && it.kind != "habit" }}" else "",
+                modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Box(
-                Modifier.pressable(role = Role.Button, onClickLabel = "Новая задача") { controller.taskSheet = true }.size(44.dp).clip(CircleShape),
+                Modifier.pressable(role = Role.Button, onClickLabel = "Новая задача", haptic = true) { controller.taskSheet = true }.size(44.dp).clip(CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
@@ -215,80 +239,32 @@ fun HomeScreen(controller: CalendarController) {
                 }
             }
         }
-        if (controller.tasks.isEmpty()) {
-            Column(Modifier.pressable { controller.taskSheet = true }.padding(top = 18.dp, start = 6.dp)) {
-                Text(
-                    "Задач пока нет",
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.6).sp,
-                )
-                Text(
-                    "Нажмите, чтобы добавить — или попросите ассистента",
-                    modifier = Modifier.padding(top = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 15.sp,
-                )
+        if (!controller.homeLoaded && controller.tasks.isEmpty()) {
+            SkeletonCards()
+        } else if (controller.tasks.isEmpty()) {
+            EmptyState(
+                title = "Задач пока нет",
+                body = "Добавьте первую или попросите ассистента.",
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp, start = 6.dp, end = 6.dp, bottom = 12.dp).appear(4),
+                icon = { CheckIcon(size = 22.dp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            ) {
+                ActionPill("Добавить задачу", filled = true) { controller.taskSheet = true }
             }
         } else {
-            Spacer(Modifier.height(8.dp))
-            val todayIso = isoDate(today)
-            controller.tasks.forEachIndexed { index, task ->
-                val done = if (task.kind == "habit") todayIso in task.checks else task.done
-                Row(
-                    Modifier.appear(4 + index).pressable(role = Role.Checkbox) { controller.toggleTask(task) }
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = 48.dp)
-                        .semantics { stateDescription = if (done) "Выполнено" else "Не выполнено" }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Галочка «выпрыгивает» пружиной, цвет круга перетекает.
-                    val pop by animateFloatAsState(if (done) 1f else 0f, bouncySpring(), label = "check")
-                    val fill by animateColorAsState(
-                        if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                        uiSpring(),
-                        label = "fill",
-                    )
-                    Box(
-                        Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(fill),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CheckIcon(
-                            modifier = Modifier.graphicsLayer {
-                                alpha = pop.coerceIn(0f, 1f)
-                                scaleX = pop
-                                scaleY = pop
-                            },
-                            size = 15.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text(
-                            task.title,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textDecoration = if (done) TextDecoration.LineThrough else null,
-                            color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
-                        )
-                        val kind = when (task.kind) {
-                            "goal" -> "цель"
-                            "habit" -> "привычка"
-                            else -> null
-                        }
-                        if (kind != null) Text(kind, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Box(
-                        Modifier.pressable(role = Role.Button, onClickLabel = "Подробнее") { controller.openedTask = task }.size(44.dp).clip(CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("⋯", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
+            TasksSection(controller, today)
+        }
+    }
+    }
+}
+
+/** Серые заглушки, пока главная впервые грузится: вместо мигания «Задач пока нет». */
+@Composable
+private fun SkeletonCards() {
+    val pulse = rememberInfiniteTransition(label = "skeleton")
+    val alpha by pulse.animateFloat(0.45f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "alpha")
+    Column(Modifier.padding(top = 12.dp).graphicsLayer { this.alpha = alpha }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        repeat(2) {
+            Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface))
         }
     }
 }
@@ -297,10 +273,12 @@ fun HomeScreen(controller: CalendarController) {
 private fun GhostPill(label: String, onClick: () -> Unit) {
     Text(
         label,
-        modifier = Modifier.pressable(role = Role.Button, onClick = onClick)
+        modifier = Modifier.pressable(role = Role.Button, haptic = true, onClick = onClick)
             .clip(RoundedCornerShape(999.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 16.dp, vertical = 12.dp),
+        maxLines = 1,
+        softWrap = false,
         fontSize = 14.sp,
         color = MaterialTheme.colorScheme.onSurface,
     )
@@ -308,7 +286,7 @@ private fun GhostPill(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun DateChip(day: Int, month: String, onClick: () -> Unit) {
-    Box(Modifier.pressable(role = Role.Button, onClickLabel = "Месяц", onClick = onClick).padding(start = 10.dp)) {
+    Box(Modifier.pressable(role = Role.Button, onClickLabel = "Месяц", haptic = true, onClick = onClick).padding(start = 10.dp)) {
         Column(
             Modifier
                 .size(width = 60.dp, height = 62.dp)

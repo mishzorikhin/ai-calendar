@@ -13,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -32,14 +34,17 @@ fun <T> bouncySpring(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.57f, st
 /**
  * Нажатие как `Pressable` на сайте: элемент пружинно сжимается до [scale].
  * Ставьте первым в цепочке — масштабируется всё, что идёт после (фон, обрезка, содержимое).
+ * [haptic] — лёгкий «тик» при нажатии; не включайте там, где обработчик сам вызывает `Haptics`.
  */
 fun Modifier.pressable(
     enabled: Boolean = true,
     onClickLabel: String? = null,
     role: Role? = null,
     scale: Float = 0.97f,
+    haptic: Boolean = false,
     onClick: () -> Unit,
 ): Modifier = composed {
+    val feedback = LocalHapticFeedback.current
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val factor by animateFloatAsState(if (pressed && enabled) scale else 1f, bouncySpring())
@@ -54,7 +59,10 @@ fun Modifier.pressable(
             enabled = enabled,
             onClickLabel = onClickLabel,
             role = role,
-            onClick = onClick,
+            onClick = {
+                if (haptic) feedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                onClick()
+            },
         )
 }
 

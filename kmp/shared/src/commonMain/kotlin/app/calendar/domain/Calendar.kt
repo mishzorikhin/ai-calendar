@@ -166,13 +166,13 @@ fun daysInMonth(year: Int, month: Int): Int = when (month) {
 }
 
 fun badgeLabel(badge: String): String = when (badge) {
-    "sleep" -> "сон"
-    "routine" -> "быт"
-    "work" -> "работа"
-    "food" -> "еда"
-    "sport" -> "спорт"
-    "read" -> "чтение"
-    else -> "дело"
+    "sleep" -> "Сон"
+    "routine" -> "Дело"
+    "work" -> "Работа"
+    "food" -> "Еда"
+    "sport" -> "Спорт"
+    "read" -> "Чтение"
+    else -> "Дело"
 }
 
 fun toolLabel(name: String): String = when (name) {
@@ -188,4 +188,22 @@ fun toolLabel(name: String): String = when (name) {
     "clear_day" -> "Предлагаю освободить день"
     "shift_events" -> "Предлагаю перенести"
     else -> "Думаю"
+}
+
+/** Событие, которое пересекается с окном [start, end), или `null`, если окно свободно. */
+fun conflictWith(events: List<app.calendar.api.Event>, start: Int, end: Int): app.calendar.api.Event? =
+    events.firstOrNull { !it.allDay && it.start < end && it.end > start }
+
+/**
+ * С какого времени предлагать новое событие: ближайшее свободное получасовое окно длиной [length].
+ * Сегодня считаем от [nowMinutes] (округляем вверх до получаса), в другие дни — с 9:00; не позже 22:00.
+ */
+fun suggestStart(events: List<app.calendar.api.Event>, nowMinutes: Int?, length: Int = 60): Int {
+    var t = if (nowMinutes == null) 9 * 60 else ((nowMinutes + 29) / 30) * 30
+    t = t.coerceAtLeast(6 * 60)
+    while (t <= 22 * 60) {
+        if (conflictWith(events, t, t + length) == null) return t
+        t += 30
+    }
+    return if (nowMinutes == null) 9 * 60 else (((nowMinutes + 29) / 30) * 30).coerceIn(0, 22 * 60)
 }

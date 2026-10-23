@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.calendar.CalendarController
@@ -48,8 +49,12 @@ import app.calendar.domain.pluralize
 @Composable
 fun ActionPill(label: String, modifier: Modifier = Modifier, filled: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val haptics = rememberHaptics()
     Box(
-        modifier.pressable(role = Role.Button, onClick = onClick)
+        modifier.pressable(role = Role.Button) {
+                if (danger) haptics.reject() else if (filled) haptics.confirm() else haptics.tick()
+                onClick()
+            }
             .defaultMinSize(minHeight = 48.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (filled) colors.primary else colors.surfaceVariant)
@@ -60,6 +65,7 @@ fun ActionPill(label: String, modifier: Modifier = Modifier, filled: Boolean = f
             label,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
+            maxLines = 2,
             color = when {
                 filled -> colors.onPrimary
                 danger -> colors.error
@@ -109,15 +115,22 @@ private val repeatLabels = mapOf(
 fun EventSheet(controller: CalendarController, opened: OpenedEvent) {
     val event = opened.event
     val editable = !event.readOnly && event.invite == null
-    var editing by rememberSaveable(event.id) { mutableStateOf(false) }
+    var editing by rememberSaveable(event.id) { mutableStateOf(controller.openedEventEdit) }
     var confirmDelete by rememberSaveable(event.id) { mutableStateOf(false) }
     val close = { controller.openedEvent = null }
 
     if (editing && editable) {
         SheetTitle("Изменить событие", onClose = { editing = false })
-        EventEditor(initial = event, submit = "Сохранить") { title, start, end, badge, allDay, notes, extras ->
+        EventEditor(
+            initial = event,
+            date = opened.date,
+            today = controller.today(),
+            nowMinutes = controller.nowMinutes(),
+            eventsFor = controller::eventsKnownFor,
+            submit = "Сохранить",
+        ) { title, start, end, badge, allDay, notes, extras, day ->
             if (!controller.loading) {
-                controller.updateEvent(opened, title, start, end, badge, allDay, notes, extras) { close() }
+                controller.updateEvent(opened, title, start, end, badge, allDay, notes, extras, day) { close() }
             }
         }
         return
@@ -170,7 +183,15 @@ fun EventSheet(controller: CalendarController, opened: OpenedEvent) {
     } else {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionPill("Изменить", filled = true) { editing = true }
-            ActionPill("Удалить", danger = true) { confirmDelete = true }
+            // Обычное событие удаляется сразу с отменой («Вернуть»); у повтора спрашиваем, всю серию или день.
+            ActionPill("Удалить", danger = true) {
+                if (event.repeat.isBlank()) {
+                    controller.deleteEvent(event, opened.date)
+                    close()
+                } else {
+                    confirmDelete = true
+                }
+            }
         }
     }
 }
@@ -181,9 +202,7 @@ fun TaskSheet(controller: CalendarController, task: Task) {
     var title by rememberSaveable(task.id) { mutableStateOf(task.title) }
     var note by rememberSaveable(task.id) { mutableStateOf(task.subtitle) }
     var due by rememberSaveable(task.id) { mutableStateOf(task.due) }
-    var confirmDelete by rememberSaveable(task.id) { mutableStateOf(false) }
-    val dueValid = due.isBlank() || Regex("""\d{4}-\d{2}-\d{2}""").matches(due.trim())
-    val canSave = title.isNotBlank() && dueValid && !controller.loading
+    val canSave = title.isNotBlank() && !controller.loading
     SheetTitle(
         when (task.kind) {
             "goal" -> "Цель"
@@ -195,8 +214,7 @@ fun TaskSheet(controller: CalendarController, task: Task) {
     SheetField(title, { title = it }, "Название")
     SheetField(note, { note = it }, "Заметка — необязательно")
     if (task.kind != "habit") {
-        SheetField(due, { due = it }, "Срок, ГГГГ-ММ-ДД — необязательно")
-        if (!dueValid) Text("Дата в виде 2026-12-31", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+        DueField(due) { due = it }
     }
     var guest by rememberSaveable(task.id) { mutableStateOf("") }
     Caption("Вместе")
@@ -225,12 +243,7 @@ fun TaskSheet(controller: CalendarController, task: Task) {
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ActionPill("Сохранить", filled = canSave) { if (canSave) controller.updateTask(task, title, note, due) }
-        if (confirmDelete) {
-            ActionPill(if (task.role == "member") "Выйти" else "Удалить", danger = true) { controller.deleteTask(task) }
-            ActionPill("Оставить") { confirmDelete = false }
-        } else {
-            ActionPill(if (task.role == "member") "Выйти из задачи" else "Удалить", danger = true) { confirmDelete = true }
-        }
+        ActionPill(if (task.role == "member") "Выйти из задачи" else "Удалить", danger = true) { controller.deleteTask(task) }
     }
 }
 
@@ -240,7 +253,7 @@ fun SearchSheet(controller: CalendarController) {
     var query by rememberSaveable { mutableStateOf("") }
     val result = controller.searchResult
     SheetTitle("Поиск", onClose = controller::closeSearch)
-    SheetField(query, { query = it; controller.search(it) }, "Событие или задача")
+    SheetField(query, { query = it; controller.search(it) }, "Событие или задача", autoFocus = true, last = true)
     when {
         query.isBlank() -> Caption("Начните вводить — найдём среди событий и задач")
         result == null -> Caption("Ищем…")
@@ -295,7 +308,7 @@ private fun MenuRow(title: String, sub: String, icon: @Composable (Color) -> Uni
         ) { icon(MaterialTheme.colorScheme.onSurface) }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-            if (sub.isNotBlank()) Text(sub, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            if (sub.isNotBlank()) Text(sub, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         ChevronRightIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -378,28 +391,39 @@ fun AccountSheet(controller: CalendarController) {
     }
 
     Caption("Оформление")
-    Row(
+    val themeBounds = rememberKnobBounds()
+    val haptics = rememberHaptics()
+    val themes = listOf("system" to "Как в системе", "light" to "Светлое", "dark" to "Тёмное")
+    Box(
         Modifier
             .fillMaxWidth()
+            .then(themeBounds.container())
             .clip(RoundedCornerShape(999.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(4.dp),
+            .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        listOf("system" to "Как в системе", "light" to "Светлое", "dark" to "Тёмное").forEach { (mode, label) ->
-            val on = controller.themeMode == mode
-            Box(
-                Modifier.pressable(role = Role.RadioButton) { controller.setTheme(mode) }
-                    .weight(1f)
-                    .defaultMinSize(minHeight = 44.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    fontSize = 14.sp,
-                    color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        SlidingKnob(themeBounds, themes.indexOfFirst { it.first == controller.themeMode }.coerceAtLeast(0), MaterialTheme.colorScheme.surface, RoundedCornerShape(999.dp))
+        Row(Modifier.fillMaxWidth().padding(4.dp)) {
+            themes.forEachIndexed { index, (mode, label) ->
+                val on = controller.themeMode == mode
+                Box(
+                    Modifier.then(themeBounds.item(index))
+                        .pressable(role = Role.RadioButton) {
+                            if (!on) haptics.tick()
+                            controller.setTheme(mode)
+                        }
+                        .weight(if (mode == "system") 1.35f else 1f)
+                        .defaultMinSize(minHeight = 44.dp)
+                        .clip(RoundedCornerShape(999.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -506,7 +530,7 @@ fun SecuritySheet(controller: CalendarController) {
         }
     }
     if (controller.sessions.any { !it.current }) {
-        ActionPill("Выйти на всех остальных устройствах") { controller.logoutOthers() }
+        ActionPill("Выйти на всех остальных устройствах", Modifier.fillMaxWidth()) { controller.logoutOthers() }
     }
 
     Caption("Мои данные")

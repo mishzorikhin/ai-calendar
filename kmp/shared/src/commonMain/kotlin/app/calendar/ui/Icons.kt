@@ -123,6 +123,26 @@ fun CheckIcon(modifier: Modifier = Modifier, size: Dp = 16.dp, color: Color = Co
     StrokeIcon(listOf("m5.5 12.5 4 4 9-9"), modifier, size, color)
 
 @Composable
+fun TimelineIcon(modifier: Modifier = Modifier, size: Dp = 16.dp, color: Color = Color.Unspecified) =
+    StrokeIcon(emptyList(), modifier, size, color, rects = listOf(RectStroke(5f, 4f, 14f, 6f, 2f), RectStroke(5f, 14f, 14f, 6f, 2f)))
+
+@Composable
+fun AgendaIcon(modifier: Modifier = Modifier, size: Dp = 16.dp, color: Color = Color.Unspecified) =
+    StrokeIcon(listOf("M17.5 8.5v7M20.5 10v4"), modifier, size, color, rects = listOf(RectStroke(3.5f, 5.5f, 10f, 13f, 2.5f)))
+
+@Composable
+fun EyeIcon(modifier: Modifier = Modifier, size: Dp = 20.dp, color: Color = Color.Unspecified, crossed: Boolean = false) =
+    StrokeIcon(
+        listOfNotNull("M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z", "M4.5 4.5l15 15".takeIf { crossed }),
+        modifier, size, color,
+        circles = if (crossed) emptyList() else listOf(Triple(12f, 12f, 3f)),
+    )
+
+@Composable
+fun ArrowUpIcon(modifier: Modifier = Modifier, size: Dp = 18.dp, color: Color = Color.Unspecified) =
+    StrokeIcon(listOf("M12 19V5.5M5.5 11.5 12 5l6.5 6.5"), modifier, size, color)
+
+@Composable
 fun BackIcon(modifier: Modifier = Modifier, size: Dp = 16.dp, color: Color = Color.Unspecified) =
     StrokeIcon(listOf("M14.5 5.5 8 12l6.5 6.5"), modifier, size, color)
 
@@ -201,6 +221,10 @@ fun VideoIcon(modifier: Modifier = Modifier, size: Dp = 12.dp, color: Color = Co
 @Composable
 fun LockIcon(modifier: Modifier = Modifier, size: Dp = 20.dp, color: Color = Color.Unspecified) =
     StrokeIcon(listOf("M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"), modifier, size, color, rects = listOf(RectStroke(5.5f, 10.5f, 13f, 9.5f, 2.5f)))
+
+@Composable
+fun FlameIcon(modifier: Modifier = Modifier, size: Dp = 16.dp, color: Color = Color.Unspecified) =
+    StrokeIcon(listOf("M12 20.5a6 6 0 0 0 6-6c0-3.5-2.5-5.5-3.5-8.5-1.5 2-2 3.5-2.5 5-1-1-1.5-2-1.5-3.5C8 9.5 6 12 6 14.5a6 6 0 0 0 6 6Z"), modifier, size, color)
 
 /** Значок вида события: как `BADGE_ICON` на сайте. */
 @Composable

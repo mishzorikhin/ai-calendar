@@ -37,6 +37,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -70,6 +73,9 @@ import app.calendar.domain.weekdayShort
 import kotlin.math.abs
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlin.time.Clock
 import kotlinx.datetime.plus
 
 @Composable
@@ -96,8 +102,10 @@ fun MonthScreen(controller: CalendarController) {
     }
     val motion = spring<IntOffset>(dampingRatio = 0.98f, stiffness = 420f)
     val fade = spring<Float>(dampingRatio = 0.98f, stiffness = 420f)
+    val haptics = rememberHaptics()
     fun go(delta: Int) {
         if (delta == 0) return
+        haptics.tick()
         dir = delta
         finger = 0f
         suppressClick = false
@@ -255,7 +263,7 @@ fun MonthScreen(controller: CalendarController) {
                         today = today,
                         picked = picked,
                         dots = dotCache[key].orEmpty(),
-                        onPick = { day -> if (!suppressClick) pickedDay = day },
+                        onPick = { day -> if (!suppressClick) { if (day != pickedDay) haptics.tick(); pickedDay = day } },
                         modifier = Modifier.graphicsLayer {
                             translationX = if (page == cursor) finger * 0.18f else 0f
                         },
@@ -263,7 +271,11 @@ fun MonthScreen(controller: CalendarController) {
                 }
             }
         }
-        val headline = controller.dayEvents.minByOrNull { it.start }
+        // Для сегодняшнего дня — ближайшее не закончившееся событие, как «Далее» на главной.
+        val nowMinutes = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).let { it.hour * 60 + it.minute }
+        val timedToday = controller.dayEvents.filter { !it.allDay }
+        val headline = (if (picked == today) timedToday.filter { it.end > nowMinutes } else timedToday).minByOrNull { it.start }
+            ?: controller.dayEvents.minByOrNull { it.start }
         Column(
             Modifier.appear(2).pressable(role = Role.Button) { controller.open(Screen.Day(picked)) }
                 .padding(top = 12.dp)
@@ -272,12 +284,20 @@ fun MonthScreen(controller: CalendarController) {
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(18.dp),
         ) {
-            Text(picked.dayOfMonth.toString(), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Сегодня · ${monthGenitive(picked)}".takeIf { picked == today } ?: monthGenitive(picked),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(picked.dayOfMonth.toString(), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Сегодня · ${monthGenitive(picked)}".takeIf { picked == today } ?: monthGenitive(picked),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                    )
+                }
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) { ArrowRightIcon(size = 16.dp, color = MaterialTheme.colorScheme.onSurface) }
+            }
             Text(headline?.title ?: "Свободный день", modifier = Modifier.padding(top = 8.dp), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 if (headline == null) "Нет событий" else "в ${formatMinutes(headline.start)} · ${pluralize(controller.dayEvents.size, "событие", "события", "событий")}",
@@ -304,8 +324,14 @@ private fun MonthDays(
                     val day = week.getOrNull(index)
                     val selected = day != null && day == picked.dayOfMonth && picked.monthNumber == page.monthNumber && picked.year == page.year
                     val isToday = day != null && today.year == page.year && today.monthNumber == page.monthNumber && today.dayOfMonth == day
+                    val count = day?.let { dots[it].orEmpty().size } ?: 0
+                    val description = day?.let {
+                        "$it ${monthGenitive(page)}" + if (count > 0) ", ${pluralize(count, "событие", "события", "событий")}" else ", нет событий"
+                    }
                     Box(
-                        Modifier.pressable(enabled = day != null, role = Role.Button) { if (day != null) onPick(day) }.weight(1f).height(52.dp),
+                        Modifier.pressable(enabled = day != null, role = Role.Button) { if (day != null) onPick(day) }
+                            .semantics { if (description != null) { contentDescription = description; this.selected = selected } }
+                            .weight(1f).height(52.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (day != null) {
@@ -324,15 +350,16 @@ private fun MonthDays(
                                         day.toString(),
                                         color = when {
                                             isToday -> MaterialTheme.colorScheme.onPrimary
-                                            index >= 5 -> weekendColor(platformInDarkTheme())
                                             else -> MaterialTheme.colorScheme.onSurface
                                         },
                                     )
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    dots[day].orEmpty().distinct().take(3).forEach { badge ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    dots[day].orEmpty().distinct().take(2).forEach { badge ->
                                         Box(Modifier.size(5.dp).clip(CircleShape).background(badgeColor(badge)))
                                     }
+                                    // Как на сайте: рядом с точками число событий дня.
+                                    if (count > 1) Text(count.toString(), fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }

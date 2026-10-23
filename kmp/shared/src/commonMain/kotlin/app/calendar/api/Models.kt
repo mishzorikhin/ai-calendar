@@ -50,6 +50,7 @@ data class Event(
  * [reminderTouched] отделяет «напоминание по умолчанию» (reminder = null) от «не менять».
  */
 data class EventExtras(
+    val subtitle: String? = null,
     val repeat: String? = null,
     val attendees: List<String>? = null,
     val url: String? = null,
