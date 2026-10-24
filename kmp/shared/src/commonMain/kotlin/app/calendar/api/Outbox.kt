@@ -1,6 +1,7 @@
 package app.calendar.api
 
 import app.calendar.Settings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -39,7 +40,7 @@ data class PendingOp(
     val dedupePath: String? = null,
     val dedupeMatch: List<String> = emptyList(),
     val at: Long = 0,
-    /** id пользователя, чья это правка: повтор идёт только от его имени. */
+    /** Адрес сервера + id пользователя: повтор идёт только от этого владельца. */
     val owner: String? = null,
     /** Правку нельзя склеивать с другими: «убрать день из серии» и перенос вхождения зависят от своих полей. */
     val separate: Boolean = false,
@@ -84,6 +85,7 @@ private const val MAX_IDS = 200
 
 class Outbox(private val settings: Settings) {
     private var state: OutboxState = load()
+    private var ownerRevision = 0L
     private var inFlight: Long? = null
     private val running = Mutex()
 
@@ -126,6 +128,14 @@ class Outbox(private val settings: Settings) {
      */
     suspend fun flush(sender: OutboxSender, userId: String?): FlushResult {
         if (!running.tryLock()) return FlushResult(0, 0, size)
+        val revision = ownerRevision
+        val guardedSender = OutboxSender { method, path, body ->
+            fun checkOwner() {
+                if (revision != ownerRevision) throw CancellationException("Владелец очереди изменился")
+            }
+            checkOwner()
+            sender.send(method, path, body).also { checkOwner() }
+        }
         var synced = 0
         var dropped = 0
         try {
@@ -134,7 +144,7 @@ class Outbox(private val settings: Settings) {
                 if (userId != null && (op.owner ?: state.owner) != userId) break
                 inFlight = op.seq
                 val outcome = try {
-                    replay(op, sender)
+                    replay(op, guardedSender)
                 } finally {
                     inFlight = null
                 }
@@ -155,13 +165,17 @@ class Outbox(private val settings: Settings) {
      */
     fun setOwner(userId: String, adopt: Boolean = false): Boolean {
         if (state.owner == userId) return false
+        ownerRevision++
         val keep = state.owner == null && adopt
         commit(if (keep) state.copy(owner = userId) else OutboxState(owner = userId, seq = state.seq))
         return !keep
     }
 
     /** Стереть всё: операции, привязки id и владельца (удаление аккаунта). */
-    fun wipe() = commit(OutboxState(seq = state.seq))
+    fun wipe() {
+        ownerRevision++
+        commit(OutboxState(seq = state.seq))
+    }
 
     private suspend fun replay(op: PendingOp, sender: OutboxSender): Outcome {
         if (op.action == "create") {

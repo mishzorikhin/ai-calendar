@@ -44,6 +44,12 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
@@ -64,12 +70,17 @@ sealed interface Screen {
     data class Day(val date: LocalDate) : Screen
 }
 
-class CalendarController(private val scope: CoroutineScope) {
-    private val settings = platformSettings()
+class CalendarController(
+    parentScope: CoroutineScope,
+    private val settings: Settings = platformSettings(),
+    http: HttpClient = createHttpClient(),
+) {
+    private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
+    private var sessionRevision = 0L
     private val session = SessionStore(settings)
     private val outbox = Outbox(settings)
     private val cache = ReadCache(settings)
-    private val api = CalendarApi(createHttpClient(), session, outbox, cache)
+    private val api = CalendarApi(http, session, outbox, cache)
 
     var user by mutableStateOf<User?>(null)
     /** Последний запрос не достучался до сервера: экран показывает сохранённые данные. */
@@ -195,7 +206,7 @@ class CalendarController(private val scope: CoroutineScope) {
     /** Чьё это устройство: чужие неотправленные правки не должны уйти в другой аккаунт. */
     private fun adoptOwner(adopt: Boolean) {
         val id = user?.id?.toString() ?: return
-        if (outbox.setOwner(id, adopt)) cache.clear()
+        if (outbox.setOwner(session.ownerKey(id), adopt)) cache.clear()
     }
 
     fun today(): LocalDate = Clock.System.todayIn(TimeZone.currentSystemDefault())
@@ -304,19 +315,24 @@ class CalendarController(private val scope: CoroutineScope) {
     fun refreshHome() {
         if (refreshing) return
         refreshing = true
+        val revision = sessionRevision
         scope.launch {
             try {
                 guard { loadHome() }
             } finally {
-                refreshing = false
+                if (revision == sessionRevision) refreshing = false
             }
         }
     }
 
     private suspend fun loadHome() {
-        todayEvents = api.events(isoDate(today()))
-        tasks = api.tasks()
-        suggestions = runCatching { api.suggestions() }.getOrDefault(suggestions)
+        val events = api.events(isoDate(today()))
+        val loadedTasks = api.tasks()
+        val loadedSuggestions = runCatching { api.suggestions() }.getOrDefault(suggestions)
+        currentCoroutineContext().ensureActive()
+        todayEvents = events
+        tasks = loadedTasks
+        suggestions = loadedSuggestions
         homeLoaded = true
     }
 
@@ -326,6 +342,11 @@ class CalendarController(private val scope: CoroutineScope) {
             error = URL_HINT
             return
         }
+        cancelSessionWork()
+        session.clear()
+        cache.clear()
+        user = null
+        resetData()
         session.apiUrl = url
         serverUrl = url
         scope.launch {
@@ -344,7 +365,14 @@ class CalendarController(private val scope: CoroutineScope) {
             error = URL_HINT
             return
         }
-        session.apiUrl = url
+        if (session.apiUrl != url) {
+            cancelSessionWork()
+            session.clear()
+            cache.clear()
+            user = null
+            resetData()
+            session.apiUrl = url
+        }
         serverUrl = url
         scope.launch {
             guard {
@@ -357,6 +385,7 @@ class CalendarController(private val scope: CoroutineScope) {
     fun logout() {
         flushPending()
         scope.launch {
+            deletionJobs.toList().joinAll()
             api.logout()
             dropSession()
         }
@@ -426,6 +455,14 @@ class CalendarController(private val scope: CoroutineScope) {
         )
     }
 
+    private val deletionJobs = mutableSetOf<Job>()
+
+    private fun launchDeletion(commit: suspend () -> Unit) {
+        val job = scope.launch { guard { commit() } }
+        deletionJobs += job
+        job.invokeOnCompletion { deletionJobs -= job }
+    }
+
     private var pendingJob: Job? = null
     private var pendingCommit: (suspend () -> Unit)? = null
 
@@ -435,7 +472,7 @@ class CalendarController(private val scope: CoroutineScope) {
         pendingJob?.cancel()
         pendingJob = null
         pendingCommit = null
-        if (commit != null) scope.launch { guard { commit() } }
+        if (commit != null) launchDeletion(commit)
     }
 
     /**
@@ -449,7 +486,7 @@ class CalendarController(private val scope: CoroutineScope) {
             delay(UNDO_MILLIS)
             pendingJob = null
             pendingCommit = null
-            guard { commit() }
+            launchDeletion(commit)
         }
         pendingJob = job
         pendingCommit = commit
@@ -495,6 +532,7 @@ class CalendarController(private val scope: CoroutineScope) {
         val clean = text.trim()
         if (clean.isEmpty() || sending) return
         scope.launch {
+            val revision = sessionRevision
             sending = true
             toolStatus = ""
             memoryNote = ""
@@ -530,8 +568,10 @@ class CalendarController(private val scope: CoroutineScope) {
                     if (accepted) runCatching { api.messages() }.onSuccess { messages = it }
                 }
             } finally {
-                sending = false
-                toolStatus = ""
+                if (revision == sessionRevision) {
+                    sending = false
+                    toolStatus = ""
+                }
             }
         }
     }
@@ -584,6 +624,7 @@ class CalendarController(private val scope: CoroutineScope) {
                 })
                 refreshDay(opened.date)
                 if (date != opened.date && date == today()) todayEvents = api.events(isoDate(today()))
+                formDirty = false
                 onDone()
             }
         }
@@ -619,6 +660,7 @@ class CalendarController(private val scope: CoroutineScope) {
                     put("due", due.trim())
                 })
                 tasks = api.tasks()
+                formDirty = false
                 openedTask = null
             }
         }
@@ -1118,7 +1160,20 @@ class CalendarController(private val scope: CoroutineScope) {
         testSent = null
     }
 
+    private fun cancelSessionWork() {
+        sessionRevision++
+        scope.coroutineContext.cancelChildren()
+        inflight = 0
+        loading = false
+        refreshing = false
+        sending = false
+        booting = false
+        deletionJobs.clear()
+    }
+
     private fun dropSession() {
+        cancelSessionWork()
+        session.clear()
         // Закэшированные ответы личные — на устройстве они не остаются. Очередь остаётся: тот же человек доиграет её.
         cache.clear()
         user = null
@@ -1127,6 +1182,7 @@ class CalendarController(private val scope: CoroutineScope) {
     }
 
     private suspend fun guard(retry: (() -> Unit)? = null, block: suspend () -> Unit) {
+        val revision = sessionRevision
         inflight++
         loading = true
         try {
@@ -1134,14 +1190,18 @@ class CalendarController(private val scope: CoroutineScope) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            currentCoroutineContext().ensureActive()
+            if (revision != sessionRevision) return
             if (session.token == null) {
                 dropSession()
             }
             error = e.message ?: "Что-то пошло не так"
             errorRetry = retry
         } finally {
-            inflight--
-            loading = inflight > 0
+            if (revision == sessionRevision) {
+                inflight--
+                loading = inflight > 0
+            }
         }
     }
 }

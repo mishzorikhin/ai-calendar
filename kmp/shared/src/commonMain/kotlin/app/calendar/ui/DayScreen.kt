@@ -615,7 +615,15 @@ fun EventEditor(
             start = suggestStart(busy(day), nowMinutes.takeIf { day == today }, length)
         }
     }
-    val dirty = initial == null && (title.isNotBlank() || place.isNotBlank() || notes.isNotBlank() || guests.isNotBlank() || url.isNotBlank())
+    val dirty = if (initial == null) {
+        title.isNotBlank() || place.isNotBlank() || notes.isNotBlank() || guests.isNotBlank() || url.isNotBlank()
+    } else {
+        title != initial.title || place != initial.subtitle || notes != initial.notes ||
+            guests != initial.attendees.joinToString(" ") { "@${it.username}" } || url != initial.url ||
+            dayIso != isoDate(date) || badge != initial.badge || allDay != initial.allDay ||
+            repeat != initial.repeat || reminder != initial.reminders?.let { it.firstOrNull() ?: -1 } ||
+            (!allDay && (start != initial.start || length != initial.end - initial.start))
+    }
     LaunchedEffect(dirty) { onDirtyChange(dirty) }
     DisposableEffect(Unit) { onDispose { onDirtyChange(false) } }
     // Нестандартные время и длительность из события не теряются: добавляем их в список выбора.

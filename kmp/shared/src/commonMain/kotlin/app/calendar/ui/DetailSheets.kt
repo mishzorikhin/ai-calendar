@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -117,10 +119,10 @@ fun EventSheet(controller: CalendarController, opened: OpenedEvent) {
     val editable = !event.readOnly && event.invite == null
     var editing by rememberSaveable(event.id) { mutableStateOf(controller.openedEventEdit) }
     var confirmDelete by rememberSaveable(event.id) { mutableStateOf(false) }
-    val close = { controller.openedEvent = null }
+    val close = { controller.closeForm { controller.openedEvent = null } }
 
     if (editing && editable) {
-        SheetTitle("Изменить событие", onClose = { editing = false })
+        SheetTitle("Изменить событие", onClose = { controller.closeForm { editing = false } })
         EventEditor(
             initial = event,
             date = opened.date,
@@ -128,6 +130,7 @@ fun EventSheet(controller: CalendarController, opened: OpenedEvent) {
             nowMinutes = controller.nowMinutes(),
             eventsFor = controller::eventsKnownFor,
             submit = "Сохранить",
+            onDirtyChange = { controller.formDirty = it },
         ) { title, start, end, badge, allDay, notes, extras, day ->
             if (!controller.loading) {
                 controller.updateEvent(opened, title, start, end, badge, allDay, notes, extras, day) { close() }
@@ -209,7 +212,7 @@ fun TaskSheet(controller: CalendarController, task: Task) {
             "habit" -> "Привычка"
             else -> "Задача"
         },
-        onClose = { controller.openedTask = null },
+        onClose = { controller.closeForm { controller.openedTask = null } },
     )
     SheetField(title, { title = it }, "Название")
     SheetField(note, { note = it }, "Заметка — необязательно")
@@ -217,6 +220,9 @@ fun TaskSheet(controller: CalendarController, task: Task) {
         DueField(due) { due = it }
     }
     var guest by rememberSaveable(task.id) { mutableStateOf("") }
+    val dirty = title != task.title || note != task.subtitle || due != task.due || guest.isNotBlank()
+    LaunchedEffect(dirty) { controller.formDirty = dirty }
+    DisposableEffect(task.id) { onDispose { controller.formDirty = false } }
     Caption("Вместе")
     task.owner?.let { Text("${it.name.ifBlank { it.username }} · владелец", fontSize = 14.sp) }
     task.members.forEach { member ->

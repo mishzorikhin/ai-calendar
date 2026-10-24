@@ -159,6 +159,7 @@ fun AppSheet(
     visible: Boolean,
     onClose: () -> Unit,
     chrome: SheetChrome = SheetChrome.Form,
+    closeBlocked: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val dark = platformInDarkTheme()
@@ -196,6 +197,10 @@ fun AppSheet(
             // Не дотянули до порога — шторка плавно возвращается; при закрытии смещение не трогаем, иначе она подпрыгнет.
             val settle: () -> Unit = {
                 scope.launch { animate(drag, 0f, animationSpec = uiSpring()) { value, _ -> drag = value } }
+            }
+            // Закрытие остановлено вопросом «Отбросить?»: вернуть шторку на место, сохранив её содержимое.
+            LaunchedEffect(closeBlocked) {
+                if (closeBlocked) animate(drag, 0f, animationSpec = uiSpring()) { value, _ -> drag = value }
             }
             var armed by remember { mutableStateOf(false) }
             LaunchedEffect(drag > 140f) {

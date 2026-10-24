@@ -164,8 +164,8 @@ private fun Shell(controller: CalendarController) {
         when {
             controller.discardAction != null -> controller.keepEditing()
             controller.composerDate != null -> controller.closeForm { controller.composerDate = null }
-            controller.openedEvent != null -> controller.openedEvent = null
-            controller.openedTask != null -> controller.openedTask = null
+            controller.openedEvent != null -> controller.closeForm { controller.openedEvent = null }
+            controller.openedTask != null -> controller.closeForm { controller.openedTask = null }
             controller.searchSheet -> controller.closeSearch()
             controller.remindersSheet -> controller.remindersSheet = false
             controller.securitySheet -> controller.securitySheet = false
@@ -251,7 +251,11 @@ private fun Shell(controller: CalendarController) {
             }
         }
         val composing = controller.composerDate
-        AppSheet(visible = composing != null, onClose = { controller.closeForm { controller.composerDate = null } }) {
+        AppSheet(
+            visible = composing != null,
+            onClose = { controller.closeForm { controller.composerDate = null } },
+            closeBlocked = controller.discardAction != null,
+        ) {
             Text(
                 "Новое событие",
                 fontSize = 24.sp,
@@ -287,7 +291,11 @@ private fun Shell(controller: CalendarController) {
                 }
             }
         }
-        AppSheet(visible = controller.taskSheet, onClose = { controller.closeForm { controller.taskSheet = false } }) {
+        AppSheet(
+            visible = controller.taskSheet,
+            onClose = { controller.closeForm { controller.taskSheet = false } },
+            closeBlocked = controller.discardAction != null,
+        ) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             TaskForm(
                 onClose = { controller.closeForm { controller.taskSheet = false } },
@@ -297,12 +305,20 @@ private fun Shell(controller: CalendarController) {
             )
         }
         val openedEvent = controller.openedEvent
-        AppSheet(visible = openedEvent != null, onClose = { controller.openedEvent = null }) {
+        AppSheet(
+            visible = openedEvent != null,
+            onClose = { controller.closeForm { controller.openedEvent = null } },
+            closeBlocked = controller.discardAction != null,
+        ) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             if (openedEvent != null) EventSheet(controller, openedEvent)
         }
         val openedTask = controller.openedTask
-        AppSheet(visible = openedTask != null, onClose = { controller.openedTask = null }) {
+        AppSheet(
+            visible = openedTask != null,
+            onClose = { controller.closeForm { controller.openedTask = null } },
+            closeBlocked = controller.discardAction != null,
+        ) {
             ErrorBanner(controller.error, onDismiss = controller::dismissError)
             if (openedTask != null) TaskSheet(controller, openedTask)
         }

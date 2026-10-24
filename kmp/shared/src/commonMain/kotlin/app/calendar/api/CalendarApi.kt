@@ -2,6 +2,9 @@ package app.calendar.api
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
+import app.calendar.SessionSnapshot
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import app.calendar.SessionStore
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
@@ -39,9 +42,9 @@ class CalendarApi(
     var onConnection: (Boolean) -> Unit = {}
     private var online = true
 
-    private val sender = OutboxSender { method, path, body ->
+    private fun sender(snapshot: SessionSnapshot) = OutboxSender { method, path, body ->
         try {
-            val text = request(HttpMethod.parse(method), path, body)
+            val text = request(HttpMethod.parse(method), path, body, snapshot)
             SendResult.Ok(text.takeIf { it.isNotBlank() }?.let { apiJson.parseToJsonElement(it) })
         } catch (e: ApiException) {
             when {
@@ -54,7 +57,12 @@ class CalendarApi(
     }
 
     /** Повторяет очередь неотправленных изменений. Итог — что-то реально уехало или выброшено (надо обновить экран). */
-    suspend fun flushOutbox(): FlushResult = outbox.flush(sender, session.loadUser()?.id?.toString())
+    suspend fun flushOutbox(): FlushResult {
+        val snapshot = session.snapshot()
+        val user = session.loadUser() ?: return FlushResult(0, 0, outbox.size)
+        if (snapshot.token == null) return FlushResult(0, 0, outbox.size)
+        return outbox.flush(sender(snapshot), session.ownerKey(user.id.toString()))
+    }
 
     /**
      * Мутация с офлайн-очередью. Если очередь пуста, запрос идёт сразу; при обрыве сети (или если впереди уже есть
@@ -73,6 +81,7 @@ class CalendarApi(
         send: suspend (path: String) -> T,
         local: (id: String) -> T,
     ): T {
+        val snapshot = session.snapshot()
         val temp = if (action == "create") newTempId() else null
         val entityId = temp ?: id.orEmpty()
         val real = if (temp == null) outbox.resolveId(entityId) else entityId
@@ -86,6 +95,7 @@ class CalendarApi(
                 unreachable = true
             }
         }
+        session.ensureCurrent(snapshot)
         outbox.enqueue(
             PendingOp(
                 entity = entity,
@@ -117,7 +127,16 @@ class CalendarApi(
         auth("/api/auth/register", username, password, name.ifBlank { null })
 
     suspend fun logout() {
-        runCatching { request(HttpMethod.Post, "/api/auth/logout", buildJsonObject { }) }
+        val snapshot = session.snapshot()
+        try {
+            request(HttpMethod.Post, "/api/auth/logout", buildJsonObject { })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ApiException) {
+            // 401 уже снял именно эту сессию. Остальные ошибки не мешают локальному выходу.
+            if (e.status == 401) return
+        }
+        session.ensureCurrent(snapshot)
         session.clear()
     }
 
@@ -420,45 +439,61 @@ class CalendarApi(
      * ошибка после этого — обрыв ответа, а не «не отправилось».
      */
     suspend fun sendChat(text: String, onFrame: (ChatFrame) -> Unit) {
+        val snapshot = session.snapshot()
+        currentCoroutineContext().ensureActive()
         val payload = apiJson.encodeToString(buildJsonObject { put("text", text) })
         try {
             http.prepareRequest {
                 method = HttpMethod.Post
-                url(session.apiUrl + "/api/chat")
+                url(snapshot.apiUrl + "/api/chat")
                 contentType(ContentType.Application.Json)
-                session.token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                snapshot.token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
                 setBody(payload)
                 timeout {
                     requestTimeoutMillis = 120_000
                     socketTimeoutMillis = 120_000
                 }
             }.execute { response ->
+                session.ensureCurrent(snapshot)
                 if (response.status == HttpStatusCode.Unauthorized) {
-                    session.clear()
                     throw ApiException(401, "Нужно войти снова")
                 }
                 if (!response.status.isSuccess()) {
                     throw ApiException(response.status.value, errorText(response.bodyAsText(), response.status.value))
                 }
+                var done = false
+                fun emit(raw: String) {
+                    if (done) return
+                    session.ensureCurrent(snapshot)
+                    parseChatFrame(raw)?.let { frame ->
+                        if (frame == ChatFrame.Done) done = true
+                        onFrame(frame)
+                    }
+                }
                 onFrame(ChatFrame.Opened)
                 val channel = response.bodyAsChannel()
                 val pending = StringBuilder()
-                while (true) {
+                while (!done) {
                     val line = channel.readUTF8Line() ?: break
                     pending.append(line).append('\n')
                     val (events, rest) = consumeSse(pending.toString())
                     pending.clear()
                     pending.append(rest)
-                    events.forEach { raw -> parseChatFrame(raw)?.let(onFrame) }
+                    events.forEach(::emit)
                 }
                 val (tail, _) = consumeSse(pending.toString() + "\n\n")
-                tail.forEach { raw -> parseChatFrame(raw)?.let(onFrame) }
+                tail.forEach(::emit)
+                session.ensureCurrent(snapshot)
+                if (!done) throw ApiException(0, "Ответ оборвался")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
+            session.ensureCurrent(snapshot)
+            if (e.status == 401) session.clear()
             throw e
         } catch (e: Throwable) {
+            session.ensureCurrent(snapshot)
             // В вебе (Wasm) сбой fetch приходит как kotlin.Error, а не Exception — ловим и его, иначе он уйдёт мимо баннера.
             throw ApiException(0, e.message ?: "Нет соединения с сервером")
         }
@@ -473,7 +508,16 @@ class CalendarApi(
         val sessionBody: SessionResponse = decode(request(HttpMethod.Post, path, body))
         session.token = sessionBody.token
         session.saveUser(sessionBody.user)
-        runCatching { setTimeZone(TimeZone.currentSystemDefault().id) }
+        val authenticated = session.snapshot()
+        try {
+            setTimeZone(TimeZone.currentSystemDefault().id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ApiException) {
+            if (e.status == 401) throw e
+        }
+        currentCoroutineContext().ensureActive()
+        session.ensureCurrent(authenticated)
         return sessionBody.user
     }
 
@@ -500,36 +544,46 @@ class CalendarApi(
         onConnection(value)
     }
 
-    private suspend fun request(method: HttpMethod, path: String, body: JsonObject?): String {
+    private suspend fun request(
+        method: HttpMethod,
+        path: String,
+        body: JsonObject?,
+        snapshot: SessionSnapshot = session.snapshot(),
+    ): String {
+        currentCoroutineContext().ensureActive()
+        session.ensureCurrent(snapshot)
         try {
             val result = http.prepareRequest {
                 this.method = method
-                url(session.apiUrl + path)
-                session.token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                url(snapshot.apiUrl + path)
+                snapshot.token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
                 if (body != null) {
                     contentType(ContentType.Application.Json)
                     setBody(apiJson.encodeToString(body))
                 }
             }.execute { response ->
                 val text = response.bodyAsText()
-                if (response.status == HttpStatusCode.Unauthorized && session.token != null) {
-                    session.clear()
-                    throw ApiException(401, errorText(text, 401))
-                }
+                session.ensureCurrent(snapshot)
+                currentCoroutineContext().ensureActive()
                 if (!response.status.isSuccess()) {
                     throw ApiException(response.status.value, errorText(text, response.status.value))
                 }
                 text
             }
+            session.ensureCurrent(snapshot)
             reachable(true)
             return result
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
+            session.ensureCurrent(snapshot)
             // Сервер ответил (пусть и ошибкой) — сеть есть.
             reachable(true)
+            if (e.status == 401) session.clear()
             throw e
         } catch (e: Throwable) {
+            session.ensureCurrent(snapshot)
+            currentCoroutineContext().ensureActive()
             // См. выше: в вебе сетевой сбой — kotlin.Error.
             reachable(false)
             throw ApiException(0, "Нет соединения с сервером")

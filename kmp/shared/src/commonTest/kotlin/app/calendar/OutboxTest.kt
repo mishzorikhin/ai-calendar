@@ -10,6 +10,10 @@ import app.calendar.api.isTempId
 import app.calendar.api.mergeDots
 import app.calendar.api.mergeEvents
 import app.calendar.api.mergeTasks
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -181,6 +185,31 @@ class OutboxTest {
         // Вошёл другой человек — чужое стирается.
         assertTrue(first.setOwner("2"))
         assertEquals(0, first.size)
+    }
+
+    @Test
+    fun changingOwnerDuringReplayCannotWriteIdsIntoNewQueue() = runTest {
+        val outbox = Outbox(MemorySettings())
+        outbox.setOwner("https://first.example#1")
+        outbox.enqueue(createEvent("offline-1"))
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val replay = async {
+            outbox.flush(OutboxSender { method, _, _ ->
+                if (method == "GET") SendResult.Ok(JsonArray(emptyList())) else {
+                    started.complete(Unit)
+                    release.await()
+                    ok("old-server-id")
+                }
+            }, "https://first.example#1")
+        }
+        started.await()
+        outbox.setOwner("https://second.example#1")
+        outbox.enqueue(createEvent("offline-new", title = "Новая задача"))
+        release.complete(Unit)
+        assertFailsWith<CancellationException> { replay.await() }
+        assertEquals("offline-1", outbox.resolveId("offline-1"))
+        assertEquals("offline-new", outbox.ops.single().tempId)
     }
 
     @Test
