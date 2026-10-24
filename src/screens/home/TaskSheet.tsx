@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { apiErrorText } from '../../api/api'
 import { useApi } from '../../api/provider'
-import { useCreateTask, useTaskMembers, useUpdateTask, useUserSearch } from '../../api/queries'
+import { useCreateTask, useTaskMembers, useTasks, useUpdateTask, useUserSearch } from '../../api/queries'
 import { useUndoable } from '../../components/useUndoable'
 import { useSession } from '../../api/session'
 import { BottomSheet } from '../../components/BottomSheet'
@@ -11,6 +11,7 @@ import { toISODate } from '../../lib/dates'
 import type { Cadence, Task, TaskKind, User } from '../../domain/types'
 import { userColor, userInitials } from '../../lib/avatar'
 import { CADENCES } from '../../domain/habit'
+import { titleSuggestions } from '../../domain/taskTitles'
 import { EstimateField } from './EstimateField'
 import { TAG_PRESETS } from './tags'
 import styles from './Home.module.css'
@@ -23,6 +24,7 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const undoable = useUndoable()
+  const { tasks } = useTasks()
 
   const [title, setTitle] = useState(task?.title ?? '')
   const [subtitle, setSubtitle] = useState(task?.subtitle ?? '')
@@ -41,6 +43,8 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
   const pending = createTask.isPending || updateTask.isPending || undoable.pending
   const error = createTask.error ?? updateTask.error ?? undoable.error
   const tag = customTag.trim() || category
+  // Новую задачу можно назвать как старую: подсказываем прежние названия.
+  const suggestions = task ? [] : titleSuggestions(tasks, title)
 
   const save = () => {
     const name = title.trim()
@@ -143,6 +147,15 @@ export function TaskSheet({ task, onClose }: { task?: Task; onClose: () => void 
           aria-label="Название"
           enterKeyHint="done"
         />
+        {suggestions.length > 0 && (
+          <div className={styles.tagRow} role="group" aria-label="Прежние названия">
+            {suggestions.map((name) => (
+              <Pill key={name} small tone="ghost" onClick={() => setTitle(name)}>
+                {name}
+              </Pill>
+            ))}
+          </div>
+        )}
         <input
           className={styles.tagInput}
           value={subtitle}

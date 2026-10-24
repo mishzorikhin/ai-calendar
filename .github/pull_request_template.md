@@ -11,6 +11,8 @@
 - [ ] Go (из `server/`): `test -z "$(gofmt -l .)" && go vet ./... && go test -race ./...`
 - [ ] PostgreSQL: `TEST_DATABASE_URL=… go test -race ./internal/store -run TestPostgres -count=1`
       из `server/`, только одноразовая БД (тесты очищают таблицы)
+- [ ] KMP (из `kmp/`): `./gradlew :shared:jvmTest :shared:compileKotlinWasmJs :androidApp:assembleDebug`;
+      экран в браузере (Wasm) или на телефоне
 - [ ] UI: браузер на 390×844 и 375×667 для вёрстки
 - [ ] PWA: обычная сборка, обновление worker, офлайн и replay на localhost/HTTPS
 - [ ] Docker: сборка, запуск и `/api/health` (если менялась поставка)
@@ -20,7 +22,7 @@
 
 ## Чек-лист
 
-- [ ] Контракт синхронизирован: Go model ↔ TS types/DTO; методы в HTTP и local; обе реализации Store
+- [ ] Контракт синхронизирован: Go model ↔ TS types/DTO (и Kotlin `Models.kt`); методы в HTTP и local; обе реализации Store
 - [ ] Новая логика покрыта тестами существенных сценариев
 - [ ] Для сессий/офлайна: смена аккаунта, приватный кэш, очередь и повтор из вкладки/worker
 - [ ] Для календарей/AI: readOnly, Synced-функции, валидация и подтверждение удаления
